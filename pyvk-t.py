@@ -317,8 +317,10 @@ logger=logging.getLogger()
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-jid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,domain='vkontakte.eqx.su')
-tr=transp(jid=jid,secret="passfortrans",server="eqx.su",port=5348,disco_name=u'Vkontakte.ru Transport [pre-alpha]',keepalive=100)
+# configuration
+jid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,domain='vkontakte.example.com')
+tr=transp(jid=jid,secret="passfortrans",server="example.com",port=5348,disco_name=u'Vkontakte.ru Transport [pre-alpha]',keepalive=100)
+# end configuration
 tr.connect()
 try:
     tr.loop(1)
