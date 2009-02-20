@@ -75,10 +75,14 @@ class vkonThread(threading.Thread):
         if (trgDiv==None):
             return list()
         trgScr=trgDiv.findAll(name="script")[1].string[14:]
-        a=demjson.decode(trgScr)
+	
         ret=list()
-        for t in a["list"]:
-            ret.append(t[0])
+	try:
+            a=demjson.decode(trgScr)
+	    for t in a["list"]:
+    	        ret.append(t[0])
+	except:
+	    print "can't parse JSON: '%s'"%trgStr
         return ret
     def getInfo(self,v_id):
         prs=vcardPrs()
@@ -184,12 +188,13 @@ class vkonThread(threading.Thread):
         bs=BeautifulSoup(page)
         trgDiv=bs.find(name="div",id="searchResults")
         trgScr=trgDiv.findAll(name="script")[1].string[14:]
-        #print trgScr
-        a=demjson.decode(trgScr)
-        #print (a)
         ret=list()
-        for t in a["list"]:
-            ret.append(t[0])
+	try:
+            a=demjson.decode(trgScr)
+	    for t in a["list"]:
+    	        ret.append(t[0])
+	except:
+	    print "can't parse JSON: '%s'"%trgStr
         return ret
     def loop(self):
         while(self.alive):
