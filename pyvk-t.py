@@ -188,6 +188,10 @@ class transp (Component,vkonClient):
                 iq=iq.make_result_response()
                 q=iq.new_query("vcard-temp","vCard")
                 vc=self.threads[jid].getVcard(int(iq.get_from().node))
+                if (vc==None):
+                    print "ERR: can't get vcard"
+                    return
+
                 #print vc
                 q.newTextChild(q.ns(),"FN",vc["fn"])
                 self.stream.send(iq)
