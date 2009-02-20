@@ -6,6 +6,7 @@ import logging
 from pyxmpp.all import JID,Iq,Presence,Message,StreamError
 from pyvk_t_db import pyvk_t_db
 from libvkontakte import *
+import ConfigParser
 class transp (Component,vkonClient):
     db=pyvk_t_db()
     test=""
@@ -317,10 +318,15 @@ logger=logging.getLogger()
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-# configuration
-jid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,domain='vkontakte.example.com')
-tr=transp(jid=jid,secret="passfortrans",server="example.com",port=5348,disco_name=u'Vkontakte.ru Transport [pre-alpha]',keepalive=100)
-# end configuration
+config = ConfigParser.ConfigParser()
+config.read("pyvk-t.cfg")
+
+jid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,domain=config.get("general","transport_jid"))
+tr=transp(jid=jid,
+    secret=config.get("general","secret"),
+    server=config.get("general","server"),
+    port=config.getint("general","port"),
+    disco_name=config.get("general","disco_name"),keepalive=100)
 tr.connect()
 try:
     tr.loop(1)
