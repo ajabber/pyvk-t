@@ -72,7 +72,7 @@ class vkonThread(threading.Thread):
         page=res.read()
         try:
             bs=BeautifulSoup(page)
-        except Excepion,ex:
+        except Exception,ex:
             print "parse error: %s"%ex.message
             fil=open("pagedump.html","w")
             fil.write(page)
@@ -201,7 +201,7 @@ class vkonThread(threading.Thread):
         
         try:
             bs=BeautifulSoup(page)
-        except Excepion,ex:
+        except Exception,ex:
             print "parse error: %s"%ex.message
             fil=open("pagedump.html","w")
             fil.write(page)
