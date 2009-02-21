@@ -70,6 +70,7 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
         res=self.opener.open(req)
         page=res.read()
+        ret=list()
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
@@ -85,18 +86,21 @@ class vkonThread(threading.Thread):
                 fil.close()
                 print "buggy page saved to pagedump.html"
                 return ret
-        trgDiv=bs.find(name="div",id="searchResults")
-        if (trgDiv==None):
-            return list()
-        trgScr=trgDiv.findAll(name="script")[1].string[14:]
-	
-        ret=list()
-	try:
+            trgDiv=bs.find(name="div",id="searchResults")
+            if (trgDiv==None):
+                return list()
+            trgScr=trgDiv.findAll(name="script")[0].string[14:]
+        else:
+            trgDiv=bs.find(name="div",id="searchResults")
+            if (trgDiv==None):
+                return list()
+            trgScr=trgDiv.findAll(name="script")[1].string[14:]
+        try:
             a=demjson.decode(trgScr)
-	    for t in a["list"]:
-    	        ret.append(t[0])
-	except:
-	    print "can't parse JSON: '%s'"%trgStr
+            for t in a["list"]:
+                ret.append(t[0])
+        except:
+            print "can't parse JSON: '%s'"%trgStr
         return ret
     def getInfo(self,v_id):
         prs=vcardPrs()
@@ -220,8 +224,15 @@ class vkonThread(threading.Thread):
                 fil.close()
                 print "buggy page saved to pagedump.html"
                 return ret
-        trgDiv=bs.find(name="div",id="searchResults")
-        trgScr=trgDiv.findAll(name="script")[1].string[14:]
+            trgDiv=bs.find(name="div",id="searchResults")
+            if (trgDiv==None):
+                return list()
+            trgScr=trgDiv.findAll(name="script")[0].string[14:]
+        else:
+            trgDiv=bs.find(name="div",id="searchResults")
+            if (trgDiv==None):
+                return list()
+            trgScr=trgDiv.findAll(name="script")[1].string[14:]
         try:
             a=demjson.decode(trgScr)
             for t in a["list"]:
