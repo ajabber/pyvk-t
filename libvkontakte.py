@@ -113,9 +113,9 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
         res=self.opener.open(req)
         page=res.read()
-        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         # FIXME костыль!
         try:
+            bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             prof=bs.find(name="div", id="userProfile")
             rc=prof.find(name="div", id="rightColumn")
             fn=rc.find(name="h2").string.encode("utf-8")
