@@ -9,7 +9,7 @@ from cookielib import Cookie
 from urllib import urlencode
 from BeautifulSoup import BeautifulSoup
 import demjson
-
+import re
 
 class vkonClient:
     def feedChanged(self,jid,feed):
@@ -73,12 +73,18 @@ class vkonThread(threading.Thread):
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
-            print "parse error: %s"%ex.message
-            fil=open("pagedump.html","w")
-            fil.write(page)
-            fil.close()
-            print "buggy page saved to pagedump.html"
-            return ret
+            print "parse error. trying dirty hack... ;)"
+            m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
+            page=m.string[:m.start()]+m.string[m.end():]
+            try:
+                bs=BeautifulSoup(page)
+            except:
+                print "failed"
+                fil=open("pagedump.html","w")
+                fil.write(page)
+                fil.close()
+                print "buggy page saved to pagedump.html"
+                return ret
         trgDiv=bs.find(name="div",id="searchResults")
         if (trgDiv==None):
             return list()
@@ -202,12 +208,18 @@ class vkonThread(threading.Thread):
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
-            print "parse error: %s"%ex.message
-            fil=open("pagedump.html","w")
-            fil.write(page)
-            fil.close()
-            print "buggy page saved to pagedump.html"
-            return ret
+            print "parse error. trying dirty hack... ;)"
+            m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
+            page=m.string[:m.start()]+m.string[m.end():]
+            try:
+                bs=BeautifulSoup(page)
+            except:
+                print "failed"
+                fil=open("pagedump.html","w")
+                fil.write(page)
+                fil.close()
+                print "buggy page saved to pagedump.html"
+                return ret
         trgDiv=bs.find(name="div",id="searchResults")
         trgScr=trgDiv.findAll(name="script")[1].string[14:]
         try:
