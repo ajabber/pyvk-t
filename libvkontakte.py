@@ -189,16 +189,25 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
         res=self.opener.open(req)
         page=res.read()
-        bs=BeautifulSoup(page)
+        ret=list()
+        
+        try:
+            bs=BeautifulSoup(page)
+        except:
+            print "parse error"
+            fil=open("pagedump.html","w")
+            fil.write(page)
+            fil.close()
+            print "buggy page saved to pagedump.html"
+            return ret
         trgDiv=bs.find(name="div",id="searchResults")
         trgScr=trgDiv.findAll(name="script")[1].string[14:]
-        ret=list()
-	try:
+        try:
             a=demjson.decode(trgScr)
-	    for t in a["list"]:
-    	        ret.append(t[0])
-	except:
-	    print "can't parse JSON: '%s'"%trgStr
+            for t in a["list"]:
+                ret.append(t[0])
+        except:
+            print "can't parse JSON: '%s'"%trgStr
         return ret
     def loop(self):
         while(self.alive):
