@@ -70,7 +70,15 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
         res=self.opener.open(req)
         page=res.read()
-        bs=BeautifulSoup(page)
+        try:
+            bs=BeautifulSoup(page)
+        except Excepion,ex:
+            print "parse error: %s"%ex.message
+            fil=open("pagedump.html","w")
+            fil.write(page)
+            fil.close()
+            print "buggy page saved to pagedump.html"
+            return ret
         trgDiv=bs.find(name="div",id="searchResults")
         if (trgDiv==None):
             return list()
@@ -193,8 +201,8 @@ class vkonThread(threading.Thread):
         
         try:
             bs=BeautifulSoup(page)
-        except:
-            print "parse error"
+        except Excepion,ex:
+            print "parse error: %s"%ex.message
             fil=open("pagedump.html","w")
             fil.write(page)
             fil.close()
