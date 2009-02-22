@@ -15,9 +15,9 @@ class vkonClient:
     def feedChanged(self,jid,feed):
         print feed
     def usersOffline(self,jid,users):
-        print "online",users
-    def usersOnline(self,jid,users):
         print "offline",users
+    def usersOnline(self,jid,users):
+        print "online",users
     def threadError(self,jid,message=""):
         print "error: %s"%message
 
@@ -49,6 +49,7 @@ class vkonThread(threading.Thread):
             self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
         else:
             self.error=0
+        
         #print res.read()
         #print this.cookie
     
@@ -102,6 +103,13 @@ class vkonThread(threading.Thread):
         except:
             print "can't parse JSON: '%s'"%trgStr
         return ret
+    def dumpString(self,string,fn=""):
+        fname="%s-%s.html"%(int(time.time()),fn)
+        fil=open(fname,"w")
+        fil.write(string)
+        fil.close()
+        print "buggy page saved to",fname
+        
     def getInfo(self,v_id):
         prs=vcardPrs()
         req=urllib2.Request("http://pda.vkontakte.ru/id%s"%v_id)
@@ -113,13 +121,23 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
         res=self.opener.open(req)
         page=res.read()
-        # FIXME костыль!
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+        except:
+            print "parse error\nremoving special characters..."
+            page2=re.sub("&#.{1-5}?;","",page)
+            try:
+                bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+            except:
+                print "vCard retrieve failed\ndumping page..."
+                self.dumpString(page,"vcard")
+                return None
+        try:
             prof=bs.find(name="div", id="userProfile")
             rc=prof.find(name="div", id="rightColumn")
             fn=rc.find(name="h2").string.encode("utf-8")
         except:
+            print "wrong page format"
             return None
         return {"fn":fn}
         
@@ -247,7 +265,7 @@ class vkonThread(threading.Thread):
                 self.oldFeed=tfeed
                 self.client.feedChanged(self.jid,tfeed)
             if (self.feedOnly):
-                tonline=()
+                tonline=[]
             else:
                 tonline=self.getOnlineList()
             #print tonline,self.onlineList
