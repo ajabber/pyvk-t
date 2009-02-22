@@ -126,7 +126,7 @@ class vkonThread(threading.Thread):
             #bs=BeautifulSoup(page)
         except:
             print "parse error\ntrying to filter bad entities..."
-            page2=re.sub("&#x.{1-5}?;","",page)
+            page2=re.sub("&#x.{1,5}?;","",page)
             try:
                 bs=BeautifulSoup(page2,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             except:
