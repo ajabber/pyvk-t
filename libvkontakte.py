@@ -75,7 +75,7 @@ class vkonThread(threading.Thread):
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
-            print "parse error. trying dirty hack... ;)"
+            print "parse error. trying to delete bad <script> tag..."
             m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
             page=m.string[:m.start()]+m.string[m.end():]
             try:
@@ -87,6 +87,7 @@ class vkonThread(threading.Thread):
                 fil.close()
                 print "buggy page saved to pagedump.html"
                 return ret
+            print "success!"
             trgDiv=bs.find(name="div",id="searchResults")
             if (trgDiv==None):
                 return list()
@@ -131,7 +132,7 @@ class vkonThread(threading.Thread):
                 bs=BeautifulSoup(page2,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             except:
                 print "vCard retrieve failed\ndumping page..."
-                self.dumpString(page,"vcard")
+                self.dumpString(page,"vcard_parse_error")
                 return None
         try:
             prof=bs.find(name="div", id="userProfile")
@@ -139,6 +140,7 @@ class vkonThread(threading.Thread):
             fn=rc.find(name="h2").string.encode("utf-8")
         except:
             print "wrong page format"
+            self.dumpString(page,"vcard_wrong_format")
             return None
         return {"fn":fn}
         
@@ -199,9 +201,14 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
         res=self.opener.open(req)
         page=res.read()
-        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
-        chas=bs.find(name="input",attrs={"name":"chas"})["value"]
-        print "chas",chas
+        try:
+            bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
+            chas=bs.find(name="input",attrs={"name":"chas"})["value"]
+        except:
+            print "unknown error.. saving page.."
+            self.dumpString(page,"send_chas")
+            
+        #print "chas",chas
         #prs.feed(page)
         if (type(body)==unicode):
             tbody=body.encode("utf-8")
@@ -231,18 +238,16 @@ class vkonThread(threading.Thread):
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
-            print "parse error. trying dirty hack... ;)"
+            print "parse error. trying to delete bad <script> tag..."
             m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
             page=m.string[:m.start()]+m.string[m.end():]
             try:
                 bs=BeautifulSoup(page)
             except:
-                print "failed"
-                fil=open("pagedump.html","w")
-                fil.write(page)
-                fil.close()
-                print "buggy page saved to pagedump.html"
+                print "friendlistv retrieve failed\ndumping page..."
+                self.dumpString(page,"friendlist")
                 return ret
+            print "success!"
             trgDiv=bs.find(name="div",id="searchResults")
             if (trgDiv==None):
                 return list()
@@ -258,6 +263,9 @@ class vkonThread(threading.Thread):
                 ret.append(t[0])
         except:
             print "can't parse JSON: '%s'"%trgStr
+            print "dumping page..."
+            self.dumpString(page,"json")
+            
         return ret
     def loop(self):
         while(self.alive):
