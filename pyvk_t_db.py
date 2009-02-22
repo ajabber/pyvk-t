@@ -2,8 +2,8 @@
 class pyvk_t_db:
     ulist={}
     def __init__(self):
-        uf=open("users.lst","r")
         try:
+            uf=open("users.lst","r")
             self.ulist=eval(uf.read())
         except:
             self.ulist={}

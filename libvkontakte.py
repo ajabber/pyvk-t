@@ -284,7 +284,6 @@ class vkonThread(threading.Thread):
                 self.client.usersOffline(self.jid,filter(lambda x:tonline.count(x)-1,self.onlineList))
                 self.onlineList=tonline
             time.sleep(10)
-            
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList)
         self.logout()
