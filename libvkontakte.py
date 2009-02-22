@@ -137,7 +137,8 @@ class vkonThread(threading.Thread):
         try:
             prof=bs.find(name="div", id="userProfile")
             rc=prof.find(name="div", id="rightColumn")
-            fn=rc.find(name="h2").string.encode("utf-8")
+            #fn=rc.find(name="h2").string.encode("utf-8")
+            fn=unicode(rc.find(name="h2").string).encode("utf-8")
         except:
             print "wrong page format"
             self.dumpString(page,"vcard_wrong_format")
