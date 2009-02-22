@@ -167,7 +167,18 @@ class transp (Component,vkonClient):
                 else:
                     #TODO err message
                     pass
-                
+            elif (txt=="help"):
+                # patch by Nagainos ;)
+                m=Message(
+                    from_jid=self.jid,
+                    to_jid=jid,
+                    stanza_type="chat",
+                    body=u""" Как использовать данный транспорт:
+Введите 'get roster' для запроса списка друзей с сайта vkontakte.ru.
+Для подтверждения запроса списка друзей введите 'get roster confirm'"""
+                );
+                self.stream.send(m);
+
             pass
         else:
             m=Message(
@@ -310,10 +321,10 @@ class transp (Component,vkonClient):
         for u in self.threads.keys():
             self.threads[u].exit()
             m=Message(
-            from_jid=self.jid,
-            to_jid=jid,
-            stanza_type="chat",
-            body=u"Транспорт отключается для проведения технических работ.\nВ ближайшее время он будет замущен вновь;)"
+                from_jid=self.jid,
+                to_jid=u,
+                stanza_type="chat",
+                body=u"Транспорт отключается для проведения технических работ.\nВ ближайшее время он будет запущен вновь;)"
             );
             self.stream.send(m)
 
