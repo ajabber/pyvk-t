@@ -38,7 +38,12 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
         req.addheaders = [('User-agent', 'Mozilla/5.0')]
 
-        res=self.opener.open(req)
+        try:
+            res=self.opener.open(req)
+        except:
+            print "urllib2 exception, possible http error"
+            self.error=1
+            return
         #print cjar
         self.cookie=cjar.make_cookies(res,req)
         self.client=cli
@@ -61,7 +66,11 @@ class vkonThread(threading.Thread):
     def getFeed(self):
         #global opener
         req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoq")
-        res=self.opener.open(req)
+        try:
+            res=self.opener.open(req)
+        except:
+            print "urllib2 exception, possible http error"
+            return {"messages":{"count":0}}
         s=res.read().decode("cp1251")
         #print repr(s)
         ret=demjson.decode(s)
@@ -69,9 +78,13 @@ class vkonThread(threading.Thread):
 
     def getOnlineList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
-        res=self.opener.open(req)
-        page=res.read()
         ret=list()
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return list()
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
@@ -82,10 +95,7 @@ class vkonThread(threading.Thread):
                 bs=BeautifulSoup(page)
             except:
                 print "failed"
-                fil=open("pagedump.html","w")
-                fil.write(page)
-                fil.close()
-                print "buggy page saved to pagedump.html"
+                self.dumpString(page,"parse")
                 return ret
             print "success!"
             trgDiv=bs.find(name="div",id="searchResults")
@@ -102,10 +112,14 @@ class vkonThread(threading.Thread):
             for t in a["list"]:
                 ret.append(t[0])
         except:
-            print "can't parse JSON: '%s'"%trgStr
+            print "can't parse JSON: '%s'"%trgScr
+            self.dumpString(trgScr,"json_decode")
+            self.dumpString(page,"json_decode_page")
+            return list()
+        
         return ret
     def dumpString(self,string,fn=""):
-        fname="%s-%s.html"%(int(time.time()),fn)
+        fname="%s-%s"%(int(time.time()),fn)
         fil=open(fname,"w")
         fil.write(string)
         fil.close()
@@ -120,8 +134,12 @@ class vkonThread(threading.Thread):
         return prs.vcard
     def getVcard(self,v_id):
         req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
-        res=self.opener.open(req)
-        page=res.read()
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return {"fn":""}
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             #bs=BeautifulSoup(page)
@@ -180,8 +198,12 @@ class vkonThread(threading.Thread):
         return prs.msg
     def getMessage(self,msgid):
         req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
-        res=self.opener.open(req)
-        page=res.read()
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return {"text":"error: html exception","from":"error","title":""}
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
         trgForm=bs.find(name="form", action="/mailsent?pda=1")
         fromField=trgForm.find(name="input",attrs={"name":"to_id"})
@@ -200,8 +222,13 @@ class vkonThread(threading.Thread):
     def sendMessage(self,to_id,body,title="[null]"):
         #prs=chasGetter()
         req=urllib2.Request("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
-        res=self.opener.open(req)
-        page=res.read()
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return 0
+            
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
             chas=bs.find(name="input",attrs={"name":"chas"})["value"]
@@ -232,9 +259,14 @@ class vkonThread(threading.Thread):
         #print res.read()
     def getFriendList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
-        res=self.opener.open(req)
-        page=res.read()
         ret=list()
+        
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return ret
         
         try:
             bs=BeautifulSoup(page)
@@ -256,6 +288,7 @@ class vkonThread(threading.Thread):
         else:
             trgDiv=bs.find(name="div",id="searchResults")
             if (trgDiv==None):
+                print "cant find <div> tag"
                 return list()
             trgScr=trgDiv.findAll(name="script")[1].string[14:]
         try:
@@ -263,9 +296,10 @@ class vkonThread(threading.Thread):
             for t in a["list"]:
                 ret.append(t[0])
         except:
-            print "can't parse JSON: '%s'"%trgStr
+            print "can't parse JSON: '%s'"%trgScr
             print "dumping page..."
             self.dumpString(page,"json")
+            retrun 
             
         return ret
     def loop(self):
