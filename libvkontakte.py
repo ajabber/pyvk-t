@@ -10,6 +10,7 @@ from urllib import urlencode
 from BeautifulSoup import BeautifulSoup
 import demjson
 import re
+import base64
 
 class vkonClient:
     def feedChanged(self,jid,feed):
@@ -155,15 +156,21 @@ class vkonThread(threading.Thread):
         try:
             prof=bs.find(name="div", id="userProfile")
             rc=prof.find(name="div", id="rightColumn")
+            lc=prof.find(name="div", id="leftColumn")
+            #photourl=lc.find(name="img")['src']
+            #req=urllib2.Request(photourl)
+            #res=self.opener.open(req)
+            #photo=base64.b64encode(res.read())
             #fn=rc.find(name="h2").string.encode("utf-8")
             fn=unicode(rc.find(name="h2").string).encode("utf-8")
         except:
             print "wrong page format"
             self.dumpString(page,"vcard_wrong_format")
             return None
+        #return {"fn":fn,"photo":photo}
         return {"fn":fn}
-        
-        print "name",fn
+            
+        #print "name",fn
         ptr=rc.find(name="table", attrs= {"class":"profileTable"}).findAll("tr")
         for i in ptr:
             title=i.td.string

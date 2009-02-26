@@ -206,6 +206,9 @@ class transp (Component,vkonClient):
 
                 #print vc
                 q.newTextChild(q.ns(),"FN",vc["fn"])
+                #p=q.newTextChild(q.ns(),"PHOTO","")
+                #p.newTextChild(p.ns(),"TYPE","image/jpeg")
+                #p.newTextChild(q.ns(),"BINVAL",vc["photo"])
                 self.stream.send(iq)
         pass
     def startSession(self,jid,feedOnly=1):
@@ -253,10 +256,16 @@ class transp (Component,vkonClient):
             print "val:",p
         #print p
         #print p[0]
-        
+    def getVersion(self,iq):
+        resp=iq.make_result_response()
+        q=resp.new_query("jabber:iq:version")
+        q.newTextChild(q.ns(),"name","pyvk-t")
+        q.newTextChild(q.ns(),"version","svn [alpha]")
+        self.stream.send(resp)
     def authenticated(self):
         Component.authenticated(self)
         self.stream.set_iq_get_handler("query","jabber:iq:register",self.getRegister)
+        self.stream.set_iq_get_handler("query","jabber:iq:version",self.getVersion)
         self.stream.set_iq_set_handler("query","jabber:iq:register",self.setRegister)
         self.stream.set_message_handler("chat",self.msgHandler,priority=0)
         #self.stream.set_iq_get_handler("query","http://jabber.org/protocol/disco#items",self.getCommand)
@@ -278,20 +287,24 @@ class transp (Component,vkonClient):
         for k in dat.keys():
             if (k!="user" and dat[k]["count"]):
                 ret=ret+"new %s: %s\n"%(k,dat[k]["count"])
-        if (feed["messages"]["count"] ):
-            
-            for i in feed ["messages"]["items"].keys():
-                if (self.threads[jid].feedOnly):
-                    m=Message(from_jid=sejf.jid,to_jid=jid,stanza_type="chat",body="you have new message(s)")
-                    self.stream.send(m)
-                    pass
-                else:
-                    msg=self.threads[jid].getMessage(i)
-                    tjid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,node_or_jid="%s"%msg["from"],domain=self.jid.domain)
-                    m=Message(from_jid=tjid,to_jid=jid,stanza_type="chat",body="[%s]\n%s"%(msg["title"],msg['text']))
-                    self.stream.send(m)
-        if (self.threads[jid].feedOnly):
-            ret="[shadow mode]\n%s"%ret
+        try:
+            if (feed["messages"]["count"] ):
+                
+                for i in feed ["messages"]["items"].keys():
+                    if (self.threads[jid].feedOnly):
+                        m=Message(from_jid=sejf.jid,to_jid=jid,stanza_type="chat",body="you have new message(s)")
+                        self.stream.send(m)
+                        pass
+                    else:
+                        msg=self.threads[jid].getMessage(i)
+                        tjid=pyxmpp.jid.JID.__new__(pyxmpp.jid.JID,node_or_jid="%s"%msg["from"],domain=self.jid.domain)
+                        m=Message(from_jid=tjid,to_jid=jid,stanza_type="chat",body="[%s]\n%s"%(msg["title"],msg['text']))
+                        self.stream.send(m)
+            if (self.threads[jid].feedOnly):
+                ret="[shadow mode]\n%s"%ret
+        except:
+            print "feed error"
+            return
         p=Presence(
             stanza_type=None,
             to_jid=jid,
