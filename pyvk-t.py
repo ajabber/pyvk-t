@@ -14,7 +14,7 @@ class transp (Component,vkonClient):
     threads={}
     def __init__(self, jid=None, secret=None, server=None, port=5347, disco_name=u'PyXMPP based component', disco_category=u'gateway', disco_type=u'x-unknown', keepalive=0):
         Component.__init__(self, jid, secret, server, port, disco_name, disco_category, disco_type, keepalive)
-        self.disco_info.add_feature("jabber:iq:register")
+        #self.disco_info.add_feature("jabber:iq:register")
         self.disco_info.add_feature("jabber:iq:gateway")
 #        self.disco_info.add_feature("http://jabber.org/protocol/commands")
         
