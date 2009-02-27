@@ -1,0 +1,11 @@
+[general]
+transport_jid: pyvk-t.example.su
+server: example.su
+secret: someverylongpassphrasefortransport
+port: 5349
+[database]
+module: MySQLdb
+host: db.example.su
+user: dbuser
+passwd: dbpassword
+db: dbname
