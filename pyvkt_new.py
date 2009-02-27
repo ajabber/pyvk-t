@@ -104,7 +104,8 @@ class pyvk_t(component.Service,vkonClient):
                 if (cmd=="get roster"):
                     d=defer.execute(self.threads[bjid].getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
-
+            if (cmd=="help"):
+                self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
             return
 
         #if (body[0:1]=="$" and bjid=="eqx@eqx.su"):
@@ -121,6 +122,7 @@ class pyvk_t(component.Service,vkonClient):
                 log.msg("bad JID: %s"%msg["to"])
                 return
             self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
+        
             #TODO delivery notification
     def onIq(self, iq):
         """
