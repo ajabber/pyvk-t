@@ -22,7 +22,7 @@ from zope.interface import Interface, implements
 import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
-import sys
+import sys,os
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -73,6 +73,19 @@ class pyvk_t(component.Service,vkonClient):
             db=config.get("database","db"))
         self.threads={}
         self.pools={}
+        #try:
+        proc=os.popen("svnversion")
+        s=proc.read()
+        if(s=="exported" or s==""):
+            self.revision="alpha"
+        else:
+            p=s.find(":")
+            ver=s[p+1:-1]
+            self.revision="svn rev. %s"%ver
+        #except:
+            #log.msg("can't ret revision")
+            #self.revision="alpha"
+            
         # FIXME 
     def componentConnected(self, xmlstream):
         """
@@ -161,7 +174,7 @@ class pyvk_t(component.Service,vkonClient):
                     return
                 elif (query.uri=="jabber:iq:version"):
                     q.addElement("name").addContent("pyvk-t [twisted]")
-                    q.addElement("version").addContent("svn")
+                    q.addElement("version").addContent(self.revision)
                     ans.send()
                     return
                     
