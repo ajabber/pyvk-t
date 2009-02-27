@@ -141,6 +141,10 @@ class pyvk_t(component.Service,vkonClient):
                 q=ans.addElement("query",query.uri)
                 if (query.uri=="http://jabber.org/protocol/disco#info"):
                     log.msg("info request")
+                    ident=q.addElement("identity")
+                    ident["category"]="gateway"
+                    ident["type"]="vkontakte.ru"
+                    ident["name"]="Vkontakte.ru Transport [twisted]"
                     q.addElement("feature").attributes={"category":"x-service","type":"pyvk-t","name":"Vkontakte.ru transport [twisted]"}
                     q.addElement("feature")["var"]="jabber:iq:register"
                     q.addElement("feature")["var"]="jabber:iq:gateway"
