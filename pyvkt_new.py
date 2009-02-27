@@ -22,7 +22,7 @@ from zope.interface import Interface, implements
 import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
-
+import sys
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -231,6 +231,7 @@ class pyvk_t(component.Service,vkonClient):
         pr["to"]=jid
         pr["from"]=self.jid
         self.xmlstream.send(pr)
+        self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
     def login(self,jid):
         # TODO bare jid?
         if (self.threads.has_key(jid)):
