@@ -21,7 +21,26 @@ class vkonClient:
         print "online",users
     def threadError(self,jid,message=""):
         print "error: %s"%message
-
+def flParse(page):
+    res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
+    if (res==None):
+        print "wrong page format: can't fing <script>"
+        return []
+    tag=page[res.start():res.end()]
+    res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
+    if (res==None):
+        print "wrong page format: can't fing 'list:''"
+        return []
+    json=tag[res.start()+6:res.end()-3]
+    #print json
+    json=json.decode("cp1251")
+    try:
+        flist=demjson.decode(json)
+    except:
+        print "json decode error"
+    ret=[]
+    for i in flist:ret.append(i[0])
+    return ret
 class vkonThread(threading.Thread):
     oldFeed=""
     onlineList=[]
@@ -83,9 +102,12 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
             page=res.read()
+            
         except:
             print "urllib2 exception, possible http error"
             return list()
+        return flParse(page)
+        
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:
@@ -274,7 +296,8 @@ class vkonThread(threading.Thread):
         except:
             print "urllib2 exception, possible http error"
             return ret
-        
+        return flParse(page)
+            
         try:
             bs=BeautifulSoup(page)
         except Exception,ex:

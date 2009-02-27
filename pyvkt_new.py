@@ -231,7 +231,7 @@ class pyvk_t(component.Service,vkonClient):
         pr["to"]=jid
         pr["from"]=self.jid
         self.xmlstream.send(pr)
-        self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
+        self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
     def login(self,jid):
         # TODO bare jid?
         if (self.threads.has_key(jid)):
