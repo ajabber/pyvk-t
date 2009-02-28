@@ -73,6 +73,12 @@ class pyvk_t(component.Service,vkonClient):
             db=config.get("database","db"))
         self.threads={}
         self.pools={}
+        try:
+            self.admin=config.get("general","admin")
+        except:
+            log.message("you didn't set admin JID in config!")
+            self.admin=None
+        #self.config=config
         #try:
         proc=os.popen("svnversion")
         s=proc.read()
@@ -121,12 +127,13 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
             return
 
-        #if (body[0:1]=="$" and bjid=="eqx@eqx.su"):
-            #try:
-                #eval(body[1:])
-            #except:
-                #log.msg("eval('%s') failed"%body)
-            #return
+        if (body[0:1]=="#" and bjid==self.admin):
+            # admin commands
+            cmd=body[1:]
+            log.msg("admin command: '%s'"%cmd)
+            if (cmd=="kickall"):
+                self.stopService()
+            return
         if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
             dogpos=msg["to"].find("@")
             try:
@@ -154,13 +161,10 @@ class pyvk_t(component.Service,vkonClient):
                 q=ans.addElement("query",query.uri)
                 if (query.uri=="http://jabber.org/protocol/disco#info"):
                     log.msg("info request")
-                    ident=q.addElement("identity")
-                    ident["category"]="gateway"
-                    ident["type"]="vkontakte.ru"
-                    ident["name"]="Vkontakte.ru Transport [twisted]"
-                    q.addElement("feature").attributes={"category":"x-service","type":"pyvk-t","name":"Vkontakte.ru transport [twisted]"}
+                    q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
                     q.addElement("feature")["var"]="jabber:iq:register"
                     q.addElement("feature")["var"]="jabber:iq:gateway"
+                    q.addElement("feature")["var"]="stringprep"
                     ans.send()
                     return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
@@ -378,6 +382,7 @@ class pyvk_t(component.Service,vkonClient):
                 del self.pools[u]
             except:
                 pass
+            self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
             self.sendPresence(self.jid,u,"unavailable")
         print "done"
         return None
@@ -399,6 +404,7 @@ class pyvk_t(component.Service,vkonClient):
         pr["from"]=src
         if(status):
             pr.addElement("status").addContent(status)
+        pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"pyvk-t.googlecode.com","ver":self.revision}
         self.xmlstream.send(pr)
         
 
