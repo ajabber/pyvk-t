@@ -63,6 +63,7 @@ class vkonThread(threading.Thread):
         except:
             print "urllib2 exception, possible http error"
             self.error=1
+            self.alive=0
             return
         #print cjar
         self.cookie=cjar.make_cookies(res,req)
@@ -72,9 +73,9 @@ class vkonThread(threading.Thread):
         if (f["user"]["id"]==-1):
             self.error=1
             self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
+            self.alive=0
         else:
             self.error=0
-        
         #print res.read()
         #print this.cookie
     
@@ -95,7 +96,30 @@ class vkonThread(threading.Thread):
         #print repr(s)
         ret=demjson.decode(s)
         return ret
-
+    def flParse(self,page):
+        res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
+        if (res==None):
+            print "wrong page format: can't fing <script>"
+            self.dumpString(page,"script")
+            return []
+        tag=page[res.start():res.end()]
+        res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
+        if (res==None):
+            print "wrong page format: can't fing 'list:''"
+            self.dumpString(page,"script")
+            self.dumpString(tag,"script_list")
+            
+            return []
+        json=tag[res.start()+6:res.end()-3]
+        #print json
+        json=json.decode("cp1251")
+        try:
+            flist=demjson.decode(json)
+        except:
+            print "json decode error"
+        ret=[]
+        for i in flist:ret.append(i[0])
+        return ret
     def getOnlineList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
         ret=list()
@@ -106,41 +130,7 @@ class vkonThread(threading.Thread):
         except:
             print "urllib2 exception, possible http error"
             return list()
-        return flParse(page)
-        
-        try:
-            bs=BeautifulSoup(page)
-        except Exception,ex:
-            print "parse error. trying to delete bad <script> tag..."
-            m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
-            page=m.string[:m.start()]+m.string[m.end():]
-            try:
-                bs=BeautifulSoup(page)
-            except:
-                print "failed"
-                self.dumpString(page,"parse")
-                return ret
-            print "success!"
-            trgDiv=bs.find(name="div",id="searchResults")
-            if (trgDiv==None):
-                return list()
-            trgScr=trgDiv.findAll(name="script")[0].string[14:]
-        else:
-            trgDiv=bs.find(name="div",id="searchResults")
-            if (trgDiv==None):
-                return list()
-            trgScr=trgDiv.findAll(name="script")[1].string[14:]
-        try:
-            a=demjson.decode(trgScr)
-            for t in a["list"]:
-                ret.append(t[0])
-        except:
-            print "can't parse JSON: '%s'"%trgScr
-            self.dumpString(trgScr,"json_decode")
-            self.dumpString(page,"json_decode_page")
-            return list()
-        
-        return ret
+        return self.flParse(page)
     def dumpString(self,string,fn=""):
         fname="%s-%s"%(int(time.time()),fn)
         fil=open(fname,"w")
@@ -296,42 +286,7 @@ class vkonThread(threading.Thread):
         except:
             print "urllib2 exception, possible http error"
             return ret
-        return flParse(page)
-            
-        try:
-            bs=BeautifulSoup(page)
-        except Exception,ex:
-            print "parse error. trying to delete bad <script> tag..."
-            m=re.search("<script>\tfriendPatterns.*?</script>",page,re.DOTALL)
-            page=m.string[:m.start()]+m.string[m.end():]
-            try:
-                bs=BeautifulSoup(page)
-            except:
-                print "friendlistv retrieve failed\ndumping page..."
-                self.dumpString(page,"friendlist")
-                return ret
-            print "success!"
-            trgDiv=bs.find(name="div",id="searchResults")
-            if (trgDiv==None):
-                return list()
-            trgScr=trgDiv.findAll(name="script")[0].string[14:]
-        else:
-            trgDiv=bs.find(name="div",id="searchResults")
-            if (trgDiv==None):
-                print "cant find <div> tag"
-                return list()
-            trgScr=trgDiv.findAll(name="script")[1].string[14:]
-        try:
-            a=demjson.decode(trgScr)
-            for t in a["list"]:
-                ret.append(t[0])
-        except:
-            print "can't parse JSON: '%s'"%trgScr
-            print "dumping page..."
-            self.dumpString(page,"json")
-            retrun 
-            
-        return ret
+        return self.flParse(page)
     def loop(self):
         while(self.alive):
             tfeed=self.getFeed()

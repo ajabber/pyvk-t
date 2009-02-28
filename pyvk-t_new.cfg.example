@@ -3,6 +3,8 @@ transport_jid: pyvk-t.example.su
 server: example.su
 secret: someverylongpassphrasefortransport
 port: 5349
+# JID админа, ему доступны дополнительные команды
+admin: admin@example.su
 [database]
 module: MySQLdb
 host: db.example.su
