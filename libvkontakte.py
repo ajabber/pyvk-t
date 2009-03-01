@@ -7,7 +7,8 @@ import time
 from htmlentitydefs import name2codepoint
 from cookielib import Cookie
 from urllib import urlencode
-from BeautifulSoup import BeautifulSoup
+from BeautifulSoup import BeautifulSoup,SoupStrainer
+
 import demjson
 import re
 import base64
@@ -21,26 +22,7 @@ class vkonClient:
         print "online",users
     def threadError(self,jid,message=""):
         print "error: %s"%message
-def flParse(page):
-    res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
-    if (res==None):
-        print "wrong page format: can't fing <script>"
-        return []
-    tag=page[res.start():res.end()]
-    res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
-    if (res==None):
-        print "wrong page format: can't fing 'list:''"
-        return []
-    json=tag[res.start()+6:res.end()-3]
-    #print json
-    json=json.decode("cp1251")
-    try:
-        flist=demjson.decode(json)
-    except:
-        print "json decode error"
-    ret=[]
-    for i in flist:ret.append(i[0])
-    return ret
+
 class vkonThread(threading.Thread):
     oldFeed=""
     onlineList=[]
@@ -86,7 +68,7 @@ class vkonThread(threading.Thread):
         print "logout"
     def getFeed(self):
         #global opener
-        req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoq")
+        req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoqg")
         try:
             res=self.opener.open(req)
         except:
@@ -106,6 +88,8 @@ class vkonThread(threading.Thread):
         res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
         if (res==None):
             print "wrong page format: can't fing 'list:''"
+            if (tag.find("list:[],")!=-1):
+                return []
             self.dumpString(page,"script")
             self.dumpString(tag,"script_list")
             

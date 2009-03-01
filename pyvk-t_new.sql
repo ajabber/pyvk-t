@@ -13,5 +13,6 @@ CREATE TABLE IF NOT EXISTS `users` (
   `jid` varchar(30) NOT NULL,
   `email` varchar(30) NOT NULL,
   `pass` varchar(30) NOT NULL,
+  `config` varchar(200) NOT NULL default ' ',
   UNIQUE KEY `jid` (`jid`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
