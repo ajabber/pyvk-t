@@ -73,6 +73,7 @@ class pyvk_t(component.Service,vkonClient):
             db=config.get("database","db"))
         self.threads={}
         self.pools={}
+        self.usrconf={}
         try:
             self.admin=config.get("general","admin")
         except:
@@ -91,7 +92,8 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-            
+        self.isActive=1
+        #self.commands=
         # FIXME 
     def componentConnected(self, xmlstream):
         """
@@ -105,6 +107,7 @@ class pyvk_t(component.Service,vkonClient):
         
         xmlstream.addObserver('/presence', self.onPresence, 1)
         xmlstream.addObserver('/iq', self.onIq, 1)
+        #xmlstream.addObserver('/iq/query/vCard', self.onVcard, 1)
         xmlstream.addObserver('/message', self.onMessage, 1)
 
     def onMessage(self, msg):
@@ -112,38 +115,50 @@ class pyvk_t(component.Service,vkonClient):
         Act on the message stanza that has just been received.
 
         """
-        body=msg.body.children[0]
-        bjid=bareJid(msg["from"])
-        if (body[0:1]=="/"):
-            cmd=body[1:]
-            log.msg(cmd.encode("utf-8"))
-            if (cmd=="login"):
-                self.login(bjid)
-            if (self.threads.has_key(bjid) and self.threads[bjid]):
-                if (cmd=="get roster"):
-                    d=defer.execute(self.threads[bjid].getFriendList)
-                    d.addCallback(self.sendFriendlist,jid=bjid)
-            if (cmd=="help"):
-                self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
-            return
-
-        if (body[0:1]=="#" and bjid==self.admin):
-            # admin commands
-            cmd=body[1:]
-            log.msg("admin command: '%s'"%cmd)
-            if (cmd=="kickall"):
-                self.stopService()
-            return
-        if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
-            dogpos=msg["to"].find("@")
-            try:
-                v_id=int(msg["to"][:dogpos])
-            except:
-                log.msg("bad JID: %s"%msg["to"])
+        if (msg.body):
+            body=msg.body.children[0]
+            bjid=bareJid(msg["from"])
+            if (body[0:1]=="/"):
+                cmd=body[1:]
+                log.msg(cmd.encode("utf-8"))
+                if (cmd=="login"):
+                    self.login(bjid)
+                if (self.threads.has_key(bjid) and self.threads[bjid]):
+                    if (cmd=="get roster"):
+                        d=defer.execute(self.threads[bjid].getFriendList)
+                        d.addCallback(self.sendFriendlist,jid=bjid)
+                if (cmd=="help"):
+                    self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
                 return
-            self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
+
+            if (body[0:1]=="#" and bjid==self.admin):
+                # admin commands
+                cmd=body[1:]
+                log.msg("admin command: '%s'"%cmd)
+                if (cmd=="stop"):
+                    self.isActive=0
+                    self.stopService()
+                    self.sendMessage
+                if (cmd=="start"):
+                    self.isActive=1
+                if (cmd[:4]=="wall"):
+                    for i in self.threads:
+                        self.sendMessage(self.jid,i,"[brodcast message]\n%s"%cmd[5:])
+                self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
+                    
+                return
+            if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
+                dogpos=msg["to"].find("@")
+                try:
+                    v_id=int(msg["to"][:dogpos])
+                except:
+                    log.msg("bad JID: %s"%msg["to"])
+                    return
+                self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
         
             #TODO delivery notification
+    def onVcard(self,iq):
+        log.msg("onvcard")
     def onIq(self, iq):
         """
         Act on the iq stanza that has just been received.
@@ -160,6 +175,9 @@ class pyvk_t(component.Service,vkonClient):
                 ans["id"]=iq["id"]
                 q=ans.addElement("query",query.uri)
                 if (query.uri=="http://jabber.org/protocol/disco#info"):
+                    #if (query.has_key("node")):
+                        #pass
+                    #else:
                     log.msg("info request")
                     q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
                     q.addElement("feature")["var"]="jabber:iq:register"
@@ -168,6 +186,11 @@ class pyvk_t(component.Service,vkonClient):
                     ans.send()
                     return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
+                    #if (query.has_key("node")):
+                        #q["node"]=query["node"]
+                        #if (query["node"]=="http://jabber.org/protocol/commands"):
+                            #q.addElement("item").attributes={}
+                            
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:register"):
@@ -212,22 +235,24 @@ class pyvk_t(component.Service,vkonClient):
         if (iq["type"]=="set"):
             query=iq.query
             if (query):
-                log.msg("from %s"%bareJid(iq["from"]))
-                log.msg(query.toXml())
-                email=""
-                pw=""
-                #log.msg(filter(lambda x:type(x)=='twisted.words.xish.domish.Element',query.children))
-                for i in filter(lambda x:type(x)==twisted.words.xish.domish.Element,query.children):
-                    log.msg(i)
-                    if (i.name=="email"):
-                        email=i.children[0]
-                    if (i.name=="password"):
-                        pw=i.children[0]
-                #qq=self.dbpool.runQuery("SELECT * FROM users WHERE jid='%s'"%safe(bareJid(iq["from"])))
-                qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s')"%
-                    (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
-                qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
-                return
+                if (query.uri=="jabber:iq:register"):
+                    if (query.remove):
+                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s'"%safe(bareJid(iq["from"])))
+                        return
+                    log.msg("from %s"%bareJid(iq["from"]))
+                    log.msg(query.toXml())
+                    email=""
+                    pw=""
+                    for i in filter(lambda x:type(x)==twisted.words.xish.domish.Element,query.children):
+                        log.msg(i)
+                        if (i.name=="email"):
+                            email=i.children[0]
+                        if (i.name=="password"):
+                            pw=i.children[0]
+                    qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s')"%
+                        (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
+                    qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
+                    return
         iq = create_reply(iq)
         iq["type"]="error"
         err=iq.addElement("error")
@@ -255,6 +280,10 @@ class pyvk_t(component.Service,vkonClient):
         self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
     def login(self,jid):
         # TODO bare jid?
+        if (self.isActive==0):
+            log.msg("isActive==0, login attempt aborted")
+            self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
+            return
         if (self.threads.has_key(jid)):
             return
         self.threads[jid]=0
@@ -265,7 +294,12 @@ class pyvk_t(component.Service,vkonClient):
         pass
     def login1(self,data):
         t=data[0]
-        defer.execute(self.createThread,data[0][0],data[0][1],data[0][2])
+        defer.execute(self.createThread,jid=data[0][0],email=data[0][1],pw=data[0][2])
+        try:
+            self.usrconf[t[0]]=t[3]
+        except:
+            log.msg("config field not found! please? add it to your database (see pyvk-t_new.sql for details)")
+            self.usrconf[t[0]]=None
         self.sendPresence(self.jid,data[0][0])
     def loginFailed(self,data,jid):
         msg.log("login failed for %s"%jid)
@@ -329,7 +363,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         jid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
-            if (prs["type"]=="unavailable"):
+            if (prs["type"]=="unavailable" and prs["to"]==self.jid):
                 try:
                     self.threads[jid].exit()
                     del self.threads[jid]
@@ -363,6 +397,9 @@ class pyvk_t(component.Service,vkonClient):
             if (feed["messages"]["count"] ):
                 for i in feed ["messages"]["items"].keys():
                     self.pools[jid].callInThread(self.requestMessage,jid=jid,msgid=i)
+            #if (feed["groups"]["count"]):
+                #for i in feed["groups"]["items"]:
+                    #ret=ret+"\n"+feed["groups"]["items"][i]+" [http://vkontakte.ru/club%s]"%i
         except:
             log.msg("feed error")
         self.sendPresence(self.jid,jid,status=ret)
