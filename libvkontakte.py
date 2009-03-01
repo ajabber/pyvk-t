@@ -147,6 +147,11 @@ class vkonThread(threading.Thread):
         except:
             print "parse error\ntrying to filter bad entities..."
             page2=re.sub("&#x.{1,5}?;","",page)
+            m1=page2.find("<!-- End pageBody -->") 
+            m2=page2.find("<!-- End bFooter -->") 
+            if (m1 and m2):
+                page2=page2[:m1]+page2[m2:] 
+            после  
             try:
                 bs=BeautifulSoup(page2,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             except:
