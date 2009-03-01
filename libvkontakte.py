@@ -76,8 +76,12 @@ class vkonThread(threading.Thread):
             return {"messages":{"count":0}}
         s=res.read().decode("cp1251")
         #print repr(s)
-        ret=demjson.decode(s)
-        return ret
+        try:
+            return demjson.decode(s)
+        except:
+            log.msg("JSON decode error")
+            self.dumpString("feed",s)
+        return {}
     def flParse(self,page):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
         if (res==None):
@@ -87,9 +91,9 @@ class vkonThread(threading.Thread):
         tag=page[res.start():res.end()]
         res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
         if (res==None):
-            print "wrong page format: can't fing 'list:''"
             if (tag.find("list:[],")!=-1):
                 return []
+            print "wrong page format: can't fing 'list:''"
             self.dumpString(page,"script")
             self.dumpString(tag,"script_list")
             

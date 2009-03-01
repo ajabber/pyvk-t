@@ -107,7 +107,7 @@ class pyvk_t(component.Service,vkonClient):
         
         xmlstream.addObserver('/presence', self.onPresence, 1)
         xmlstream.addObserver('/iq', self.onIq, 1)
-        #xmlstream.addObserver('/iq/query/vCard', self.onVcard, 1)
+        xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
 
     def onMessage(self, msg):
@@ -141,6 +141,11 @@ class pyvk_t(component.Service,vkonClient):
                     self.sendMessage
                 if (cmd=="start"):
                     self.isActive=1
+                if (cmd=="stats"):
+                    ret="%s user(s) online"%len(self.threads)
+                    for i in self.threads:
+                        ret=ret+"\n"+i
+                    self.sendMessage(self.jid,msg["from"],ret)
                 if (cmd[:4]=="wall"):
                     for i in self.threads:
                         self.sendMessage(self.jid,i,"[brodcast message]\n%s"%cmd[5:])
@@ -158,7 +163,35 @@ class pyvk_t(component.Service,vkonClient):
         
             #TODO delivery notification
     def onVcard(self,iq):
-        log.msg("onvcard")
+        log.msg("onVcard")
+        bjid=bareJid(iq["from"])
+        vcard=iq.vCard
+        if (vcard):
+            #log.msg("vcard request")
+            dogpos=iq["to"].find("@")
+            if(dogpos!=-1):
+                try:
+                    v_id=int(iq["to"][:dogpos])
+                except:
+                    log.msg("bad JID: %s"%iq["to"])
+                    pass
+                else:
+                    #log.msg("id: %s"%v_id)
+                    if (self.pools.has_key(bjid)):
+                        self.pools[bjid].callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
+                        return
+                    else:
+                        log.msg("thread not found!")
+            else:
+                ans=xmlstream.IQ(self.xmlstream,"result")
+                ans["to"]=iq["from"]
+                ans["from"]=iq["to"]
+                ans["id"]=iq["id"]
+                q=ans.addElement("vCard","vcard-temp")
+                q.addElement("FN").addContent("vkontakte.ru transport")
+                ans.send()
+                return
+
     def onIq(self, iq):
         """
         Act on the iq stanza that has just been received.
@@ -208,6 +241,7 @@ class pyvk_t(component.Service,vkonClient):
             vcard=iq.vCard
             if (vcard):
                 #log.msg("vcard request")
+                log.msg("vcard legacy")
                 dogpos=iq["to"].find("@")
                 if(dogpos!=-1):
                     try:
