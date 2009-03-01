@@ -107,7 +107,6 @@ class pyvk_t(component.Service,vkonClient):
         
         xmlstream.addObserver('/presence', self.onPresence, 1)
         xmlstream.addObserver('/iq', self.onIq, 1)
-        xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
 
     def onMessage(self, msg):
@@ -138,18 +137,20 @@ class pyvk_t(component.Service,vkonClient):
                 if (cmd=="stop"):
                     self.isActive=0
                     self.stopService()
-                    self.sendMessage
+                    self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 if (cmd=="start"):
                     self.isActive=1
-                if (cmd=="stats"):
+                elif (cmd=="stats"):
                     ret="%s user(s) online"%len(self.threads)
                     for i in self.threads:
                         ret=ret+"\n"+i
                     self.sendMessage(self.jid,msg["from"],ret)
-                if (cmd[:4]=="wall"):
+                elif (cmd[:4]=="wall"):
                     for i in self.threads:
                         self.sendMessage(self.jid,i,"[brodcast message]\n%s"%cmd[5:])
-                self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
+                    self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
+                else:
+                    self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
                     
                 return
             if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
