@@ -22,7 +22,16 @@ class vkonClient:
         print "online",users
     def threadError(self,jid,message=""):
         print "error: %s"%message
-
+class tooFastError(Exception):
+    def __init__(self):
+        pass
+    def __str__(self):
+        return 'we are banned'
+class authFormError(Exception):
+    def __init__(self):
+        pass
+    def __str__(self):
+        return 'unexpected auth form'
 class vkonThread(threading.Thread):
     oldFeed=""
     onlineList=[]
@@ -60,7 +69,15 @@ class vkonThread(threading.Thread):
             self.error=0
         #print res.read()
         #print this.cookie
-    
+    def checkPage(self,page):
+        if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
+            print ("%s: banned"%self.jid)
+            raise tooFastError
+        if (page.find('<form method="post" name="login" id="login" action="login.php">')!=-1):
+            print ("%s: logged out"%self.jid)
+            raise authFormError
+        
+        return 
     def logout(self):
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', 'Mozilla/5.0')]
@@ -94,6 +111,9 @@ class vkonThread(threading.Thread):
             if (tag.find("list:[],")!=-1):
                 return []
             print "wrong page format: can't fing 'list:''"
+            if (self.chechBan):
+                print "we are banned"
+                raise tooFastError
             self.dumpString(page,"script")
             self.dumpString(tag,"script_list")
             
@@ -168,9 +188,15 @@ class vkonThread(threading.Thread):
             #fn=rc.find(name="h2").string.encode("utf-8")
             fn=unicode(rc.find(name="h2").string).encode("utf-8")
         except:
-            print "wrong page format"
-            self.dumpString(page,"vcard_wrong_format")
-            return None
+            checkPage()
+            try:
+                wr=bs.find(name="div",id="wrapH1")
+                fn=wr.div.h1.string
+                print "'deleted' page parsed"
+            except:
+                print "wrong page format"
+                self.dumpString(page,"vcard_wrong_format")
+                return None
         #return {"fn":fn,"photo":photo}
         return {"fn":fn}
             
@@ -288,7 +314,16 @@ class vkonThread(threading.Thread):
             if (self.feedOnly):
                 tonline=[]
             else:
-                tonline=self.getOnlineList()
+                try:
+                    tonline=self.getOnlineList()
+                except tooFastError:
+                    self.client.threadError(self.jid,"banned")
+                    time.sleep(100)
+                except loginFormError:
+                    self.client.threadError(self.jid,"auth")
+                    self.client.usersOffline(self.onlineList)
+                    return
+                    
             #print tonline,self.onlineList
             if (tonline!=self.onlineList):
                 self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.count(x)-1,tonline))

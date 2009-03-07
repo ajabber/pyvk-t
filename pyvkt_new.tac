@@ -2,13 +2,15 @@
 from twisted.application import service
 
 from twisted.words.protocols.jabber import component
-import ConfigParser
+import ConfigParser,os
 import pyvkt_new
 from sys import argv
 
-fn="pyvk-t_new.cfg"
 config = ConfigParser.ConfigParser()
-config.read("pyvk-t_new.cfg")
+confName="pyvk-t_new.cfg"
+if(os.environ.has_key("PYVKT_CONFIG")):
+    confName=os.environ["PYVKT_CONFIG"]
+config.read(confName)
 
 application = service.Application("pyvk-t")
 
