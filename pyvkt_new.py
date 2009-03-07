@@ -53,6 +53,65 @@ def bareJid(jid):
     if (n==-1):
         return jid
     return jid[:n]
+    
+class pyvktCommands:
+    def __init__(self,trans):
+        self.trans=trans
+        self.cmdList={"test":{"foo":self.testCmd,"name":"test command","args":{}}}
+    def onAdhocCmd(self,iq):
+        pass
+    def onDiscoItems(self,iq):
+        resp=xmlstream.toResponse(iq)
+        resp["type"]="result"
+        q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
+        q["node"]='http://jabber.org/protocol/commands'
+        for i in self.cmdList:
+            q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":self.cmdList[i]["name"]}
+        return resp
+        pass
+    def onDiscoInfo(self,iq):
+        resp=xmlstream.toResponse(iq)
+        resp["type"]="result"
+        cmd=self.cmdList[iq.query["node"]]
+        q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
+        q["node"]=iq.query["node"]
+        q.addElement("identity").attributes={"name":cmd["name","category":"automation","type":"command-node"]}
+        q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
+        q.addElement("feature")["var"]='jabber:x:data'
+        return resp
+    def onIqSet(self,iq):
+        resp=xmlstream.toResponse(iq)
+        node=iq.command["node"]
+        try:
+            cmd=self.cmdList[node]
+        except KeyError:
+            #TODO error stranza
+            log.msg("unknown command: %s",node)
+        #TODO arguments
+        res=cmd()
+        resp["type"]="result"
+        c=resp.addElement("command",'http://jabber.org/protocol/commands')
+        c["node"]=node
+        c["status"]="completed"
+        c.sessionid="123"
+        x=c.addElement("x",'jabber:x:data')
+        x["type"]="result"
+        try:
+            x.addElement("title").addContent(res["title"])
+        except:
+            x.addElement("title").addContent(u"result")
+            
+        return resp
+    def onMsg(self,jid,text):
+        return "not implemented"
+        pass
+        
+    def testCmd(self,arg):
+        log.msg("test command")
+        return {"result":1,"title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
+        pass
+
+
 class pyvk_t(component.Service,vkonClient):
     """
     Example XMPP component service using twisted words.
@@ -64,7 +123,10 @@ class pyvk_t(component.Service,vkonClient):
 
     def __init__(self):
         config = ConfigParser.ConfigParser()
-        config.read("pyvk-t_new.cfg")
+        confName="pyvk-t_new.cfg"
+        if(os.environ.has_key("PYVKT_CONFIG")):
+            confName=os.environ["PYVKT_CONFIG"]
+        config.read(confName)
         self.dbpool = adbapi.ConnectionPool(
             config.get("database","module"), 
             host=config.get("database","host"), 
@@ -89,6 +151,7 @@ class pyvk_t(component.Service,vkonClient):
             p=s.find(":")
             ver=s[p+1:-1]
             self.revision="svn rev. %s"%ver
+        self.commands=pyvktCommands(self)
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
@@ -107,6 +170,7 @@ class pyvk_t(component.Service,vkonClient):
         
         xmlstream.addObserver('/presence', self.onPresence, 1)
         xmlstream.addObserver('/iq', self.onIq, 1)
+        #xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
 
     def onMessage(self, msg):
@@ -122,23 +186,26 @@ class pyvk_t(component.Service,vkonClient):
                 log.msg(cmd.encode("utf-8"))
                 if (cmd=="login"):
                     self.login(bjid)
-                if (self.threads.has_key(bjid) and self.threads[bjid]):
+                elif (self.threads.has_key(bjid) and self.threads[bjid]):
                     if (cmd=="get roster"):
                         d=defer.execute(self.threads[bjid].getFriendList)
                         d.addCallback(self.sendFriendlist,jid=bjid)
-                if (cmd=="help"):
+                elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
+                else:
+                    self.sendMessage(self.jid,msg["from"],self.commands.onMsg(bjid,cmd))
                 return
 
             if (body[0:1]=="#" and bjid==self.admin):
                 # admin commands
-                cmd=body[1:]
+                cmd=body[1:].decode('utf-8')
+                
                 log.msg("admin command: '%s'"%cmd)
                 if (cmd=="stop"):
                     self.isActive=0
                     self.stopService()
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
-                if (cmd=="start"):
+                elif (cmd=="start"):
                     self.isActive=1
                 elif (cmd=="stats"):
                     ret="%s user(s) online"%len(self.threads)
@@ -151,7 +218,6 @@ class pyvk_t(component.Service,vkonClient):
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 else:
                     self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
-                    
                 return
             if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
                 dogpos=msg["to"].find("@")
@@ -161,38 +227,7 @@ class pyvk_t(component.Service,vkonClient):
                     log.msg("bad JID: %s"%msg["to"])
                     return
                 self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
-        
             #TODO delivery notification
-    def onVcard(self,iq):
-        log.msg("onVcard")
-        bjid=bareJid(iq["from"])
-        vcard=iq.vCard
-        if (vcard):
-            #log.msg("vcard request")
-            dogpos=iq["to"].find("@")
-            if(dogpos!=-1):
-                try:
-                    v_id=int(iq["to"][:dogpos])
-                except:
-                    log.msg("bad JID: %s"%iq["to"])
-                    pass
-                else:
-                    #log.msg("id: %s"%v_id)
-                    if (self.pools.has_key(bjid)):
-                        self.pools[bjid].callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
-                        return
-                    else:
-                        log.msg("thread not found!")
-            else:
-                ans=xmlstream.IQ(self.xmlstream,"result")
-                ans["to"]=iq["from"]
-                ans["from"]=iq["to"]
-                ans["id"]=iq["id"]
-                q=ans.addElement("vCard","vcard-temp")
-                q.addElement("FN").addContent("vkontakte.ru transport")
-                ans.send()
-                return
-
     def onIq(self, iq):
         """
         Act on the iq stanza that has just been received.
@@ -209,22 +244,24 @@ class pyvk_t(component.Service,vkonClient):
                 ans["id"]=iq["id"]
                 q=ans.addElement("query",query.uri)
                 if (query.uri=="http://jabber.org/protocol/disco#info"):
-                    #if (query.has_key("node")):
-                        #pass
-                    #else:
-                    log.msg("info request")
-                    q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
-                    q.addElement("feature")["var"]="jabber:iq:register"
-                    q.addElement("feature")["var"]="jabber:iq:gateway"
-                    q.addElement("feature")["var"]="stringprep"
-                    ans.send()
-                    return
+                    if (query.hasAttribute("node")):
+                        self.xmlstream.send(self.commands.onDiscoInfo(iq))
+                        return
+                    else:
+                        log.msg("info request")
+                        q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
+                        q.addElement("feature")["var"]="jabber:iq:register"
+                        q.addElement("feature")["var"]="jabber:iq:gateway"
+                        q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
+                        q.addElement("feature")["var"]="stringprep"
+                        ans.send()
+                        return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
-                    #if (query.has_key("node")):
-                        #q["node"]=query["node"]
-                        #if (query["node"]=="http://jabber.org/protocol/commands"):
-                            #q.addElement("item").attributes={}
-                            
+                    if (query.hasAttribute("node")):
+                        q["node"]=query["node"]
+                        if (query["node"]=="http://jabber.org/protocol/commands"):
+                            self.xmlstream.send(self.commands.onDiscoItems(iq))
+                            return
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:register"):
@@ -253,6 +290,7 @@ class pyvk_t(component.Service,vkonClient):
                     else:
                         #log.msg("id: %s"%v_id)
                         if (self.pools.has_key(bjid)):
+                            time.sleep(1)
                             self.pools[bjid].callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
@@ -288,6 +326,9 @@ class pyvk_t(component.Service,vkonClient):
                         (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     return
+            cmd=iq.command
+            if (cmd):
+                self.xmlstream.send(self.commands.onIqSet(iq))
         iq = create_reply(iq)
         iq["type"]="error"
         err=iq.addElement("error")
@@ -398,7 +439,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         jid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
-            if (prs["type"]=="unavailable" and prs["to"]==self.jid):
+            if (prs["type"]=="unavailable"):
                 try:
                     self.threads[jid].exit()
                     del self.threads[jid]
@@ -444,6 +485,19 @@ class pyvk_t(component.Service,vkonClient):
     def usersOffline(self,jid,users):
         for i in users:
             self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+    def threadError(self,jid,err):
+        if (err=="banned"):
+            self.sendMessage(self.jid,jid,"Слишком много запросов однотипных страниц.\nКонтакт частично заблокировал доступ на 10-15 минут. На всякий случай, транспорт отключается")
+        elif(err=="auth"):
+            self.sendMessage(self.jid,jid,"Ошибка входа. Возможно, неправильный логин/пароль.")
+        try:
+            self.threads[jid].exit()
+            del self.threads[jid]
+            self.pools[jid].stop()
+            del self.pools[jid]
+        except:
+            pass
+        self.sendPresence(self.jid,jid,"unavailable")
     def stopService(self):
         print "logging out..."
         for u in self.threads.keys():
