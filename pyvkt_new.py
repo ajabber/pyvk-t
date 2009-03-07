@@ -57,7 +57,8 @@ def bareJid(jid):
 class pyvktCommands:
     def __init__(self,trans):
         self.trans=trans
-        self.cmdList={"test":{"foo":self.testCmd,"name":"test command","args":{}}}
+        self.cmdList={"test":{"foo":self.testCmd,"name":"test command","args":{}},
+                        "echo":{"foo":self.echo,"name":"echo command","args":""}}
     def onAdhocCmd(self,iq):
         pass
     def onDiscoItems(self,iq):
@@ -72,10 +73,13 @@ class pyvktCommands:
     def onDiscoInfo(self,iq):
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
-        cmd=self.cmdList[iq.query["node"]]
+        try:
+            cmd=self.cmdList[iq.query["node"]]
+        except:
+            pass
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
         q["node"]=iq.query["node"]
-        q.addElement("identity").attributes={"name":cmd["name","category":"automation","type":"command-node"]}
+        q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
         q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
         q.addElement("feature")["var"]='jabber:x:data'
         return resp
@@ -83,42 +87,54 @@ class pyvktCommands:
         resp=xmlstream.toResponse(iq)
         node=iq.command["node"]
         try:
-            cmd=self.cmdList[node]
+            cmd=self.cmdList[node]["foo"]
         except KeyError:
             #TODO error stranza
             log.msg("unknown command: %s",node)
         #TODO arguments
-        res=cmd()
+        res=cmd(None)
         resp["type"]="result"
         c=resp.addElement("command",'http://jabber.org/protocol/commands')
         c["node"]=node
-        c["status"]="completed"
+        
+        c["status"]=res["status"]
         c.sessionid="123"
+        
         x=c.addElement("x",'jabber:x:data')
         x["type"]="result"
         try:
             x.addElement("title").addContent(res["title"])
         except:
             x.addElement("title").addContent(u"result")
-            
+        try:
+            fields=res["form"]["fields"]
+            for i in fields:
+                x.addElement("field").attributes={"type":"text-single", 'var':i,'label':i}
+            act=x.addElement("actions")
+            act["execute"]="next"
+            act.addElement("next")
+        except:
+            pass
+        
         return resp
     def onMsg(self,jid,text):
         return "not implemented"
         pass
+    def dataParse(self,elem):
         
     def testCmd(self,arg):
         log.msg("test command")
-        return {"result":1,"title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
+        return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
         pass
+    def echo (self,args):
+        return {"status":"executing","title":u"echo command","form":{"fields":["text"],"next":"echo1"}}
+        pass
+    #sef echo1 (self,args):
+        
 
 
 class pyvk_t(component.Service,vkonClient):
-    """
-    Example XMPP component service using twisted words.
 
-    Basic Echo - We return the xml that is sent us.
-    
-    """
     implements(IService)
 
     def __init__(self):
@@ -401,8 +417,8 @@ class pyvk_t(component.Service,vkonClient):
             #return
         return
     def getsendVcard(self,jid,v_id,iq_id):
-        log.msg(jid)
-        log.msg(v_id)
+        #log.msg(jid)
+        #log.msg(v_id)
         bjid=bareJid(jid)
         try:
             card=self.threads[bjid].getVcard(v_id)
