@@ -73,13 +73,16 @@ class pyvktCommands:
     def onDiscoInfo(self,iq):
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
-        try:
-            cmd=self.cmdList[iq.query["node"]]
-        except:
-            pass
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
         q["node"]=iq.query["node"]
-        q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
+        
+        try:
+            cmd=self.cmdList[iq.query["node"]]
+        
+            q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
+        except:
+            q.addElement("identity").attributes={"name":"unknown","category":"automation","type":"command-node"}
+        # FIXME!!!!!!!
         q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
         q.addElement("feature")["var"]='jabber:x:data'
         return resp
@@ -121,7 +124,7 @@ class pyvktCommands:
         return "not implemented"
         pass
     def dataParse(self,elem):
-        
+        pass
     def testCmd(self,arg):
         log.msg("test command")
         return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
@@ -401,14 +404,14 @@ class pyvk_t(component.Service,vkonClient):
         self.pools[jid]=ThreadPool(1,1)
         self.pools[jid].start()
         log.msg("%s,%s,%s"%(jid,email,pw))
-        log.msg(self.threads)
+        #log.msg(self.threads)
         self.threads[jid].start()
         self.threads[jid].feedOnly=0
     #def usersOnline(self,jid,users):
         #log.msg(users)
     def sendFriendlist(self,fl,jid):
-        log.msg("fiendlist ",jid)
-        log.msg(fl)
+        #log.msg("fiendlist ",jid)
+        #log.msg(fl)
         for f in fl:
             src="%s@%s"%(f,self.jid)
             log.msg(src)
@@ -426,7 +429,7 @@ class pyvk_t(component.Service,vkonClient):
             log.msg("some fcky error")
             return
 
-        log.msg(card)
+        #log.msg(card)
         ans=xmlstream.IQ(self.xmlstream,"result")
         ans["to"]=jid
         ans["from"]="%s@%s"%(v_id,self.jid)
@@ -441,10 +444,10 @@ class pyvk_t(component.Service,vkonClient):
         #log.msg(ans.toXml())
     def requestMessage(self,jid,msgid):
         msg=self.threads[jid].getMessage(msgid)
-        log.msg(msg)
+        #log.msg(msg)
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,msg["text"])
     def submitMessage(self,jid,v_id,body,title):
-        log.msg((jid,v_id,body,title))
+        #log.msg((jid,v_id,body,title))
         try:
             self.threads[jid].sendMessage(to_id=v_id,body=body,title=title)
         except:
@@ -530,7 +533,7 @@ class pyvk_t(component.Service,vkonClient):
         return None
     def sendMessage(self,src,dest,body):
         msg=domish.Element((None,"message"))
-        msg["to"]=dest
+        msg["to"]=unicode(dest)
         msg["from"]=src
         msg["type"]="chat"
         msg["id"]="msg%s"%(int(time.time())%10000)
@@ -542,7 +545,7 @@ class pyvk_t(component.Service,vkonClient):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
-        pr["to"]=dest
+        pr["to"]=unicode(dest)
         pr["from"]=src
         if(status):
             pr.addElement("status").addContent(status)
