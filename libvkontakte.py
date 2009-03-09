@@ -290,9 +290,26 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
         try:
             res=self.opener.open(req)
-            return 1
         except urllib2.HTTPError:
             return 0
+        page=res.read()
+        if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
+            print "message delivered"
+            return 1
+        return 0
+        #try:
+            #if (res.info()["Location"]=='/inbox?sent=1'):
+                #print "message delivered"
+                #return 1
+            #else:
+                #print "not delivered: '%s'"%res.info()["Location"]
+                #return 0
+        #except KeyError:
+            #print "can't find 'Location' header", res.info()
+            #self.dumpString(res.read(),"msg_sent")
+            
+            #return 0
+
         #print res.read()
     def getFriendList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
