@@ -8,7 +8,7 @@ import time
 import twisted
 from twisted.words.protocols.jabber import jid, xmlstream
 from twisted.application import internet, service
-from twisted.internet import interfaces, defer, reactor
+from twisted.internet import interfaces, defer, reactor,threads
 from twisted.python import log
 from twisted.words.xish import domish
 from twisted.words.protocols.jabber.xmlstream import IQ
@@ -47,6 +47,7 @@ class LogService(component.Service):
 
     def rawDataOut(self, buf):
         log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        pass
 
 def bareJid(jid):
     n=jid.find("/")
@@ -229,7 +230,7 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="stats"):
                     ret="%s user(s) online"%len(self.threads)
                     for i in self.threads:
-                        ret=ret+"\n"+i
+                        ret=ret+"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.threads:
@@ -245,8 +246,29 @@ class pyvk_t(component.Service,vkonClient):
                 except:
                     log.msg("bad JID: %s"%msg["to"])
                     return
-                self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
+                req=msg.request
+                if(req==None):
+                    print "legacy message"
+                    self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
+                else:
+                    if (req.uri=='urn:xmpp:receipts'):
+                        d=threads.deferToThreadPool(
+                            reactor=reactor,
+                            threadpool=self.pools[bjid],
+                            f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
+                        d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
+                
             #TODO delivery notification
+    def msgDeliveryNotify(self,res,msg_id,jid,v_id):
+        msg=domish.Element((None,"message"))
+        try:
+            msg["to"]=jid.decode("utf-8")
+        except:
+            msg["to"]=jid
+        msg["from"]="%s@%s"%(v_id,self.jid)
+        msg["id"]=msg_id
+        msg.addElement("received",'urn:xmpp:receipts')
+        self.xmlstream.send(msg)
     def onIq(self, iq):
         """
         Act on the iq stanza that has just been received.
@@ -267,12 +289,18 @@ class pyvk_t(component.Service,vkonClient):
                         self.xmlstream.send(self.commands.onDiscoInfo(iq))
                         return
                     else:
-                        log.msg("info request")
-                        q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
-                        q.addElement("feature")["var"]="jabber:iq:register"
-                        q.addElement("feature")["var"]="jabber:iq:gateway"
-                        q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-                        q.addElement("feature")["var"]="stringprep"
+                        if (iq["to"]==self.jid):
+                            q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
+                            q.addElement("feature")["var"]="jabber:iq:register"
+                            q.addElement("feature")["var"]="jabber:iq:gateway"
+                            q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
+                            q.addElement("feature")["var"]="stringprep"
+                            q.addElement("feature")["var"]="urn:xmpp:receipts"
+                            
+                        else:
+                            q.addElement("identity").attributes={"category":"pubsub","type":"pep"}
+                            q.addElement("feature")["var"]="stringprep"
+                            q.addElement("feature")["var"]="urn:xmpp:receipts"
                         ans.send()
                         return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
@@ -375,7 +403,7 @@ class pyvk_t(component.Service,vkonClient):
         self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
     def login(self,jid):
         # TODO bare jid?
-        if (self.isActive==0):
+        if (self.isActive==0 and bareJid(jid)!=self.admin):
             log.msg("isActive==0, login attempt aborted")
             self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
             return
@@ -533,7 +561,10 @@ class pyvk_t(component.Service,vkonClient):
         return None
     def sendMessage(self,src,dest,body):
         msg=domish.Element((None,"message"))
-        msg["to"]=unicode(dest)
+        try:
+            msg["to"]=dest.decode("utf-8")
+        except:
+            msg["to"]=dest
         msg["from"]=src
         msg["type"]="chat"
         msg["id"]="msg%s"%(int(time.time())%10000)
