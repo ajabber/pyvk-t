@@ -187,11 +187,6 @@ class vkonThread(threading.Thread):
             rc=prof.find(name="div", id="rightColumn")
             lc=prof.find(name="div", id="leftColumn")
             profName=rc.find("div", {"class":"profileName"})
-            #photourl=lc.find(name="img")['src']
-            #req=urllib2.Request(photourl)
-            #res=self.opener.open(req)
-            #photo=base64.b64encode(res.read())
-            #fn=rc.find(name="h2").string.encode("utf-8")
             result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
             list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
             if len(list)==5:
@@ -223,13 +218,11 @@ class vkonThread(threading.Thread):
                     dat=i.find("div",{"class":"dataWrap"})
                     #if there is some data
                     if (label and label.string and dat): 
-                        #if we know how to represent it
-                        #if (Profile2VCARD.has_key(label.string)): 
-                            y=BeautifulSoup(str(dat).replace("\n",""))
-                            for cc in y.findAll(name="br"): cc.replaceWith("\n")
-                            string=unicode(''.join(y.findAll(text=True))).encode("utf-8").strip()
-                            if string: 
-                                result[unicode(label.string)] = string
+                        y=BeautifulSoup(str(dat).replace("\n",""))
+                        for cc in y.findAll(name="br"): cc.replaceWith("\n")
+                        string=unicode(''.join(y.findAll(text=True))).encode("utf-8").strip()
+                        if string: 
+                            result[unicode(label.string)] = string
         except:
             print "cannot parse user data"
         #vcard
