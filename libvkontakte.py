@@ -181,26 +181,26 @@ class vkonThread(threading.Thread):
                 print "vCard retrieve failed\ndumping page..."
                 self.dumpString(page,"vcard_parse_error")
                 return None
-	result = {}
+        result = {}
         try:
             prof=bs.find(name="div", id="userProfile")
             rc=prof.find(name="div", id="rightColumn")
             lc=prof.find(name="div", id="leftColumn")
-	    profName=rc.find("div", {"class":"profileName"})
+            profName=rc.find("div", {"class":"profileName"})
             #photourl=lc.find(name="img")['src']
             #req=urllib2.Request(photourl)
             #res=self.opener.open(req)
             #photo=base64.b64encode(res.read())
             #fn=rc.find(name="h2").string.encode("utf-8")
             result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-	    list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
-	    if len(list)==5:
-		    result['GIVEN']=list[1].strip()
-		    result['NICKNAME']=list[2].strip()
-		    result['FAMILY']=list[3].strip()
-	    elif len(list)==4:
-		    result['GIVEN']=list[1].strip()
-		    result['FAMILY']=list[2].strip()
+            list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
+            if len(list)==5:
+                result['GIVEN']=list[1].strip()
+                result['NICKNAME']=list[2].strip()
+                result['FAMILY']=list[3].strip()
+            elif len(list)==4:
+                result['GIVEN']=list[1].strip()
+                result['FAMILY']=list[2].strip()
         except:
             checkPage()
             try:
@@ -211,40 +211,40 @@ class vkonThread(threading.Thread):
                 print "wrong page format"
                 self.dumpString(page,"vcard_wrong_format")
                 return None
-	#now parsing additional user data
-	#there are several tables
-	try:
-		profTables = rc.findAll(name="table",attrs={"class":"profileTable"})
-		for profTable in profTables:
-			#parse each line of table
-			ptr=profTable.findAll("tr")
-			for i in ptr:
-			    label=i.find("td",{"class":"label"})
-			    dat=i.find("div",{"class":"dataWrap"})
-			    #if there is some data
-			    if (label and label.string and dat): 
-				    #if we know how to represent it
-				    #if (Profile2VCARD.has_key(label.string)): 
-					    y=BeautifulSoup(str(dat).replace("\n",""))
-					    for cc in y.findAll(name="br"): cc.replaceWith("\n")
-					    string=unicode(''.join(y.findAll(text=True))).encode("utf-8").strip()
-					    if string: 
-						    result[unicode(label.string)] = string
-	except:
-		print "cannot parse user data"
-	#vcard
-	try:
+        #now parsing additional user data
+        #there are several tables
+        try:
+            profTables = rc.findAll(name="table",attrs={"class":"profileTable"})
+            for profTable in profTables:
+                #parse each line of table
+                ptr=profTable.findAll("tr")
+                for i in ptr:
+                    label=i.find("td",{"class":"label"})
+                    dat=i.find("div",{"class":"dataWrap"})
+                    #if there is some data
+                    if (label and label.string and dat): 
+                        #if we know how to represent it
+                        #if (Profile2VCARD.has_key(label.string)): 
+                            y=BeautifulSoup(str(dat).replace("\n",""))
+                            for cc in y.findAll(name="br"): cc.replaceWith("\n")
+                            string=unicode(''.join(y.findAll(text=True))).encode("utf-8").strip()
+                            if string: 
+                                result[unicode(label.string)] = string
+        except:
+            print "cannot parse user data"
+        #vcard
+        try:
             photourl=lc.find(name="img")['src']
             req=urllib2.Request(photourl)
             res=self.opener.open(req)
             photo=base64.encodestring(res.read())
-	    result["PHOTO"]=photo
-	except:
-		print 'cannot load avatar'
-	if not result.has_key(u"Веб-сайт:"):
-		result[u"Веб-сайт:"] = "http://vkontakte.ru/id%s"%v_id
-                    
-	return result
+            result["PHOTO"]=photo
+        except:
+            print 'cannot load avatar'
+        if not result.has_key(u"Веб-сайт:"):
+            result[u"Веб-сайт:"] = "http://vkontakte.ru/id%s"%v_id
+                        
+        return result
     def getMessage_old(self,msgid):
         prs=msgPrs()
         
