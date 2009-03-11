@@ -338,12 +338,12 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-                            q.addElement("feature")["var"]="stringprep"
+                            #q.addElement("feature")["var"]="stringprep"
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
                             
                         else:
                             q.addElement("identity").attributes={"category":"pubsub","type":"pep"}
-                            q.addElement("feature")["var"]="stringprep"
+                            #q.addElement("feature")["var"]="stringprep"
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
                         ans.send()
                         return
