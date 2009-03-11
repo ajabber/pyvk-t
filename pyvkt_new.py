@@ -45,6 +45,7 @@ class LogService(component.Service):
 
     def rawDataIn(self, buf):
         log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        pass
 
     def rawDataOut(self, buf):
         log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
@@ -88,7 +89,24 @@ class pyvktCommands:
         q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
         q.addElement("feature")["var"]='jabber:x:data'
         return resp
+    def getXdata(self,elem):
+        log.msg("xdata")
+        log.msg(elem.toXml())
+        x=elem.x
+        ret={}
+        if (x==None):
+            return ret
+        #TODO check namespace
+        for f in x.children:
+            if (f.name=='field'):
+                try:
+                    ret[f['var']]=f.value.children[0]
+                except:
+                    log.msg("bad field: %s"%f.toXml())
+        return ret
     def onIqSet(self,iq):
+        log.msg("cmd")
+        log.msg(iq.toXml())
         resp=xmlstream.toResponse(iq)
         node=iq.command["node"]
         try:
@@ -96,17 +114,25 @@ class pyvktCommands:
         except KeyError:
             #TODO error stranza
             log.msg("unknown command: %s",node)
+            return
+        args=self.getXdata(iq.command)
         #TODO arguments
-        res=cmd(None)
+        res=cmd(sessid=0, args=args,jid=iq["from"])
         resp["type"]="result"
         c=resp.addElement("command",'http://jabber.org/protocol/commands')
         c["node"]=node
-        
         c["status"]=res["status"]
-        c.sessionid="123"
-        
+        c["sessionid"]='0'
+        #c.sessionid="123"
         x=c.addElement("x",'jabber:x:data')
-        x["type"]="result"
+        if (res.has_key("form")):
+            act=c.addElement("actions")
+            act["execute"]="next"
+            act.addElement("next")
+            x["type"]="form"
+            
+        else:
+            x["type"]="result"
         try:
             x.addElement("title").addContent(res["title"])
         except:
@@ -115,9 +141,7 @@ class pyvktCommands:
             fields=res["form"]["fields"]
             for i in fields:
                 x.addElement("field").attributes={"type":"text-single", 'var':i,'label':i}
-            act=x.addElement("actions")
-            act["execute"]="next"
-            act.addElement("next")
+
         except:
             pass
         
@@ -127,12 +151,25 @@ class pyvktCommands:
         pass
     def dataParse(self,elem):
         pass
-    def testCmd(self,arg):
+    def testCmd(self,jid,sessid,args):
         log.msg("test command")
         return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
         pass
-    def echo (self,args):
-        return {"status":"executing","title":u"echo command","form":{"fields":["text"],"next":"echo1"}}
+    def echo (self,jid,sessid,args):
+        log.msg("echo from %s"%jid)
+        log.msg(args)
+        try:
+            self.trans.sendMessage(self.trans.jid,jid,args["text"])
+        except KeyError:
+            try:
+                self.trans.sendMessage(self.trans.jid,jid,args[1])
+            except:
+                return {"status":"executing","title":u"echo command","form":{"fields":["text"],"next":"echo1"}}
+        
+        return {"status":"copleted","title":u"echo command",'message':'completed!'}
+        #try:
+        #except KeyError:
+            #pass
         pass
     #sef echo1 (self,args):
         
@@ -387,20 +424,21 @@ class pyvk_t(component.Service,vkonClient):
                         (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     return
-            if (query.uri=="jabber:iq:gateway"):
-                for prompt in query.elements():
-                    if prompt.name=="prompt":
-                        ans=xmlstream.IQ(self.xmlstream,"result")
-                        ans["to"]=iq["from"]
-                        ans["from"]=iq["to"]
-                        ans["id"]=iq["id"]
-                        q=ans.addElement("query",query.uri)
-                        q.addElement("jid").addContent("%s@%s"%(prompt,iq["to"]))
-                        ans.send()
-                        return
+                if (query.uri=="jabber:iq:gateway"):
+                    for prompt in query.elements():
+                        if prompt.name=="prompt":
+                            ans=xmlstream.IQ(self.xmlstream,"result")
+                            ans["to"]=iq["from"]
+                            ans["from"]=iq["to"]
+                            ans["id"]=iq["id"]
+                            q=ans.addElement("query",query.uri)
+                            q.addElement("jid").addContent("%s@%s"%(prompt,iq["to"]))
+                            ans.send()
+                            return
             cmd=iq.command
             if (cmd):
                 self.xmlstream.send(self.commands.onIqSet(iq))
+                return
         iq = create_reply(iq)
         iq["type"]="error"
         err=iq.addElement("error")
