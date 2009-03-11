@@ -23,6 +23,7 @@ import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
 import sys,os
+
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -322,6 +323,11 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("version").addContent(self.revision)
                     ans.send()
                     return
+	    	elif (query.uri=="jabber:iq:gateway"):
+		    q.addElement("desc").addContent(u"Пожалуйста, введите id ползователя на сайте вконтакте.ру.\nУзнать, какой ID у пользователя Вконтакте можно, например, так:\nЗайдите на его страницу. В адресной строке будет http://vkontakte.ru/profile.php?id=0000000\nЗначит его ID - 0000000")
+		    q.addElement("prompt").addContent("Vkontakte ID")
+                    ans.send()
+		    return
                     
             vcard=iq.vCard
             if (vcard):
@@ -349,6 +355,8 @@ class pyvk_t(component.Service,vkonClient):
                     ans["id"]=iq["id"]
                     q=ans.addElement("vCard","vcard-temp")
                     q.addElement("FN").addContent("vkontakte.ru transport")
+                    q.addElement("URL").addContent("http://pyvk-t.googlecode.com")
+                    q.addElement("DESC").addContent("Vkontakte.ru jabber transport\nVersion: %s"%self.revision)
                     ans.send()
                     return
                     
@@ -373,6 +381,17 @@ class pyvk_t(component.Service,vkonClient):
                         (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     return
+	    	if (query.uri=="jabber:iq:gateway"):
+		    for prompt in query.elements():
+			 if prompt.name=="prompt":
+		            ans=xmlstream.IQ(self.xmlstream,"result")
+		            ans["to"]=iq["from"]
+		            ans["from"]=iq["to"]
+		            ans["id"]=iq["id"]
+		            q=ans.addElement("query",query.uri)
+			    q.addElement("jid").addContent("%s@%s"%(prompt,iq["to"]))
+                            ans.send()
+		    return
             cmd=iq.command
             if (cmd):
                 self.xmlstream.send(self.commands.onIqSet(iq))
@@ -463,11 +482,89 @@ class pyvk_t(component.Service,vkonClient):
         ans["from"]="%s@%s"%(v_id,self.jid)
         ans["id"]=iq_id
         vc=ans.addElement("vCard","vcard-temp")
+	#if some card set
         if (card):
-            if (type(card["fn"]!=unicode)):
-                card["fn"]=card["fn"].decode("utf-8")
-            vc.addElement("NICKNAME").addContent(card["fn"])
-        vc.addElement("URL").addContent("http://vkontakte.ru/id%s"%v_id)
+		#convert to unicode if needed
+		for i in card:
+			if (type(card[i])==type('')):
+				card[i]=card[i].decode("utf-8")
+
+		if card.has_key("NICKNAME"):
+			vc.addElement("NICKNAME").addContent(card["NICKNAME"])
+		if card.has_key("FAMILY") or card.has_key("GIVEN"):
+			n=vc.addElement("N")
+			if card.has_key("FAMILY"):
+				n.addElement("FAMILY").addContent(card["FAMILY"])
+			if card.has_key("GIVEN"):
+				n.addElement("GIVEN").addContent(card["GIVEN"])
+		if card.has_key("FN"):
+			vc.addElement("FN").addContent(card["FN"])
+		if card.has_key(u'Веб-сайт:'):
+			vc.addElement("URL").addContent(card[u"Веб-сайт:"])
+		if card.has_key(u'День рождения:'):
+			vc.addElement("BDAY").addContent(card[u"День рождения:"])
+		#description
+		descr=u""
+		if card.has_key(u"Деятельность:"):
+			descr+=u"Деятельность:\n"
+			descr+=card[u"Деятельность:"]
+			descr+=u"\n\n"
+			pass
+		if card.has_key(u'Интересы:'):
+			descr+=u"Интересы:\n"
+			descr+=card[u"Интересы:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимая музыка:'):
+			descr+=u"Любимая музыка:\n"
+			descr+=card[u"Любимая музыка:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимые фильмы:'):
+			descr+=u"Любимые фильмы:\n"
+			descr+=card[u"Любимые фильмы:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимые телешоу:'):
+			descr+=u"Любимые телешоу:\n"
+			descr+=card[u"Любимые телешоу:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимые книги:'):
+			descr+=u"Любимые книги:\n"
+			descr+=card[u"Любимые книги:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимые игры:'):
+			descr+=u"Любимые игры:\n"
+			descr+=card[u"Любимые игры:"]
+			descr+=u"\n\n"
+		if card.has_key(u'Любимые цитаты:'):
+			descr+=u"Любимые цитаты:\n"
+			descr+=card[u"Любимые цитаты:"]
+			descr+=u"\n\n"
+		if card.has_key(u'О себе:'):
+			if descr: descr+=u"О себе:\n"
+			descr+=card[u"О себе:"]
+			descr+=u"\n\n"
+		descr=descr.strip()
+		if descr:
+			vc.addElement("DESC").addContent(descr)
+		#phone numbers
+		if card.has_key(u'Дом. телефон:'):
+			tel = vc.addElement("TEL")
+			tel.addElement("HOME")
+			tel.addElement("NUMBER").addContent(card[u"Дом. телефон:"])
+		if card.has_key(u'Моб. телефон:'):
+			tel = vc.addElement(u"TEL")
+			tel.addElement("CELL")
+			tel.addElement("NUMBER").addContent(card[u"Моб. телефон:"])
+		#avatar
+		if card.has_key(u'PHOTO'):
+			photo=vc.addElement(u"PHOTO")
+			photo.addElement("TYPE").addContent("image/jpeg")
+			photo.addElement("BINVAL").addContent(card[u"PHOTO"].replace("\n",""))
+		#adress
+		if card.has_key(u'Город:'):
+			vc.addElement(u"ADR").addElement("LOCALITY").addContent(card[u"Город:"])
+
+	else:
+		vc.addElement("URL").addContent("http://vkontakte.ru/id%s"%v_id)
         ans.send()
         #log.msg(ans.toXml())
     def requestMessage(self,jid,msgid):
@@ -580,7 +677,7 @@ class pyvk_t(component.Service,vkonClient):
         pr["from"]=src
         if(status):
             pr.addElement("status").addContent(status)
-        pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"pyvk-t.googlecode.com","ver":self.revision}
+	pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com","ver":self.revision}
         self.xmlstream.send(pr)
         
 
