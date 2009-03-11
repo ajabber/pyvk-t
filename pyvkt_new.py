@@ -253,10 +253,16 @@ class pyvk_t(component.Service,vkonClient):
                     self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
                 else:
                     if (req.uri=='urn:xmpp:receipts'):
-                        d=threads.deferToThreadPool(
-                            reactor=reactor,
-                            threadpool=self.pools[bjid],
-                            f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
+
+                        #old versions of twisted does not have deferToThreadPool function
+                        if hasattr(threads,"deferToThreadPool"):
+                            d=threads.deferToThreadPool(
+                                reactor=reactor,
+                                threadpool=self.pools[bjid],
+                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
+                        else:
+                            d=threads.deferToThread(
+                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -328,6 +334,7 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("prompt").addContent("Vkontakte ID")
                     ans.send()
                     return
+                    
             vcard=iq.vCard
             if (vcard):
                 #log.msg("vcard request")
@@ -483,7 +490,7 @@ class pyvk_t(component.Service,vkonClient):
         vc=ans.addElement("vCard","vcard-temp")
         #if some card set
         if (card):
-        #convert to unicode if needed
+            #convert to unicode if needed
             for i in card:
                 if (type(card[i])==type('')):
                     card[i]=card[i].decode("utf-8")
@@ -503,39 +510,18 @@ class pyvk_t(component.Service,vkonClient):
                 vc.addElement("BDAY").addContent(card[u"День рождения:"])
             #description
             descr=u""
-            if card.has_key(u"Деятельность:"):
-                descr+=u"Деятельность:\n"
-                descr+=card[u"Деятельность:"]
-                descr+=u"\n\n"
-                pass
-            if card.has_key(u'Интересы:'):
-                descr+=u"Интересы:\n"
-                descr+=card[u"Интересы:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимая музыка:'):
-                descr+=u"Любимая музыка:\n"
-                descr+=card[u"Любимая музыка:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимые фильмы:'):
-                descr+=u"Любимые фильмы:\n"
-                descr+=card[u"Любимые фильмы:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимые телешоу:'):
-                descr+=u"Любимые телешоу:\n"
-                descr+=card[u"Любимые телешоу:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимые книги:'):
-                descr+=u"Любимые книги:\n"
-                descr+=card[u"Любимые книги:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимые игры:'):
-                descr+=u"Любимые игры:\n"
-                descr+=card[u"Любимые игры:"]
-                descr+=u"\n\n"
-            if card.has_key(u'Любимые цитаты:'):
-                descr+=u"Любимые цитаты:\n"
-                descr+=card[u"Любимые цитаты:"]
-                descr+=u"\n\n"
+            for x in (u"Деятельность:",
+                      u"Интересы:",
+                      u"Любимая музыка:",
+                      u"Любимые фильмы:",
+                      u"Любимые телешоу:",
+                      u"Любимые книги:",
+                      u"Любимые игры:",
+                      u"Любимые цитаты:"):
+                if card.has_key(x):
+                    descr+=x+u'\n'
+                    descr+=card[x]
+                    descr+=u"\n\n"
             if card.has_key(u'О себе:'):
                 if descr: descr+=u"О себе:\n"
                 descr+=card[u"О себе:"]
@@ -564,16 +550,19 @@ class pyvk_t(component.Service,vkonClient):
             vc.addElement("URL").addContent("http://vkontakte.ru/id%s"%v_id)
         ans.send()
             #log.msg(ans.toXml())
+
     def requestMessage(self,jid,msgid):
         msg=self.threads[jid].getMessage(msgid)
         #log.msg(msg)
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,msg["text"])
+
     def submitMessage(self,jid,v_id,body,title):
         #log.msg((jid,v_id,body,title))
         try:
             self.threads[jid].sendMessage(to_id=v_id,body=body,title=title)
         except:
             print "submit failed"
+
     def onPresence(self, prs):
         """
         Act on the presence stanza that has just been received.
