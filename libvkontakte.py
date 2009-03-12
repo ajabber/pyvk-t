@@ -157,14 +157,17 @@ class vkonThread(threading.Thread):
         page=res.read()
         prs.feed(page)
         return prs.vcard
-    def getVcard(self,v_id):
+    def getVcard(self,v_id, show_avatars=0):
+        '''
+        Parsing of profile page to get info suitable to show in vcard
+        '''
         req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
         try:
             res=self.opener.open(req)
             page=res.read()
         except:
             print "urllib2 exception, possible http error"
-            return {"fn":""}
+            return {"FN":""}
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             #bs=BeautifulSoup(page)
@@ -225,19 +228,22 @@ class vkonThread(threading.Thread):
                             result[unicode(label.string)] = string
         except:
             print "cannot parse user data"
-        #vcard
-        try:
-            photourl=lc.find(name="img")['src']
-            req=urllib2.Request(photourl)
-            res=self.opener.open(req)
-            photo=base64.encodestring(res.read())
-            result["PHOTO"]=photo
-        except:
-            print 'cannot load avatar'
+        #avatars are asked only if needed
+        if show_avatars:
+            try:
+                photourl=lc.find(name="img")['src']
+                req=urllib2.Request(photourl)
+                res=self.opener.open(req)
+                photo=base64.encodestring(res.read())
+                result["PHOTO"]=photo
+            except:
+                print 'cannot load avatar'
+
         if not result.has_key(u"Веб-сайт:"):
             result[u"Веб-сайт:"] = "http://vkontakte.ru/id%s"%v_id
                         
         return result
+
     def getMessage_old(self,msgid):
         prs=msgPrs()
         
@@ -274,6 +280,16 @@ class vkonThread(threading.Thread):
         return {"text":body,"from":from_id,"title":title}
         #print strings
     def sendMessage(self,to_id,body,title="[null]"):
+        """
+        Sends message through website
+        
+        Return value:
+        0   - success
+
+        1   - http error
+        2   - too fast sending
+        -1  - unknown error
+        """
         #prs=chasGetter()
         req=urllib2.Request("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
         try:
@@ -281,7 +297,7 @@ class vkonThread(threading.Thread):
             page=res.read()
         except:
             print "urllib2 exception, possible http error"
-            return 0
+            return 1
             
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
@@ -308,12 +324,15 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
         except urllib2.HTTPError:
-            return 0
+            return 1
         page=res.read()
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
             print "message delivered"
-            return 1
-        return 0
+            return 0
+        elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
+            print "too fast sending messages"
+            return 2
+        return -1
         #try:
             #if (res.info()["Location"]=='/inbox?sent=1'):
                 #print "message delivered"
@@ -326,8 +345,8 @@ class vkonThread(threading.Thread):
             #self.dumpString(res.read(),"msg_sent")
             
             #return 0
-
         #print res.read()
+
     def getFriendList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
         ret=list()

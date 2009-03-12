@@ -311,6 +311,9 @@ class pyvk_t(component.Service,vkonClient):
                 
             #TODO delivery notification
     def msgDeliveryNotify(self,res,msg_id,jid,v_id):
+        """
+        Send delivery notification if message successfully sent
+        """
         msg=domish.Element((None,"message"))
         try:
             msg["to"]=jid.decode("utf-8")
@@ -318,8 +321,21 @@ class pyvk_t(component.Service,vkonClient):
             msg["to"]=jid
         msg["from"]="%s@%s"%(v_id,self.jid)
         msg["id"]=msg_id
-        msg.addElement("received",'urn:xmpp:receipts')
+        if res == 0:
+            msg.addElement("received",'urn:xmpp:receipts')
+        elif res == 2:
+            err = msg.addElement("error")
+            err.attributes["type"]="wait"
+            err.attributes["code"]="400"
+            err.addElement("unexpected-request","urn:ietf:params:xml:ns:xmpp-stanzas")
+            err.addElement("too-many-stanzas","urn:xmpp:errors")
+        else:
+            err = msg.addElement("error")
+            err.attributes["type"]="cancel"
+            err.attributes["code"]="500"
+            err.addElement("undefined-condition","urn:ietf:params:xml:ns:xmpp-stanzas")
         self.xmlstream.send(msg)
+
     def onIq(self, iq):
         """
         Act on the iq stanza that has just been received.
@@ -522,7 +538,7 @@ class pyvk_t(component.Service,vkonClient):
         #log.msg(v_id)
         bjid=bareJid(jid)
         try:
-            card=self.threads[bjid].getVcard(v_id)
+            card=self.threads[bjid].getVcard(v_id, self.show_avatars)
         except:
             log.msg("some fcky error")
             return
