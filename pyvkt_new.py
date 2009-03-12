@@ -88,6 +88,8 @@ class pyvktCommands:
         # FIXME!!!!!!!
         q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
         q.addElement("feature")["var"]='jabber:x:data'
+        q.addElement("feature")["var"]='jabber:iq:version'
+        q.addElement("feature")["var"]='jabber:iq:gateway'
         return resp
     def getXdata(self,elem):
         log.msg("xdata")
@@ -191,6 +193,11 @@ class pyvk_t(component.Service,vkonClient):
             user=config.get("database","user"), 
             passwd=config.get("database","passwd"), 
             db=config.get("database","db"))
+            
+        if config.has_option("features","avatars"):
+            self.show_avatars = config.getboolean("features","avatars")
+        else:
+            self.show_avatars = 0
         self.threads={}
         self.pools={}
         self.usrconf={}
@@ -249,7 +256,7 @@ class pyvk_t(component.Service,vkonClient):
                         d=defer.execute(self.threads[bjid].getFriendList)
                         d.addCallback(self.sendFriendlist,jid=bjid)
                 elif (cmd=="help"):
-                    self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login дла подключения")
+                    self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
                     self.sendMessage(self.jid,msg["from"],self.commands.onMsg(bjid,cmd))
                 return
@@ -577,7 +584,7 @@ class pyvk_t(component.Service,vkonClient):
                 tel.addElement("CELL")
                 tel.addElement("NUMBER").addContent(card[u"Моб. телефон:"])
             #avatar
-            if card.has_key(u'PHOTO'):
+            if card.has_key(u'PHOTO') and self.show_avatars:
                 photo=vc.addElement(u"PHOTO")
                 photo.addElement("TYPE").addContent("image/jpeg")
                 photo.addElement("BINVAL").addContent(card[u"PHOTO"].replace("\n",""))
