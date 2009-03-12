@@ -541,7 +541,7 @@ class pyvk_t(component.Service,vkonClient):
             card=self.threads[bjid].getVcard(v_id, self.show_avatars)
         except:
             log.msg("some fcky error")
-            return
+            card = None
 
         #log.msg(card)
         ans=xmlstream.IQ(self.xmlstream,"result")
@@ -587,6 +587,7 @@ class pyvk_t(component.Service,vkonClient):
                 if descr: descr+=u"О себе:\n"
                 descr+=card[u"О себе:"]
                 descr+=u"\n\n"
+            descr+="http://vkontakte.ru/id%s"%v_id
             descr=descr.strip()
             if descr:
                 vc.addElement("DESC").addContent(descr)
@@ -608,7 +609,7 @@ class pyvk_t(component.Service,vkonClient):
             if card.has_key(u'Город:'):
                 vc.addElement(u"ADR").addElement("LOCALITY").addContent(card[u"Город:"])
         else:
-            vc.addElement("URL").addContent("http://vkontakte.ru/id%s"%v_id)
+            vc.addElement("DESC").addContent("http://vkontakte.ru/id%s"%v_id)
         ans.send()
             #log.msg(ans.toXml())
 
