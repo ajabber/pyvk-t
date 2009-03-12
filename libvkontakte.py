@@ -80,8 +80,8 @@ class vkonThread(threading.Thread):
         if (page.find('<form method="post" name="login" id="login" action="login.php">')!=-1):
             print ("%s: logged out"%self.jid)
             raise authFormError
-        
         return 
+
     def logout(self):
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', USERAGENT)]
@@ -161,8 +161,8 @@ class vkonThread(threading.Thread):
         '''
         Parsing of profile page to get info suitable to show in vcard
         '''
-        req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
         try:
+            req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
             res=self.opener.open(req)
             page=res.read()
         except:
@@ -239,9 +239,6 @@ class vkonThread(threading.Thread):
             except:
                 print 'cannot load avatar'
 
-        if not result.has_key(u"Веб-сайт:"):
-            result[u"Веб-сайт:"] = "http://vkontakte.ru/id%s"%v_id
-                        
         return result
 
     def getMessage_old(self,msgid):
