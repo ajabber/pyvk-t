@@ -23,7 +23,7 @@ import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
 import sys,os
-
+import pyvkt_commands
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -44,11 +44,11 @@ class LogService(component.Service):
         xmlstream.rawDataOutFn = self.rawDataOut
 
     def rawDataIn(self, buf):
-        log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        #log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
     def rawDataOut(self, buf):
-        log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
 def bareJid(jid):
@@ -56,127 +56,6 @@ def bareJid(jid):
     if (n==-1):
         return jid
     return jid[:n]
-    
-class pyvktCommands:
-    def __init__(self,trans):
-        self.trans=trans
-        self.cmdList={"test":{"foo":self.testCmd,"name":"test command","args":{}},
-                        "echo":{"foo":self.echo,"name":"echo command","args":""}}
-    def onAdhocCmd(self,iq):
-        pass
-    def onDiscoItems(self,iq):
-        resp=xmlstream.toResponse(iq)
-        resp["type"]="result"
-        q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
-        q["node"]='http://jabber.org/protocol/commands'
-        for i in self.cmdList:
-            q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":self.cmdList[i]["name"]}
-        return resp
-        pass
-    def onDiscoInfo(self,iq):
-        resp=xmlstream.toResponse(iq)
-        resp["type"]="result"
-        q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
-        q["node"]=iq.query["node"]
-        
-        try:
-            cmd=self.cmdList[iq.query["node"]]
-        
-            q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
-        except:
-            q.addElement("identity").attributes={"name":"unknown","category":"automation","type":"command-node"}
-        # FIXME!!!!!!!
-        q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-        q.addElement("feature")["var"]='jabber:x:data'
-        q.addElement("feature")["var"]='jabber:iq:version'
-        q.addElement("feature")["var"]='jabber:iq:gateway'
-        return resp
-    def getXdata(self,elem):
-        log.msg("xdata")
-        log.msg(elem.toXml())
-        x=elem.x
-        ret={}
-        if (x==None):
-            return ret
-        #TODO check namespace
-        for f in x.children:
-            if (f.name=='field'):
-                try:
-                    ret[f['var']]=f.value.children[0]
-                except:
-                    log.msg("bad field: %s"%f.toXml())
-        return ret
-    def onIqSet(self,iq):
-        log.msg("cmd")
-        log.msg(iq.toXml())
-        resp=xmlstream.toResponse(iq)
-        node=iq.command["node"]
-        try:
-            cmd=self.cmdList[node]["foo"]
-        except KeyError:
-            #TODO error stranza
-            log.msg("unknown command: %s",node)
-            return
-        args=self.getXdata(iq.command)
-        #TODO arguments
-        res=cmd(sessid=0, args=args,jid=iq["from"])
-        resp["type"]="result"
-        c=resp.addElement("command",'http://jabber.org/protocol/commands')
-        c["node"]=node
-        c["status"]=res["status"]
-        c["sessionid"]='0'
-        #c.sessionid="123"
-        x=c.addElement("x",'jabber:x:data')
-        if (res.has_key("form")):
-            act=c.addElement("actions")
-            act["execute"]="next"
-            act.addElement("next")
-            x["type"]="form"
-            
-        else:
-            x["type"]="result"
-        try:
-            x.addElement("title").addContent(res["title"])
-        except:
-            x.addElement("title").addContent(u"result")
-        try:
-            fields=res["form"]["fields"]
-            for i in fields:
-                x.addElement("field").attributes={"type":"text-single", 'var':i,'label':i}
-
-        except:
-            pass
-        
-        return resp
-    def onMsg(self,jid,text):
-        return "not implemented"
-        pass
-    def dataParse(self,elem):
-        pass
-    def testCmd(self,jid,sessid,args):
-        log.msg("test command")
-        return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
-        pass
-    def echo (self,jid,sessid,args):
-        log.msg("echo from %s"%jid)
-        log.msg(args)
-        try:
-            self.trans.sendMessage(self.trans.jid,jid,args["text"])
-        except KeyError:
-            try:
-                self.trans.sendMessage(self.trans.jid,jid,args[1])
-            except:
-                return {"status":"executing","title":u"echo command","form":{"fields":["text"],"next":"echo1"}}
-        
-        return {"status":"copleted","title":u"echo command",'message':'completed!'}
-        #try:
-        #except KeyError:
-            #pass
-        pass
-    #sef echo1 (self,args):
-        
-
-
 class pyvk_t(component.Service,vkonClient):
 
     implements(IService)
@@ -216,11 +95,12 @@ class pyvk_t(component.Service,vkonClient):
             p=s.find(":")
             ver=s[p+1:-1]
             self.revision="svn rev. %s"%ver
-        self.commands=pyvktCommands(self)
+        #self.commands=pyvktCommands(self)
+        self.commands=pyvkt_commands.cmdManager(self)
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=1
+        self.isActive=0
         #self.commands=
         # FIXME 
     def componentConnected(self, xmlstream):
