@@ -5,9 +5,15 @@ secret: someverylongpassphrasefortransport
 port: 5349
 # JID админа, ему доступны дополнительные команды
 admin: admin@example.su
+
 [database]
 module: MySQLdb
 host: db.example.su
 user: dbuser
 passwd: dbpassword
 db: dbname
+
+#всякие дополнительные фичи
+[features]
+#отображение аватарок. Разкомментируйте для включения
+#avatars: true
