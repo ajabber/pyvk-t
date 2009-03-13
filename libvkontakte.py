@@ -9,11 +9,11 @@ from htmlentitydefs import name2codepoint
 from cookielib import Cookie
 from urllib import urlencode
 from BeautifulSoup import BeautifulSoup,SoupStrainer
-
+from os import environ
 import demjson
 import re
 import base64
-
+import ConfigParser,os
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
 
@@ -43,11 +43,24 @@ class vkonThread(threading.Thread):
     error=0
     def __init__(self,cli,jid,email,passw):
         threading.Thread.__init__(self,target=self.loop)
+        config = ConfigParser.ConfigParser()
+        confName="pyvk-t_new.cfg"
+        if(os.environ.has_key("PYVKT_CONFIG")):
+            confName=os.environ["PYVKT_CONFIG"]
+        config.read(confName)
+        self.config=config
+        
         global opener
         self.jid=jid
         cjar=cookielib.FileCookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         cjar.clear()
+        try:
+            
+            self.dumpPath=config.get("debug","dump_path")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "debug/dump_path isn't set. disabling dumps"
+            self.dumpPath=None
         authData={'email':email, 'pass':passw}
         params=urllib.urlencode(authData)
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
@@ -107,6 +120,7 @@ class vkonThread(threading.Thread):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
         if (res==None):
             print "wrong page format: can't fing <script>"
+            self.checkPage(page)
             self.dumpString(page,"script")
             return []
         tag=page[res.start():res.end()]
@@ -115,9 +129,7 @@ class vkonThread(threading.Thread):
             if (tag.find("list:[],")!=-1):
                 return []
             print "wrong page format: can't fing 'list:''"
-            if (self.chechBan):
-                print "we are banned"
-                raise tooFastError
+            self.checkPage(page)
             self.dumpString(page,"script")
             self.dumpString(tag,"script_list")
             
@@ -144,7 +156,10 @@ class vkonThread(threading.Thread):
             return list()
         return self.flParse(page)
     def dumpString(self,string,fn=""):
-        fname="%s-%s"%(int(time.time()),fn)
+        if (self.dumpPath==None or self.dumpPath==''):
+            print "dump disabled"
+            return
+        fname="%s/%s-%s"%(self.dumpPath,int(time.time()),fn)
         fil=open(fname,"w")
         fil.write(string)
         fil.close()
@@ -240,6 +255,25 @@ class vkonThread(threading.Thread):
                 print 'cannot load avatar'
 
         return result
+    def setStatus(self,text):
+        req=urllib2.Request("http://wap.vkontakte.ru/status")
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
+        hashfield=bs.find("postfield",attrs={'name':'activityhash'})
+        if (hashfield==None):
+            print page
+            return
+        ahash=hashfield["value"]
+        dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
+        req=urllib2.Request("http://wap.vkontakte.ru/setstatus?pda=1",urlencode(dat))
+        try:
+            res=self.opener.open(req)
+        except urllib2.HTTPError:
+            return 1
 
     def getMessage_old(self,msgid):
         prs=msgPrs()

@@ -1,18 +1,50 @@
 # -*- coding: utf-8 -*-
 from twisted.words.protocols.jabber import jid, xmlstream
-
+from twisted.internet.defer import waitForDeferred
+#from pyvkt_new import bareJid
+def bareJid(jid):
+    n=jid.find("/")
+    if (n==-1):
+        return jid
+    return jid[:n]
 class cmdManager:
     def __init__(self,trans):
         self.trans=trans
-        self.cmdList={"test":basicCommand(trans),"echo":echoCmd(trans)}
+        self.cmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
     def onMsg(self,jid,text):
         #return "not implemented"
-        
-        args=text.split(",")
-        node=args.pop(0)
+        cl=text.find(" ")
+        if (cl==-1):
+            args=[]
+            node=text
+        else:
+            args=text[cl+1:].split(",")
+            node=text[:cl]
+        if (node=='list'):
+            return repr(self.cmdList.keys())
         ret="command: '%s', args: %s"%(node,repr(args))
+        if (self.cmdList.has_key(node)):
+            cmd=self.cmdList[node]
+            ar=self.assignArgs(cmd,args)
+            print jid
+            print "command: '%s', args: %s"%(node,repr(ar))
+            
+            res=cmd.run(jid,ar)
+            print "cmd done"
+            ret="[%s]\n%s"%(res["title"],res["message"])
+        else:
+            return "unknown command: %s"%node
         return ret
         pass
+    def assignArgs(self,cmd,args):
+        ret={}
+        for i in cmd.args:
+            try:
+                ret[cmd.args[i]]=args[i]
+            except IndexError:
+                print("args error")
+                return {}
+        return ret
     def onIqSet(self,iq):
         node=iq.command["node"]
         if (self.cmdList.has_key(node)):
@@ -44,6 +76,10 @@ class cmdManager:
             except:
                 x.addElement("title").addContent(u"result")
             try:
+                x.addElement("instructions").addContent(res["message"])
+            except:
+                pass
+            try:
                 fields=res["form"]["fields"]
                 for i in fields:
                     x.addElement("field").attributes={"type":"text-single", 'var':i,'label':i}
@@ -63,7 +99,7 @@ class cmdManager:
             return ret
         #TODO check namespace
         for f in x.children:
-            if (f.name=='field'):
+            if (type(f)!=unicode and f.name=='field'):
                 try:
                     ret[f['var']]=f.value.children[0]
                 except:
@@ -74,7 +110,7 @@ class cmdManager:
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
-        q.command["node"]=iq.query["node"]
+        q["node"]=iq.query["node"]
         
         try:
             cmd=self.cmdList[iq.query["node"]]
@@ -100,7 +136,6 @@ class basicCommand:
     name="basic commnd"
     def __init__(self,trans):
         self.trans=trans
-    
     def onMsg(self,jid,text):
         #return "not implemented"
         args=text.split(",")
@@ -112,10 +147,9 @@ class basicCommand:
         return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
 class echoCmd(basicCommand):
     name="echo command"
-    args={1:"text"}
+    args={0:"text"}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
-    
     def run(self,jid,args,sessid="0"):
         print("echo from %s"%jid)
         print(args)
@@ -126,6 +160,27 @@ class echoCmd(basicCommand):
                 self.trans.sendMessage(self.trans.jid,jid,args[1])
             except:
                 return {"status":"executing","title":u"echo command","form":{"fields":["text"]}}
-        
         return {"status":"copleted","title":u"echo command",'message':'completed!'}
-
+class setStatusCmd(basicCommand):
+    name=u"Задать статус"
+    args={0:"text"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0"):
+        print("echo from %s"%jid)
+        bjid=bareJid(jid)
+        print(args)
+        if (args.has_key("text")):
+            print ("setting status...")
+            #FIXME "too fast" safe!!!
+            if (self.trans.threads.has_key(bjid)):
+                print ("setting status...")
+                self.trans.threads[bjid].setStatus(args["text"])
+                print ("done")
+            else:
+                #print ("done")
+                return {"status":"copleted","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+            print ("done")
+        else:
+            return {"status":"executing","title":u"Установка статуса","form":{"fields":["text"]},'message':u'Введите статус'}
+        return {"status":"copleted","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
