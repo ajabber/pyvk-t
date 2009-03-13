@@ -24,6 +24,7 @@ from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
 import sys,os
 import pyvkt_commands
+
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -100,7 +101,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=1
+        self.isActive=0
         #self.commands=
         # FIXME 
     def componentConnected(self, xmlstream):
@@ -144,7 +145,7 @@ class pyvk_t(component.Service,vkonClient):
 
             if (body[0:1]=="#" and bjid==self.admin):
                 # admin commands
-                cmd=body[1:].decode('utf-8')
+                cmd=body[1:]
                 
                 log.msg("admin command: '%s'"%cmd)
                 if (cmd=="stop"):
@@ -195,10 +196,7 @@ class pyvk_t(component.Service,vkonClient):
         Send delivery notification if message successfully sent
         """
         msg=domish.Element((None,"message"))
-        try:
-            msg["to"]=jid.decode("utf-8")
-        except:
-            msg["to"]=jid
+        msg["to"]=jid
         msg["from"]="%s@%s"%(v_id,self.jid)
         msg["id"]=msg_id
         if res == 0:
@@ -569,9 +567,9 @@ class pyvk_t(component.Service,vkonClient):
             self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
     def threadError(self,jid,err):
         if (err=="banned"):
-            self.sendMessage(self.jid,jid,"Слишком много запросов однотипных страниц.\nКонтакт частично заблокировал доступ на 10-15 минут. На всякий случай, транспорт отключается")
+            self.sendMessage(self.jid,jid,u"Слишком много запросов однотипных страниц.\nКонтакт частично заблокировал доступ на 10-15 минут. На всякий случай, транспорт отключается")
         elif(err=="auth"):
-            self.sendMessage(self.jid,jid,"Ошибка входа. Возможно, неправильный логин/пароль.")
+            self.sendMessage(self.jid,jid,u"Ошибка входа. Возможно, неправильный логин/пароль.")
         try:
             self.threads[jid].exit()
             del self.threads[jid]
@@ -596,14 +594,15 @@ class pyvk_t(component.Service,vkonClient):
         return None
     def sendMessage(self,src,dest,body):
         msg=domish.Element((None,"message"))
-        try:
-            msg["to"]=dest.encode("utf-8")
-        except:
-            log.msg("sendMessage: possible charset error")
-            msg["to"]=dest
+        #try:
+            #msg["to"]=dest.encode("utf-8")
+        #except:
+            #log.msg("sendMessage: possible charset error")
+        msg["to"]=dest
         msg["from"]=src
         msg["type"]="chat"
         msg["id"]="msg%s"%(int(time.time())%10000)
+        
         msg.addElement("body").addContent(body)
         
         #FIXME "id"???
@@ -612,11 +611,11 @@ class pyvk_t(component.Service,vkonClient):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
-        try:
-            pr["to"]=dest.encode("utf-8")
-        except:
-            log.msg("sendPresence: possible charset error")
-            pr["to"]=dest
+        #try:
+        pr["to"]=dest.encode("utf-8")
+        #except:
+            #log.msg("sendPresence: possible charset error")
+            #pr["to"]=dest
         pr["from"]=src
         if(status):
             pr.addElement("status").addContent(status)
