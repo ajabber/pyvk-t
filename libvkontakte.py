@@ -403,9 +403,10 @@ class vkonThread(threading.Thread):
                 except tooFastError:
                     self.client.threadError(self.jid,"banned")
                     time.sleep(100)
-                except loginFormError:
-                    self.client.threadError(self.jid,"auth")
-                    self.client.usersOffline(self.onlineList)
+                except authFormError:
+                    if (self.alive):
+                        self.client.threadError(self.jid,"auth")
+                    self.client.usersOffline(self.jid,self.onlineList)
                     return
                     
             #print tonline,self.onlineList

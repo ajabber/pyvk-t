@@ -11,8 +11,14 @@ class cmdManager:
     def __init__(self,trans):
         self.trans=trans
         self.cmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
-    def onMsg(self,jid,text):
+        self.transportCmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans),
+            "login":loginCmd(trans),"logout":logoutCmd(trans)}
+        self.contactCmdList={}
+        self.adminCmdList={}
+        self.admin=trans.admin
+    def onMsg(self,jid,text,to_id=0):
         #return "not implemented"
+        cmdList=self.transportCmdList
         cl=text.find(" ")
         if (cl==-1):
             args=[]
@@ -21,10 +27,10 @@ class cmdManager:
             args=text[cl+1:].split(",")
             node=text[:cl]
         if (node=='list'):
-            return repr(self.cmdList.keys())
+            return repr(cmdList.keys())
         ret="command: '%s', args: %s"%(node,repr(args))
-        if (self.cmdList.has_key(node)):
-            cmd=self.cmdList[node]
+        if (cmdList.has_key(node)):
+            cmd=cmdList[node]
             ar=self.assignArgs(cmd,args)
             print jid
             print "command: '%s', args: %s"%(node,repr(ar))
@@ -47,13 +53,14 @@ class cmdManager:
         return ret
     def onIqSet(self,iq):
         node=iq.command["node"]
-        if (self.cmdList.has_key(node)):
+        cmdList=self.transportCmdList
+        if (cmdList.has_key(node)):
             if (iq.command.x!=None):
                 args=self.getXdata(iq.command.x)
             else:
                 print "empty "
                 args={}
-            cmd=self.cmdList[node]
+            cmd=cmdList[node]
             
             res=cmd.run(iq["from"],args,0)
             resp=xmlstream.toResponse(iq)
@@ -111,9 +118,11 @@ class cmdManager:
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
         q["node"]=iq.query["node"]
-        
+        cmdList={}
+        if (iq["to"]==self.trans.jid):
+            cmdList=self.transportCmdList
         try:
-            cmd=self.cmdList[iq.query["node"]]
+            cmd=cmdList[iq.query["node"]]
         
             q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
         except:
@@ -124,13 +133,15 @@ class cmdManager:
         return resp
         pass
     def onDiscoItems(self,iq):
-        
+        cmdList={}
+        if (iq["to"]==self.trans.jid):
+            cmdList=self.transportCmdList
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
         q["node"]='http://jabber.org/protocol/commands'
-        for i in self.cmdList:
-            q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":self.cmdList[i].name}
+        for i in cmdList:
+            q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":cmdList[i].name}
         return resp
 class basicCommand:
     name="basic commnd"
@@ -142,7 +153,7 @@ class basicCommand:
         ret="command: '%s', args: %s"%(node,repr(args))
         return ret
         pass
-    def run(self,jid,args,sessid="0"):
+    def run(self,jid,args,sessid="0",to_id=0):
         print "basic command: fogm %s with %s"%(jid,repr(args))
         return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
 class echoCmd(basicCommand):
@@ -150,7 +161,7 @@ class echoCmd(basicCommand):
     args={0:"text"}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
-    def run(self,jid,args,sessid="0"):
+    def run(self,jid,args,sessid="0",to_id=0):
         print("echo from %s"%jid)
         print(args)
         try:
@@ -166,7 +177,7 @@ class setStatusCmd(basicCommand):
     args={0:"text"}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
-    def run(self,jid,args,sessid="0"):
+    def run(self,jid,args,sessid="0",to_id=0):
         print("echo from %s"%jid)
         bjid=bareJid(jid)
         print(args)
@@ -184,3 +195,22 @@ class setStatusCmd(basicCommand):
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":["text"]},'message':u'Введите статус'}
         return {"status":"copleted","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
+class loginCmd(basicCommand):
+    name=u"Подключиться"
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=bareJid(jid)
+        self.trans.login(bjid)
+        return {"status":"copleted","title":u"Подключение",'message':u'Производится подключение...'}
+class logoutCmd(basicCommand):
+    name=u"Отключиться"
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=bareJid(jid)
+        self.trans.logout(bjid)
+        return {"status":"copleted","title":u"Отключение",'message':u'Производится отключение...'}
+        
