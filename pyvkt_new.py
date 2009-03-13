@@ -129,9 +129,9 @@ class pyvk_t(component.Service,vkonClient):
             if (body[0:1]=="/"):
                 cmd=body[1:]
                 log.msg(cmd.encode("utf-8"))
-                if (cmd=="login"):
-                    self.login(bjid)
-                elif (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
+                #if (cmd=="login"):
+                    #self.login(bjid)
+                if (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
                     d=defer.execute(self.threads[bjid].getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
                 elif (cmd=="help"):
@@ -242,11 +242,11 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("feature")["var"]="jabber:iq:gateway"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             #q.addElement("feature")["var"]="stringprep"
-                            q.addElement("feature")["var"]="urn:xmpp:receipts"
-                            
+                            #q.addElement("feature")["var"]="urn:xmpp:receipts"
                         else:
                             q.addElement("identity").attributes={"category":"pubsub","type":"pep"}
                             #q.addElement("feature")["var"]="stringprep"
+                            q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
                         ans.send()
                         return
@@ -378,7 +378,7 @@ class pyvk_t(component.Service,vkonClient):
             return
         self.threads[jid]=0
         mq="SELECT * FROM users WHERE jid='%s'"%safe(bareJid(jid))
-        #log.msg(mq)
+        log.msg(mq)
         q=self.dbpool.runQuery(mq)
         q.addCallback(self.login1)
         pass
@@ -394,6 +394,22 @@ class pyvk_t(component.Service,vkonClient):
     def loginFailed(self,data,jid):
         msg.log("login failed for %s"%jid)
         del self.threads[jid]
+    def logout(self,bjid):
+        try:
+            defer.execute(self.threads[bjid].logout).addCallback(self.delThread,bjid=bjid)
+        except KeyError:
+            pass
+        try:
+            self.pools[jid].stop()
+            del self.pools[jid]
+        except KeyError:
+            pass
+        try:
+            del self.usrconf[bjid]
+        except KeyError:
+            pass
+    def delThread(self,v,bjid):
+        del self.threads[bjid]
     def createThread(self,jid,email,pw):
         self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
         self.pools[jid]=ThreadPool(1,1)
@@ -513,14 +529,7 @@ class pyvk_t(component.Service,vkonClient):
         jid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if (prs["type"]=="unavailable"):
-                try:
-                    self.threads[jid].exit()
-                    del self.threads[jid]
-                    self.pools[jid].stop()
-                    del self.pools[jid]
-                except:
-                    log.msg("logout fail")
-                    pass
+                self.logout(bjid=jid)
                 #FIXME
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
@@ -588,8 +597,9 @@ class pyvk_t(component.Service,vkonClient):
     def sendMessage(self,src,dest,body):
         msg=domish.Element((None,"message"))
         try:
-            msg["to"]=dest.decode("utf-8")
+            msg["to"]=dest.encode("utf-8")
         except:
+            log.msg("sendMessage: possible charset error")
             msg["to"]=dest
         msg["from"]=src
         msg["type"]="chat"
@@ -602,7 +612,11 @@ class pyvk_t(component.Service,vkonClient):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
-        pr["to"]=unicode(dest)
+        try:
+            pr["to"]=dest.encode("utf-8")
+        except:
+            log.msg("sendPresence: possible charset error")
+            pr["to"]=dest
         pr["from"]=src
         if(status):
             pr.addElement("status").addContent(status)
