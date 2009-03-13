@@ -100,7 +100,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=0
+        self.isActive=1
         #self.commands=
         # FIXME 
     def componentConnected(self, xmlstream):
@@ -131,14 +131,15 @@ class pyvk_t(component.Service,vkonClient):
                 log.msg(cmd.encode("utf-8"))
                 if (cmd=="login"):
                     self.login(bjid)
-                elif (self.threads.has_key(bjid) and self.threads[bjid]):
-                    if (cmd=="get roster"):
-                        d=defer.execute(self.threads[bjid].getFriendList)
-                        d.addCallback(self.sendFriendlist,jid=bjid)
+                elif (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
+                    d=defer.execute(self.threads[bjid].getFriendList)
+                    d.addCallback(self.sendFriendlist,jid=bjid)
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
-                    self.sendMessage(self.jid,msg["from"],self.commands.onMsg(bjid,cmd))
+                    d=threads.deferToThread(f=self.commands.onMsg,jid=bjid,text=cmd)
+                    cb=lambda (x):self.sendMessage(self.jid,msg["from"],x)
+                    d.addCallback(cb)
                 return
 
             if (body[0:1]=="#" and bjid==self.admin):
@@ -185,8 +186,7 @@ class pyvk_t(component.Service,vkonClient):
                                 threadpool=self.pools[bjid],
                                 f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
                         else:
-                            d=threads.deferToThread(
-                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
+                            d=threads.deferToThread(f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -340,7 +340,8 @@ class pyvk_t(component.Service,vkonClient):
                             return
             cmd=iq.command
             if (cmd):
-                self.xmlstream.send(self.commands.onIqSet(iq))
+                d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
+                d.addCallback(self.xmlstream.send)
                 return
         iq = create_reply(iq)
         iq["type"]="error"
@@ -377,7 +378,7 @@ class pyvk_t(component.Service,vkonClient):
             return
         self.threads[jid]=0
         mq="SELECT * FROM users WHERE jid='%s'"%safe(bareJid(jid))
-        log.msg(mq)
+        #log.msg(mq)
         q=self.dbpool.runQuery(mq)
         q.addCallback(self.login1)
         pass
@@ -387,7 +388,7 @@ class pyvk_t(component.Service,vkonClient):
         try:
             self.usrconf[t[0]]=t[3]
         except:
-            log.msg("config field not found! please? add it to your database (see pyvk-t_new.sql for details)")
+            log.msg("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
             self.usrconf[t[0]]=None
         self.sendPresence(self.jid,data[0][0])
     def loginFailed(self,data,jid):
@@ -397,7 +398,7 @@ class pyvk_t(component.Service,vkonClient):
         self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
         self.pools[jid]=ThreadPool(1,1)
         self.pools[jid].start()
-        log.msg("%s,%s,%s"%(jid,email,pw))
+        #log.msg("%s,%s,%s"%(jid,email,pw))
         #log.msg(self.threads)
         self.threads[jid].start()
         self.threads[jid].feedOnly=0
