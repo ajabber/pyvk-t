@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 from twisted.words.protocols.jabber import jid, xmlstream
 from twisted.internet.defer import waitForDeferred
+try:
+    from twisted.internet.threads import deferToThreadPool
+except:
+    from pyvkt_spikes import deferToThreadPool
 #from pyvkt_new import bareJid
 def bareJid(jid):
     n=jid.find("/")
@@ -16,12 +20,29 @@ class cmdManager:
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
                 "logout":logoutCmd(trans)}
-        self.contactCmdList={}
+        self.contactCmdList={"history":getHistioryCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
-    def onMsg(self,jid,text,to_id=0):
+    def makeCmdList(self,s_jid,v_id):
+        ret={}
+        bjid=bareJid(s_jid)
+        print bjid,v_id
+        if (v_id==0):
+            for i in self.transportCmdList:
+                ret[i]=self.transportCmdList[i]
+            if (bjid==self.admin):
+                for i in self.adminCmdList:
+                    ret[i]=self.adminCmdList[i]
+        else:
+            for i in self.contactCmdList:
+                ret[i]=self.contactCmdList[i]
+        print ret
+        return ret
+    def onMsg(self,jid,text,v_id=0):
+        print "command:", text
         #return "not implemented"
-        cmdList=self.transportCmdList
+        #cmdList=self.transportCmdList
+        cmdList=self.makeCmdList(jid,v_id)
         cl=text.find(" ")
         if (cl==-1):
             args=[]
@@ -34,13 +55,13 @@ class cmdManager:
         ret="command: '%s', args: %s"%(node,repr(args))
         if (cmdList.has_key(node)):
             cmd=cmdList[node]
-            ar=self.assignArgs(cmd,args)
+            ar=self.assignArgs(cmd,args,)
             print jid
             print "command: '%s', args: %s"%(node,repr(ar))
             
-            res=cmd.run(jid,ar)
+            res=cmd.run(jid,ar,to_id=v_id)
             print "cmd done"
-            ret="[%s]\n%s"%(res["title"],res["message"])
+            ret="[cmd:%s]\n%s"%(res["title"],res["message"])
         else:
             return "unknown command: %s"%node
         return ret
@@ -56,7 +77,9 @@ class cmdManager:
         return ret
     def onIqSet(self,iq):
         node=iq.command["node"]
-        cmdList=self.transportCmdList
+        v_id=self.trans.jidToId(iq["to"])
+        cmdList=self.makeCmdList(iq["from"],v_id)
+        #cmdList=self.transportCmdList
         if (cmdList.has_key(node)):
             if (iq.command.x!=None):
                 args=self.getXdata(iq.command.x)
@@ -65,7 +88,7 @@ class cmdManager:
                 args={}
             cmd=cmdList[node]
             
-            res=cmd.run(iq["from"],args,0)
+            res=cmd.run(iq["from"],args,to_id=v_id)
             resp=xmlstream.toResponse(iq)
             resp["type"]="result"
             c=resp.addElement("command",'http://jabber.org/protocol/commands')
@@ -117,13 +140,15 @@ class cmdManager:
         print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
+        v_id=self.trans.jidToId(iq["to"])
+        cmdList=self.makeCmdList(iq["from"],v_id)
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
         q["node"]=iq.query["node"]
         cmdList={}
-        if (iq["to"]==self.trans.jid):
-            cmdList=self.transportCmdList
+        #if (iq["to"]==self.trans.jid):
+            #cmdList=self.transportCmdList
         try:
             cmd=cmdList[iq.query["node"]]
         
@@ -137,8 +162,10 @@ class cmdManager:
         pass
     def onDiscoItems(self,iq):
         cmdList={}
-        if (iq["to"]==self.trans.jid):
-            cmdList=self.transportCmdList
+        #if (iq["to"]==self.trans.jid):
+            #cmdList=self.transportCmdList
+        v_id=self.trans.jidToId(iq["to"])
+        cmdList=self.makeCmdList(iq["from"],v_id)
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
@@ -216,4 +243,20 @@ class logoutCmd(basicCommand):
         bjid=bareJid(jid)
         self.trans.logout(bjid)
         return {"status":"copleted","title":u"Отключение",'message':u'Производится отключение...'}
-        
+class getHistioryCmd(basicCommand):
+    name=u"История переписки"
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=bareJid(jid)
+        if (to_id==0):
+            print "where is id???"
+            return {"status":"copleted","title":self.name,'message':u'ПукЪ'}
+        hist=self.trans.threads[bjid].getHistory(to_id)
+        msg=u''
+        for t,m in hist:
+            msg=u'%s\n%s: %s'%(msg,t,m)
+        #print msg
+        return {"status":"copleted","title":self.name,'message':msg}
+

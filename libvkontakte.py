@@ -176,20 +176,25 @@ class vkonThread(threading.Thread):
         prs.feed(page)
         return prs.vcard
     def getHistory(self,v_id):
-        req=urllib2.Request("http://vkontakte.ru/mail.php?act=history&offset=-1&mid=%s"%v_id)
+        req=urllib2.Request("http://vkontakte.ru/mail.php?act=history&mid=%s"%v_id)
         res=self.opener.open(req)
         page=res.read()
         #print page
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         msgs=bs.findAll("tr",attrs={"class":"message_shown"})
+        ret=[]
         for i in msgs:
             #print i["id"]
             if (i["id"][:16]=="message_outgoing"):
-                print "->"
+                t=u'out'
             else:
-                print "<-"
-                
-            print i.div
+                t=u'in'
+            m=u''
+            for j in i.div.contents:
+                m=m+unicode(j)
+            ret.append((t,m.replace('<br />','\n')))
+        #ret=ret.replace('<br />','\n')
+        return ret
     def getVcard(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
