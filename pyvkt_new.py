@@ -24,7 +24,6 @@ from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
 import sys,os
 import pyvkt_commands
-
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -81,6 +80,7 @@ class pyvk_t(component.Service,vkonClient):
         self.threads={}
         self.pools={}
         self.usrconf={}
+        self.locks={}
         try:
             self.admin=config.get("general","admin")
         except:
@@ -101,7 +101,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=0
+        self.isActive=1
         #self.commands=
         # FIXME 
     def componentConnected(self, xmlstream):
@@ -155,9 +155,9 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="start"):
                     self.isActive=1
                 elif (cmd=="stats"):
-                    ret="%s user(s) online"%len(self.threads)
+                    ret=u"%s user(s) online"%len(self.threads)
                     for i in self.threads:
-                        ret=ret+"\nxmpp:%s"%i
+                        ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.threads:
@@ -374,7 +374,9 @@ class pyvk_t(component.Service,vkonClient):
             return
         if (self.threads.has_key(jid)):
             return
-        self.threads[jid]=0
+        if (self.locks.has_key(jid)):
+            return
+        self.locks[jid]=1
         mq="SELECT * FROM users WHERE jid='%s'"%safe(bareJid(jid))
         log.msg(mq)
         q=self.dbpool.runQuery(mq)
@@ -410,6 +412,7 @@ class pyvk_t(component.Service,vkonClient):
         del self.threads[bjid]
     def createThread(self,jid,email,pw):
         self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
+        del self.locks[jid]
         self.pools[jid]=ThreadPool(1,1)
         self.pools[jid].start()
         #log.msg("%s,%s,%s"%(jid,email,pw))
@@ -606,13 +609,22 @@ class pyvk_t(component.Service,vkonClient):
         msg.addElement("body").addContent(body)
         
         #FIXME "id"???
-        self.xmlstream.send(msg)
+        try:
+            self.xmlstream.send(msg)
+        except UnicodeDecodeError:
+            #FIXME user notify
+            log.msg("unicode bug@sendMessage")
+            try:
+                print "jid: "%dest
+            except:
+                pass
+            pass
     def sendPresence(self,src,dest,t=None,extra=None,status=None):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
         #try:
-        pr["to"]=dest.encode("utf-8")
+        pr["to"]=dest
         #except:
             #log.msg("sendPresence: possible charset error")
             #pr["to"]=dest
@@ -620,6 +632,14 @@ class pyvk_t(component.Service,vkonClient):
         if(status):
             pr.addElement("status").addContent(status)
         pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com","ver":self.revision}
-        self.xmlstream.send(pr)
+        try:
+            self.xmlstream.send(pr)
+        except UnicodeDecodeError:
+            log.msg("unicode bug@sendPresence")
+            try:
+                print "jid: "%dest
+            except:
+                pass
+            pass
         
 
