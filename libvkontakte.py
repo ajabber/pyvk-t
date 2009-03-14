@@ -273,6 +273,53 @@ class vkonThread(threading.Thread):
                 print 'cannot load avatar'
 
         return result
+    def searchUsers(self, text):
+        '''
+        Searches 10 users using simplesearch template
+        '''
+        if type(text)!=type(u''):
+            text=text.decode("utf-8")
+        text=text.encode("cp1251")
+
+        data={'act':"quick", 'n':"0","q":text}
+        params=urllib.urlencode(data)
+
+        try:
+            req=urllib2.Request("http://vkontakte.ru/search.php?%s"%params)
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return None
+        try:
+            bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+            #bs=BeautifulSoup(page)
+        except:
+            print "parse error\ntrying to filter bad entities..."
+            page2=re.sub("&#x.{1,5}?;","",page)
+            m1=page2.find("<!-- End pageBody -->") 
+            m2=page2.find("<!-- End bFooter -->") 
+            if (m1 and m2):
+                page2=page2[:m1]+page2[m2:] 
+            try:
+                bs=BeautifulSoup(page2,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+            except:
+                print "search page parse error"
+                self.dumpString(page,"search_parse_error")
+                return None
+        result = {}
+        try:
+            content=bs.find(name="div", id="content")
+            for i in content.findAll(name="div",attrs={'class':'info'}):
+                    if i['id'][4:]:
+                        name=i.find(name='div')
+                        result[i['id'][4:]]=''.join(name.findAll(text=True)).strip()
+        except:
+            print "wrong page format"
+            self.dumpString(page,"search_wrong_format")
+            return None
+        return result
+
     def setStatus(self,text):
         req=urllib2.Request("http://wap.vkontakte.ru/status")
         try:

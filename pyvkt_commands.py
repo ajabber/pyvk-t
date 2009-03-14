@@ -11,8 +11,11 @@ class cmdManager:
     def __init__(self,trans):
         self.trans=trans
         self.cmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
-        self.transportCmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans),
-            "login":loginCmd(trans),"logout":logoutCmd(trans)}
+        self.transportCmdList={"test":basicCommand(trans),
+                "echo":echoCmd(trans),
+                'setstatus':setStatusCmd(trans),
+                "login":loginCmd(trans),
+                "logout":logoutCmd(trans)}
         self.contactCmdList={}
         self.adminCmdList={}
         self.admin=trans.admin

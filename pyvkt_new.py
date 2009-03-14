@@ -66,12 +66,24 @@ class pyvk_t(component.Service,vkonClient):
         if(os.environ.has_key("PYVKT_CONFIG")):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
-        self.dbpool = adbapi.ConnectionPool(
-            config.get("database","module"), 
-            host=config.get("database","host"), 
-            user=config.get("database","user"), 
-            passwd=config.get("database","passwd"), 
-            db=config.get("database","db"))
+        dbmodule=config.get("database","module") 
+        if dbmodule=="MySQLdb":
+            self.dbpool = adbapi.ConnectionPool(
+                dbmodule,
+                host=config.get("database","host"), 
+                user=config.get("database","user"), 
+                passwd=config.get("database","passwd"), 
+                db=config.get("database","db"),
+                cp_reconnect=1)
+        else:
+            self.dbpool = adbapi.ConnectionPool(
+                dbmodule,
+                host=config.get("database","host"), 
+                user=config.get("database","user"), 
+                password=config.get("database","passwd"), 
+                database=config.get("database","db"),
+                cp_reconnect=1)
+
             
         if config.has_option("features","avatars"):
             self.show_avatars = config.getboolean("features","avatars")
@@ -238,6 +250,7 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
                             q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
+                            q.addElement("feature")["var"]="jabber:iq:search"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             #q.addElement("feature")["var"]="stringprep"
                             #q.addElement("feature")["var"]="urn:xmpp:receipts"
@@ -270,6 +283,21 @@ class pyvk_t(component.Service,vkonClient):
                 elif (query.uri=="jabber:iq:gateway"):
                     q.addElement("desc").addContent(u"Пожалуйста, введите id ползователя на сайте вконтакте.ру.\nУзнать, какой ID у пользователя Вконтакте можно, например, так:\nЗайдите на его страницу. В адресной строке будет http://vkontakte.ru/profile.php?id=0000000\nЗначит его ID - 0000000")
                     q.addElement("prompt").addContent("Vkontakte ID")
+                    ans.send()
+                    return
+                elif (query.uri=="jabber:iq:search"):
+                    q.addElement("instructions").addContent(u"Use the enclosed form to search. If your Jabber client does not support Data Forms, visit http://shakespeare.lit/")
+                    x=q.addElement("x","jabber:x:data")
+                    x['type']='form'
+                    x.addElement("instructions").addContent(u"Введите произвольный текст по которому будет произведен поиск")
+                    hidden=x.addElement("field")
+                    hidden['type']='hidden'
+                    hidden['var']='FORM_TYPE'
+                    hidden.addElement('value').addContent(u'jabber:iq:search')
+                    text=x.addElement("field")
+                    text['type']='text-single'
+                    text['label']=u'Текст'
+                    text['var']='text'
                     ans.send()
                     return
                     
@@ -336,6 +364,11 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("jid").addContent("%s@%s"%(prompt,iq["to"]))
                             ans.send()
                             return
+                elif (query.uri=="jabber:iq:search"):
+                        time.sleep(1)
+                        self.pools[bjid].callInThread(self.getSearchResult,jid=iq["from"],q=query,iq_id=iq["id"])
+                        return
+
             cmd=iq.command
             if (cmd):
                 d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
@@ -408,8 +441,10 @@ class pyvk_t(component.Service,vkonClient):
             del self.usrconf[bjid]
         except KeyError:
             pass
+
     def delThread(self,v,bjid):
         del self.threads[bjid]
+
     def createThread(self,jid,email,pw):
         self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
         del self.locks[jid]
@@ -421,6 +456,7 @@ class pyvk_t(component.Service,vkonClient):
         self.threads[jid].feedOnly=0
     #def usersOnline(self,jid,users):
         #log.msg(users)
+
     def sendFriendlist(self,fl,jid):
         #log.msg("fiendlist ",jid)
         #log.msg(fl)
@@ -431,6 +467,78 @@ class pyvk_t(component.Service,vkonClient):
             self.sendPresence(src,jid,"subscribe")
             #return
         return
+
+    def getSearchResult(self,jid,q,iq_id):
+        """
+        Send a search result we got from libvkontakte
+        """
+        ans=xmlstream.IQ(self.xmlstream,"result")
+        ans["to"]=jid
+        ans["from"]=self.jid
+        ans["id"]=iq_id
+        query=ans.addElement("query","jabber:iq:search")
+
+        correct = 0
+        text=u''
+        for x in q.elements():
+            if x.uri=='jabber:x:data' and x.hasAttribute('type') and x['type']=='submit':
+                for j in x.elements():
+                    if j.name=='field' and j.hasAttribute('var') and j['var']=='FORM_TYPE':
+                        for v in j.elements():
+                            if v.name=='value' and v.__str__()=='jabber:iq:search':
+                                correct = 1
+                                break
+                    elif j.name=='field' and j.hasAttribute('var') and j['var']=='text':
+                        for v in j.elements():
+                            if v.name=='value':
+                                text = v.__str__()
+                                break
+            if not correct: 
+                text=u''
+            else:
+                break
+        bjid=bareJid(jid)
+        #try:
+        if text: 
+            items=self.threads[bjid].searchUsers(text)
+            if items:
+                x=query.addElement("x","jabber:x:data")
+                x['type']='result'
+                hidden=x.addElement("field")
+                hidden['type']='hidden'
+                hidden['var']='FORM_TYPE'
+                hidden.addElement('value').addContent(u'jabber:iq:search')
+                item=x.addElement("reported")
+                field=item.addElement("field")
+                field['type']='text-single'
+                field['label']=u'Полное имя'
+                field['var']='FN'
+                field=item.addElement("field")
+                field['type']='text-single'
+                field['label']=u'Jabber ID'
+                field['var']='jid'
+                field=item.addElement("field")
+                field['type']='text-single'
+                field['label']=u'Vkontakte ID'
+                field['var']='vid'
+                for i in items:
+                    item=x.addElement("item")
+                    field=item.addElement("field")
+                    field['var']='FN'
+                    field.addElement("value").addContent(items[i])
+                    field=item.addElement("field")
+                    field['var']='jid'
+                    field.addElement("value").addContent(i+u'@'+self.jid)
+                    field=item.addElement("field")
+                    field['var']='vid'
+                    field.addElement("value").addContent(i)
+        #except:
+        #    log.msg("some fcky error when searching")
+
+        #log.msg(card)
+        ans.send()
+
+
     def getsendVcard(self,jid,v_id,iq_id):
         #log.msg(jid)
         #log.msg(v_id)
