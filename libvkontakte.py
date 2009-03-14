@@ -43,6 +43,7 @@ class vkonThread(threading.Thread):
     error=0
     def __init__(self,cli,jid,email,passw):
         threading.Thread.__init__(self,target=self.loop)
+        self.alive=0
         config = ConfigParser.ConfigParser()
         confName="pyvk-t_new.cfg"
         if(os.environ.has_key("PYVKT_CONFIG")):
@@ -84,6 +85,7 @@ class vkonThread(threading.Thread):
             self.alive=0
         else:
             self.error=0
+            self.alive=1
         #print res.read()
         #print this.cookie
     def checkPage(self,page):
@@ -96,6 +98,7 @@ class vkonThread(threading.Thread):
         return 
 
     def logout(self):
+        self.alive=0
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', USERAGENT)]
         res=self.opener.open(req)
@@ -172,6 +175,21 @@ class vkonThread(threading.Thread):
         page=res.read()
         prs.feed(page)
         return prs.vcard
+    def getHistory(self,v_id):
+        req=urllib2.Request("http://vkontakte.ru/mail.php?act=history&offset=-1&mid=%s"%v_id)
+        res=self.opener.open(req)
+        page=res.read()
+        #print page
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+        msgs=bs.findAll("tr",attrs={"class":"message_shown"})
+        for i in msgs:
+            #print i["id"]
+            if (i["id"][:16]=="message_outgoing"):
+                print "->"
+            else:
+                print "<-"
+                
+            print i.div
     def getVcard(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
