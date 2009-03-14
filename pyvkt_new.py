@@ -24,6 +24,10 @@ from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
 import sys,os
 import pyvkt_commands
+try:
+    from twisted.internet.threads import deferToThreadPool
+except:
+    from pyvkt_spikes import deferToThreadPool
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -56,6 +60,7 @@ def bareJid(jid):
     if (n==-1):
         return jid
     return jid[:n]
+
 class pyvk_t(component.Service,vkonClient):
 
     implements(IService)
@@ -116,6 +121,15 @@ class pyvk_t(component.Service,vkonClient):
         self.isActive=1
         #self.commands=
         # FIXME 
+    def jidToId(self,jid):
+        dogpos=jid.find("@")
+        if (dogpos==-1):
+            return 0
+        try:
+            v_id=int(jid[:dogpos])
+            return v_id
+        except:
+            return -1
     def componentConnected(self, xmlstream):
         """
         This method is called when the componentConnected event gets called.
@@ -136,22 +150,27 @@ class pyvk_t(component.Service,vkonClient):
         Act on the message stanza that has just been received.
 
         """
+        
+        v_id=self.jidToId(msg["to"])
+        if (v_id==-1):
+            return None
         if (msg.body):
             body=msg.body.children[0]
             bjid=bareJid(msg["from"])
             if (body[0:1]=="/"):
                 cmd=body[1:]
-                log.msg(cmd.encode("utf-8"))
-                #if (cmd=="login"):
-                    #self.login(bjid)
                 if (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
                     d=defer.execute(self.threads[bjid].getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
-                    d=threads.deferToThread(f=self.commands.onMsg,jid=bjid,text=cmd)
-                    cb=lambda (x):self.sendMessage(self.jid,msg["from"],x)
+                    
+                    if (self.pools.has_key(bjid)):
+                        d=deferToThreadPool(reactor,self.pools[bjid],f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
+                    else:
+                        d=threads.deferToThread(f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
+                    cb=lambda (x):self.sendMessage(msg['to'],msg["from"],x)
                     d.addCallback(cb)
                 return
 
@@ -193,13 +212,11 @@ class pyvk_t(component.Service,vkonClient):
                     if (req.uri=='urn:xmpp:receipts'):
 
                         #old versions of twisted does not have deferToThreadPool function
-                        if hasattr(threads,"deferToThreadPool"):
-                            d=threads.deferToThreadPool(
+                        # FIXED
+                        d=deferToThreadPool(
                                 reactor=reactor,
                                 threadpool=self.pools[bjid],
                                 f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
-                        else:
-                            d=threads.deferToThread(f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -303,8 +320,6 @@ class pyvk_t(component.Service,vkonClient):
                     
             vcard=iq.vCard
             if (vcard):
-                #log.msg("vcard request")
-                log.msg("vcard legacy")
                 dogpos=iq["to"].find("@")
                 if(dogpos!=-1):
                     try:
@@ -371,7 +386,10 @@ class pyvk_t(component.Service,vkonClient):
 
             cmd=iq.command
             if (cmd):
-                d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
+                if (self.pools.has_key(bjid)):
+                    d=deferToThreadPool(reactor,self.pools[bjid],f=self.commands.onIqSet,iq=iq)
+                else:
+                    d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 d.addCallback(self.xmlstream.send)
                 return
         iq = create_reply(iq)
