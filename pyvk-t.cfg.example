@@ -1,6 +1,0 @@
-[general]
-transport_jid: vkontakte.example.com
-server: example.com
-secret: secret_for_transport
-port: 5348
-disco_name: Vkontakte.ru Transport
