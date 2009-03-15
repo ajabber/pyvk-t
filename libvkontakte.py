@@ -195,6 +195,43 @@ class vkonThread(threading.Thread):
             ret.append((t,m.replace('<br />','\n')))
         #ret=ret.replace('<br />','\n')
         return ret
+    def sendWallMessage(self,v_id,text):
+        """ 
+        Send a message to user's wall
+        Returns:
+        0   - seccess
+        1   - http|urllib error
+        2   - could not get form
+        3   - no data
+        -1  - unknown error
+        """
+        if not text:
+            return 3
+        req=urllib2.Request("http://pda.vkontakte.ru/id%s"%v_id)
+        res=self.opener.open(req)
+        page=res.read()
+        #print page
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="utf-8")
+        form=bs.find(name="form")
+        if not form or not form.has_key("action"):
+            return 2
+        formurl=form["action"]
+        if not formurl:
+            return 2
+        if not type(text)==type(u""):
+            text=unicode(text,"utf-8")
+        params=urllib.urlencode({"message":text.encode("utf-8")})
+        print "form url:","http://pda.vkontakte.ru%s&%s"%(formurl,params)
+        try:
+            req=urllib2.Request("http://pda.vkontakte.ru%s&%s"%(formurl,params))
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "urllib2 exception, possible http error"
+            return 1 
+        return 0
+
+
     def getVcard(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
