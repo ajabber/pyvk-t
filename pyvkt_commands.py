@@ -6,11 +6,13 @@ try:
 except:
     from pyvkt_spikes import deferToThreadPool
 #from pyvkt_new import bareJid
+
 def bareJid(jid):
     n=jid.find("/")
     if (n==-1):
         return jid
     return jid[:n]
+
 class cmdManager:
     def __init__(self,trans):
         self.trans=trans
@@ -20,7 +22,7 @@ class cmdManager:
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
                 "logout":logoutCmd(trans)}
-        self.contactCmdList={"history":getHistioryCmd(trans)}
+        self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
     def makeCmdList(self,s_jid,v_id):
@@ -173,6 +175,7 @@ class cmdManager:
         for i in cmdList:
             q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":cmdList[i].name}
         return resp
+
 class basicCommand:
     name="basic commnd"
     def __init__(self,trans):
@@ -186,6 +189,7 @@ class basicCommand:
     def run(self,jid,args,sessid="0",to_id=0):
         print "basic command: fogm %s with %s"%(jid,repr(args))
         return {"status":"completed","title":u"БУГОГА! оно работает!","message":u"проверка системы команд"}
+
 class echoCmd(basicCommand):
     name="echo command"
     args={0:"text"}
@@ -202,6 +206,7 @@ class echoCmd(basicCommand):
             except:
                 return {"status":"executing","title":u"echo command","form":{"fields":["text"]}}
         return {"status":"copleted","title":u"echo command",'message':'completed!'}
+
 class setStatusCmd(basicCommand):
     name=u"Задать статус"
     args={0:"text"}
@@ -225,6 +230,7 @@ class setStatusCmd(basicCommand):
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":["text"]},'message':u'Введите статус'}
         return {"status":"copleted","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
+
 class loginCmd(basicCommand):
     name=u"Подключиться"
     args={}
@@ -234,6 +240,7 @@ class loginCmd(basicCommand):
         bjid=bareJid(jid)
         self.trans.login(bjid)
         return {"status":"copleted","title":u"Подключение",'message':u'Производится подключение...'}
+
 class logoutCmd(basicCommand):
     name=u"Отключиться"
     args={}
@@ -243,6 +250,7 @@ class logoutCmd(basicCommand):
         bjid=bareJid(jid)
         self.trans.logout(bjid)
         return {"status":"copleted","title":u"Отключение",'message':u'Производится отключение...'}
+
 class getHistioryCmd(basicCommand):
     name=u"История переписки"
     args={}
@@ -260,3 +268,36 @@ class getHistioryCmd(basicCommand):
         #print msg
         return {"status":"copleted","title":self.name,'message':msg}
 
+class sendWallMessageCmd(basicCommand):
+    name=u"Отправить сообщение на стену"
+    args={0:"text"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        print("echo from %s"%jid)
+        bjid=bareJid(jid)
+        if (to_id==0):
+            print "where is id???"
+            return {"status":"copleted","title":self.name,'message':u'ПукЪ'}
+        print(args)
+        if (args.has_key("text")):
+            print ("sending wall message...")
+            #FIXME "too fast" safe!!!
+            if (self.trans.threads.has_key(bjid)):
+                print ("sending wall message...")
+                res=self.trans.threads[bjid].sendWallMessage(to_id,args["text"])
+                if res==1:
+                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Ошибка сети'}
+                elif res==2:
+                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Ошибка. Возможно запись на стену запрещена.'}
+                elif res!=0:
+                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Неизвестная ошибка.'}
+
+                print ("done")
+            else:
+                #print ("done")
+                return {"status":"copleted","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+            print ("done")
+        else:
+            return {"status":"executing","title":u"Отправка на стену","form":{"fields":["text"]},'message':u'Введите текст сообщения для отправки на стену'}
+        return {"status":"copleted","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}

@@ -10,9 +10,9 @@ SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO";
 --
 
 CREATE TABLE IF NOT EXISTS `users` (
-  `jid` varchar(30) NOT NULL,
-  `email` varchar(30) NOT NULL,
-  `pass` varchar(30) NOT NULL,
+  `jid` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `pass` varchar(255) NOT NULL,
   `config` varchar(200) NOT NULL default ' ',
   UNIQUE KEY `jid` (`jid`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
