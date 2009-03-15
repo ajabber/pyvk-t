@@ -173,7 +173,7 @@ class cmdManager:
         q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
         q["node"]='http://jabber.org/protocol/commands'
         for i in cmdList:
-            q.addElement("item").attributes={"jid":self.trans.jid, "node":i, "name":cmdList[i].name}
+            q.addElement("item").attributes={"jid":iq["to"], "node":i, "name":cmdList[i].name}
         return resp
 
 class basicCommand:
@@ -205,7 +205,7 @@ class echoCmd(basicCommand):
                 self.trans.sendMessage(self.trans.jid,jid,args[1])
             except:
                 return {"status":"executing","title":u"echo command","form":{"fields":["text"]}}
-        return {"status":"copleted","title":u"echo command",'message':'completed!'}
+        return {"status":"completed","title":u"echo command",'message':'completed!'}
 
 class setStatusCmd(basicCommand):
     name=u"Задать статус"
@@ -225,11 +225,11 @@ class setStatusCmd(basicCommand):
                 print ("done")
             else:
                 #print ("done")
-                return {"status":"copleted","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+                return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
             print ("done")
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":["text"]},'message':u'Введите статус'}
-        return {"status":"copleted","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
+        return {"status":"completed","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
 
 class loginCmd(basicCommand):
     name=u"Подключиться"
@@ -239,7 +239,7 @@ class loginCmd(basicCommand):
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=bareJid(jid)
         self.trans.login(bjid)
-        return {"status":"copleted","title":u"Подключение",'message':u'Производится подключение...'}
+        return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}
 
 class logoutCmd(basicCommand):
     name=u"Отключиться"
@@ -249,7 +249,7 @@ class logoutCmd(basicCommand):
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=bareJid(jid)
         self.trans.logout(bjid)
-        return {"status":"copleted","title":u"Отключение",'message':u'Производится отключение...'}
+        return {"status":"completed","title":u"Отключение",'message':u'Производится отключение...'}
 
 class getHistioryCmd(basicCommand):
     name=u"История переписки"
@@ -260,13 +260,13 @@ class getHistioryCmd(basicCommand):
         bjid=bareJid(jid)
         if (to_id==0):
             print "where is id???"
-            return {"status":"copleted","title":self.name,'message':u'ПукЪ'}
+            return {"status":"completed","title":self.name,'message':u'ПукЪ'}
         hist=self.trans.threads[bjid].getHistory(to_id)
         msg=u''
         for t,m in hist:
             msg=u'%s\n%s: %s'%(msg,t,m)
         #print msg
-        return {"status":"copleted","title":self.name,'message':msg}
+        return {"status":"completed","title":self.name,'message':msg}
 
 class sendWallMessageCmd(basicCommand):
     name=u"Отправить сообщение на стену"
@@ -278,7 +278,7 @@ class sendWallMessageCmd(basicCommand):
         bjid=bareJid(jid)
         if (to_id==0):
             print "where is id???"
-            return {"status":"copleted","title":self.name,'message':u'ПукЪ'}
+            return {"status":"completed","title":self.name,'message':u'ПукЪ'}
         print(args)
         if (args.has_key("text")):
             print ("sending wall message...")
@@ -287,17 +287,17 @@ class sendWallMessageCmd(basicCommand):
                 print ("sending wall message...")
                 res=self.trans.threads[bjid].sendWallMessage(to_id,args["text"])
                 if res==1:
-                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Ошибка сети'}
+                    return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
                 elif res==2:
-                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Ошибка. Возможно запись на стену запрещена.'}
+                    return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка. Возможно запись на стену запрещена.'}
                 elif res!=0:
-                    return {"status":"copleted","title":u"Отправка на стену",'message':u'Неизвестная ошибка.'}
+                    return {"status":"completed","title":u"Отправка на стену",'message':u'Неизвестная ошибка.'}
 
                 print ("done")
             else:
                 #print ("done")
-                return {"status":"copleted","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+                return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
             print ("done")
         else:
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":["text"]},'message':u'Введите текст сообщения для отправки на стену'}
-        return {"status":"copleted","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
+        return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
