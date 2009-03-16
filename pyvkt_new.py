@@ -80,6 +80,11 @@ class pyvk_t(component.Service,vkonClient):
                 passwd=config.get("database","passwd"), 
                 db=config.get("database","db"),
                 cp_reconnect=1)
+        elif dbmodule=="sqlite3":
+            self.dbpool = adbapi.ConnectionPool(
+                dbmodule,
+                database=config.get("database","db"),
+                cp_reconnect=1)
         else:
             self.dbpool = adbapi.ConnectionPool(
                 dbmodule,
@@ -98,6 +103,7 @@ class pyvk_t(component.Service,vkonClient):
         self.pools={}
         self.usrconf={}
         self.locks={}
+        self.resources={}
         try:
             self.admin=config.get("general","admin")
         except:
@@ -344,6 +350,15 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("FN").addContent("vkontakte.ru transport")
                     q.addElement("URL").addContent("http://pyvk-t.googlecode.com")
                     q.addElement("DESC").addContent("Vkontakte.ru jabber transport\nVersion: %s"%self.revision)
+                    if self.show_avatars:
+                        try:
+                            req=open("avatar.png")
+                            photo=base64.encodestring(req.read())
+                            p=q.addElement(u"PHOTO")
+                            p.addElement("TYPE").addContent("image/png")
+                            p.addElement("BINVAL").addContent(photo.replace("\n",""))
+                        except:
+                            print 'cannot load avatar'
                     ans.send()
                     return
                     
@@ -352,7 +367,7 @@ class pyvk_t(component.Service,vkonClient):
             if (query):
                 if (query.uri=="jabber:iq:register"):
                     if (query.remove):
-                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s'"%safe(bareJid(iq["from"])))
+                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';"%safe(bareJid(iq["from"])))
                         return
                     log.msg("from %s"%bareJid(iq["from"]))
                     log.msg(query.toXml())
@@ -364,7 +379,7 @@ class pyvk_t(component.Service,vkonClient):
                             email=i.children[0]
                         if (i.name=="password"):
                             pw=i.children[0]
-                    qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s')"%
+                    qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
                         (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     return
@@ -423,6 +438,7 @@ class pyvk_t(component.Service,vkonClient):
             log.msg("isActive==0, login attempt aborted")
             self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
             return
+
         if (self.threads.has_key(jid)):
             return
         if (self.locks.has_key(jid)):
@@ -649,6 +665,40 @@ class pyvk_t(component.Service,vkonClient):
         except:
             print "submit failed"
 
+    def hasReources(self,bjid):
+        """
+        returns 1 if bjid has resources available
+        bjid must be Bare JID
+        """
+        if self.resources.has_key(bjid) and len(self.resources[bjid]):
+            return 1
+        return 0
+
+    def storePresence(self, prs):
+        """
+        adds resource to jid's reources list
+        stores it's presence
+        """
+        jid=prs["from"]
+        bjid=bareJid(jid)
+        p={"priority":0,"show":"online","status":u""}
+        for i in prs.elements():
+            if i.children:
+                p[i.name]=i.children[0]
+        if self.resources.has_key(bjid):
+            self.resources[bjid][jid]=p
+        else:
+            self.resources[bjid]={jid:p}
+
+    def delPresence(self, prs):
+        """
+        deletes presence if resource goes unavailable
+        """
+        jid=prs["from"]
+        bjid=bareJid(jid)
+        if self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
+            del self.resources[bjid][jid]
+
     def onPresence(self, prs):
         """
         Act on the presence stanza that has just been received.
@@ -656,23 +706,28 @@ class pyvk_t(component.Service,vkonClient):
         jid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if (prs["type"]=="unavailable"):
-                self.logout(bjid=jid)
-                #FIXME
-                pr=domish.Element(('',"presence"))
-                pr["type"]="unavailable"
-                pr["to"]=jid
-                pr["from"]=self.jid
-                self.xmlstream.send(pr)
+                self.delPresence(prs)
+                if not self.hasReources(bareJid(jid)):
+                    self.logout(bjid=jid)
+                    #FIXME
+                    pr=domish.Element(('',"presence"))
+                    pr["type"]="unavailable"
+                    pr["to"]=jid
+                    pr["from"]=self.jid
+                    self.xmlstream.send(pr)
             elif(prs["type"]=="subscribe"):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
-        if (prs["to"]==self.jid):
-            self.login(bareJid(prs["from"]))
+        #if (prs["to"]==self.jid):
+        self.login(jid)
+        self.storePresence(prs)
         
         #pr=domish.Element(('',"presence"))
         #pr["to"]=jid
         #pr["from"]=self.jid
         #self.xmlstream.send(pr)
+
+
     def feedChanged(self,jid,feed):
         ret=""
         for k in feed.keys():

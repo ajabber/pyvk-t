@@ -117,7 +117,7 @@ class vkonThread(threading.Thread):
             return demjson.decode(s)
         except:
             log.msg("JSON decode error")
-            self.dumpString("feed",s)
+            self.dumpString(s,"feed")
         return {}
     def flParse(self,page):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)

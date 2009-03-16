@@ -126,7 +126,7 @@ class cmdManager:
             pass
     def getXdata(self,x):
         print("xdata")
-        print(x.toXml())
+        print(x.toXml().encode("ascii","replace"))
         #x=elem.x
         ret={}
         if (x==None):
