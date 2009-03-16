@@ -156,7 +156,7 @@ class pyvk_t(component.Service,vkonClient):
         if (msg.body):
             body=msg.body.children[0]
             bjid=bareJid(msg["from"])
-            if (body[0:1]=="/") and msg["to"]==self.jid:
+            if (body[0:1]=="/") and body[:4]!="/me ":
                 cmd=body[1:]
                 if (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
                     d=defer.execute(self.threads[bjid].getFriendList)
