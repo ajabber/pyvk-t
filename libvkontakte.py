@@ -266,14 +266,17 @@ class vkonThread(threading.Thread):
             lc=prof.find(name="div", id="leftColumn")
             profName=rc.find("div", {"class":"profileName"})
             result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-            list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
-            if len(list)==5:
+            list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
+            if len(list)==6:
                 result['GIVEN']=list[1].strip()
                 result['NICKNAME']=list[2].strip()
                 result['FAMILY']=list[3].strip()
-            elif len(list)==4:
-                result['GIVEN']=list[1].strip()
-                result['FAMILY']=list[2].strip()
+            else:
+                list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
+                if len(list)==5:
+                    result['GIVEN']=list[1].strip()
+                    result['NICKNAME']=list[2].strip()
+                    result['FAMILY']=list[3].strip()
         except:
             checkPage()
             try:
@@ -462,6 +465,7 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
         except urllib2.HTTPError:
+            print "urllib2 exception, possible http error"
             return 1
         page=res.read()
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
@@ -470,6 +474,7 @@ class vkonThread(threading.Thread):
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
             print "too fast sending messages"
             return 2
+        print "unknown error"
         return -1
         #try:
             #if (res.info()["Location"]=='/inbox?sent=1'):
