@@ -99,6 +99,8 @@ class vkonThread(threading.Thread):
 
     def logout(self):
         self.alive=0
+        self.client.usersOffline(self.jid,self.onlineList)
+        self.onlineList=[]
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', USERAGENT)]
         res=self.opener.open(req)

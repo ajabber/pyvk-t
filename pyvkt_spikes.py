@@ -5,6 +5,7 @@ from twisted.python import log, runtime, context, failure
 import Queue
 
 def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
+    #WARN "too fast"?
     d = defer.Deferred()
     threadpool.callInThread(threadpool._runWithCallback,d.callback,d.errback,f,args,kwargs)
     return d
