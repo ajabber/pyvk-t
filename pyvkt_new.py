@@ -95,6 +95,10 @@ class pyvk_t(component.Service,vkonClient):
                 cp_reconnect=1)
 
             
+        if config.has_option("features","sync_status"):
+            self.sync_status = config.getboolean("features","sync_status")
+        else:
+            self.sync_status = 0
         if config.has_option("features","avatars"):
             self.show_avatars = config.getboolean("features","avatars")
         else:
@@ -457,7 +461,12 @@ class pyvk_t(component.Service,vkonClient):
         except:
             log.msg("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
             self.usrconf[t[0]]=None
-        self.sendPresence(self.jid,data[0][0])
+        p = self.foregroundPresence(data[0][0])
+        if p:
+            self.sendPresence(self.jid,data[0][0],status=p["status"],show=p["show"])
+        else:
+            self.sendPresence(self.jid,data[0][0])
+        self.pools[data[0][0]].callInThread(self.updateStatus,bjid=data[0][0],text=p["status"])
     def loginFailed(self,data,jid):
         msg.log("login failed for %s"%jid)
         del self.threads[jid]
@@ -480,6 +489,7 @@ class pyvk_t(component.Service,vkonClient):
         del self.threads[bjid]
 
     def createThread(self,jid,email,pw):
+        jid=bareJid(jid)
         self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
         del self.locks[jid]
         self.pools[jid]=ThreadPool(1,1)
@@ -665,13 +675,21 @@ class pyvk_t(component.Service,vkonClient):
         except:
             print "submit failed"
 
-    def hasReources(self,bjid):
+    def hasReource(self,jid):
         """
-        returns 1 if bjid has resources available
-        bjid must be Bare JID
+        return 1 if
+            bare jid set and has any resources available
+            full jid set and is available
+        otherwise returns 0 
         """
-        if self.resources.has_key(bjid) and len(self.resources[bjid]):
+        bjid=bareJid(jid)
+        #barejid - just check if any resources available
+        if jid==bjid and self.resources.has_key(bjid) and len(self.resources[bjid]):
             return 1
+        #full jid - check for certain resource
+        if self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
+            return 1
+        #nothing
         return 0
 
     def storePresence(self, prs):
@@ -681,7 +699,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         jid=prs["from"]
         bjid=bareJid(jid)
-        p={"priority":0,"show":"online","status":u""}
+        p={"jid":jid,"priority":'0',"show":u"","status":u"","time":time.time()}
         for i in prs.elements():
             if i.children:
                 p[i.name]=i.children[0]
@@ -689,6 +707,7 @@ class pyvk_t(component.Service,vkonClient):
             self.resources[bjid][jid]=p
         else:
             self.resources[bjid]={jid:p}
+        p["priority"]=int(p["priority"])
 
     def delPresence(self, prs):
         """
@@ -699,33 +718,65 @@ class pyvk_t(component.Service,vkonClient):
         if self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
             del self.resources[bjid][jid]
 
+    def foregroundPresence(self, jid):
+        """
+        returns dictionary with presence field whick has maximal priority
+        """
+        bjid=bareJid(jid)
+        if not self.hasReource(bjid):
+            return
+        mp = None
+        for p in self.resources[bjid]:
+            if not mp or mp["priority"]<self.resources[bjid][p]["priority"] or (mp["priority"]==self.resources[bjid][p]["priority"] and mp["time"]<self.resources[bjid][p]["time"]):
+                mp = self.resources[bjid][p]
+        return mp
+
+    def updateStatus(selft, bjid, text):
+        if self.threads.has_key(bjid) and self.sync_status:
+            self.threads[bjid].setStatus(p["status"])
+
     def onPresence(self, prs):
         """
         Act on the presence stanza that has just been received.
         """
         bjid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
-            if (prs["type"]=="unavailable"):
-                self.delPresence(prs)
-                if not self.hasReources(bareJid(bjid)):
-                    self.logout(bjid=bjid)
-                    #FIXME
-                    pr=domish.Element(('',"presence"))
-                    pr["type"]="unavailable"
-                    pr["to"]=bjid
-                    pr["from"]=self.jid
-                    self.xmlstream.send(pr)
+            if prs["type"]=="unavailable":
+                if self.hasReource(bjid):
+                    del self.resources[bjid]
+                self.logout(bjid=bjid)
+                #FIXME
+                pr=domish.Element(('',"presence"))
+                pr["type"]="unavailable"
+                pr["to"]=bjid
+                pr["from"]=self.jid
+                self.xmlstream.send(pr)
             elif(prs["type"]=="subscribe"):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
         self.login(bjid)
+        if not self.hasReource(prs["from"]) and self.hasReource(bjid):
+            self.usersOnline(prs["from"],self.threads[bjid].onlineList)
+            self.storePresence(prs)
+            p = self.foregroundPresence(bjid)
+            #new resouce has bigger priority - foreground presence changed
+            if p and p.has_key("jid") and p["jid"]==prs["from"]:
+                self.sendPresence(self.jid,bjid,status=p["status"],show=p["show"])
+                self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+            else:
+                self.sendPresence(self.jid,prs["from"],status=p["status"],show=p["show"])
+            return
+        if self.hasReource(bjid):
+            p = self.foregroundPresence(bjid)
+            self.storePresence(prs)
+            pn = self.foregroundPresence(bjid)
+            #foreground status changed
+            if pn!=p:
+                self.sendPresence(self.jid,bjid,status=pn["status"],show=pn["show"])
+                self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+            return
         self.storePresence(prs)
-        try:
-            if (self.resources[bjid].has_key(prs["from"])==0):
-                self.usersOnline(prs["from"],self.threads[bjid].onlineList)
-        except KeyError:
-            pass
         #pr=domish.Element(('',"presence"))
         #pr["to"]=jid
         #pr["from"]=self.jid
@@ -804,7 +855,7 @@ class pyvk_t(component.Service,vkonClient):
             except:
                 pass
             pass
-    def sendPresence(self,src,dest,t=None,extra=None,status=None):
+    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
@@ -814,6 +865,8 @@ class pyvk_t(component.Service,vkonClient):
             #log.msg("sendPresence: possible charset error")
             #pr["to"]=dest
         pr["from"]=src
+        if(show):
+            pr.addElement("show").addContent(show)
         pr["ver"]=self.revision
         if(status):
             pr.addElement("status").addContent(status)
