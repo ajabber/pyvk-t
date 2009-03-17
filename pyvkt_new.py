@@ -58,8 +58,8 @@ class LogService(component.Service):
 def bareJid(jid):
     n=jid.find("/")
     if (n==-1):
-        return jid
-    return jid[:n]
+        return jid.lower()
+    return jid[:n].lower()
 
 class pyvk_t(component.Service,vkonClient):
 
@@ -455,18 +455,20 @@ class pyvk_t(component.Service,vkonClient):
         pass
     def login1(self,data):
         t=data[0]
-        defer.execute(self.createThread,jid=data[0][0],email=data[0][1],pw=data[0][2])
+        bjid=data[0][0].lower()
+        defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
         try:
             self.usrconf[t[0]]=t[3]
         except:
             log.msg("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
             self.usrconf[t[0]]=None
-        p = self.foregroundPresence(data[0][0])
+        p = self.foregroundPresence(bjid)
         if p:
-            self.sendPresence(self.jid,data[0][0],status=p["status"],show=p["show"])
+            self.sendPresence(self.jid,bjid,status=p["status"],show=p["show"])
+            self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
         else:
-            self.sendPresence(self.jid,data[0][0])
-        self.pools[data[0][0]].callInThread(self.updateStatus,bjid=data[0][0],text=p["status"])
+            self.sendPresence(self.jid,bjid)
+
     def loginFailed(self,data,jid):
         msg.log("login failed for %s"%jid)
         del self.threads[jid]
@@ -687,7 +689,7 @@ class pyvk_t(component.Service,vkonClient):
         if jid==bjid and self.resources.has_key(bjid) and len(self.resources[bjid]):
             return 1
         #full jid - check for certain resource
-        if self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
+        if jid!=bjid and self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
             return 1
         #nothing
         return 0
@@ -731,9 +733,10 @@ class pyvk_t(component.Service,vkonClient):
                 mp = self.resources[bjid][p]
         return mp
 
-    def updateStatus(selft, bjid, text):
+    def updateStatus(self, bjid, text):
         if self.threads.has_key(bjid) and self.sync_status:
-            self.threads[bjid].setStatus(p["status"])
+            print "updating status for",bjid,":",text.encode("ascii","replace")
+            self.threads[bjid].setStatus(text)
 
     def onPresence(self, prs):
         """
@@ -755,28 +758,30 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        self.login(bjid)
         if not self.hasReource(prs["from"]) and self.hasReource(bjid):
             self.usersOnline(prs["from"],self.threads[bjid].onlineList)
             self.storePresence(prs)
             p = self.foregroundPresence(bjid)
             #new resouce has bigger priority - foreground presence changed
-            if p and p.has_key("jid") and p["jid"]==prs["from"]:
+            if p and p.has_key("jid") and p["jid"]==prs["from"] and not self.locks.has_key(jid):
                 self.sendPresence(self.jid,bjid,status=p["status"],show=p["show"])
-                self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
-            else:
+                if self.pools.has_key(bjid):
+                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+            elif p:
                 self.sendPresence(self.jid,prs["from"],status=p["status"],show=p["show"])
             return
-        if self.hasReource(bjid):
+        elif self.hasReource(bjid) and not self.locks.has_key(jid):
             p = self.foregroundPresence(bjid)
             self.storePresence(prs)
             pn = self.foregroundPresence(bjid)
             #foreground status changed
-            if pn!=p:
+            if p["show"]!=pn["show"] or p["status"]!=pn["status"]:
                 self.sendPresence(self.jid,bjid,status=pn["status"],show=pn["show"])
-                self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+                if self.pools.has_key(bjid):
+                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
             return
         self.storePresence(prs)
+        self.login(bjid)
         #pr=domish.Element(('',"presence"))
         #pr["to"]=jid
         #pr["from"]=self.jid
