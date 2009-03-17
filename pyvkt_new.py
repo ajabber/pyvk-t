@@ -197,7 +197,7 @@ class pyvk_t(component.Service,vkonClient):
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.threads:
-                        self.sendMessage(self.jid,i,"[brodcast message]\n%s"%cmd[5:])
+                        self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 else:
                     self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
@@ -703,25 +703,29 @@ class pyvk_t(component.Service,vkonClient):
         """
         Act on the presence stanza that has just been received.
         """
-        jid=bareJid(prs["from"])
+        bjid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if (prs["type"]=="unavailable"):
                 self.delPresence(prs)
-                if not self.hasReources(bareJid(jid)):
-                    self.logout(bjid=jid)
+                if not self.hasReources(bareJid(bjid)):
+                    self.logout(bjid=bjid)
                     #FIXME
                     pr=domish.Element(('',"presence"))
                     pr["type"]="unavailable"
-                    pr["to"]=jid
+                    pr["to"]=bjid
                     pr["from"]=self.jid
                     self.xmlstream.send(pr)
             elif(prs["type"]=="subscribe"):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        self.login(jid)
+        self.login(bjid)
         self.storePresence(prs)
-        
+        try:
+            if (self.resources[bjid].has_key(prs["from"])==0):
+                self.usersOnline(prs["from"],self.threads[bjid].onlineList)
+        except KeyError:
+            pass
         #pr=domish.Element(('',"presence"))
         #pr["to"]=jid
         #pr["from"]=self.jid
