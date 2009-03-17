@@ -57,26 +57,24 @@ class cmdManager:
         ret="command: '%s', args: %s"%(node,repr(args))
         if (cmdList.has_key(node)):
             cmd=cmdList[node]
-            ar=self.assignArgs(cmd,args,)
+            ar=cmd.assignArgs(args)
             print jid
             print "command: '%s', args: %s"%(node,repr(ar))
             
             res=cmd.run(jid,ar,to_id=v_id)
+            try:
+                txt=res["message"]
+            except:
+                txt=' '
+            if (res.has_key("form")):
+                f=cmd.reprForm(res["form"])
+                txt="%s\n%s"%(txt,f)
             print "cmd done"
-            ret="[cmd:%s]\n%s"%(res["title"],res["message"])
+            ret="[cmd:%s]\n%s"%(res["title"],txt)
         else:
             return "unknown command: %s"%node
         return ret
         pass
-    def assignArgs(self,cmd,args):
-        ret={}
-        for i in cmd.args:
-            try:
-                ret[cmd.args[i]]=args[i]
-            except IndexError:
-                print("args error")
-                return {}
-        return ret
     def onIqSet(self,iq):
         node=iq.command["node"]
         v_id=self.trans.jidToId(iq["to"])
@@ -114,12 +112,21 @@ class cmdManager:
                 x.addElement("instructions").addContent(res["message"])
             except:
                 pass
-            try:
-                fields=res["form"]["fields"]
-                for i in fields:
-                    x.addElement("field").attributes={"type":"text-single", 'var':i,'label':i}
-            except:
-                pass
+            #try:
+            fields=res["form"]["fields"]
+            for i in fields:
+                try:
+                    ft=fields[i][0]
+                except IndexError:
+                    ft='text-single'
+                try:
+                    fd=fields[i][1]
+                except IndexError:
+                    fd=i
+                x.addElement("field").attributes={"type":"text-single", 'var':i,'label':fd}
+
+            #except:
+                #pass
             return resp
         else:
             #FIXME error strnza
@@ -180,6 +187,41 @@ class basicCommand:
     name="basic commnd"
     def __init__(self,trans):
         self.trans=trans
+    def reprForm(self,form):
+        ret=u"jabber:x:data\nfields:"
+        try:
+            ftype=form["type"]
+        except:
+            ftype='form'
+        if (ftype=='form'):
+            ret=u'[Аргументы]'
+        for i in form["fields"]:
+            try:
+                ft=form['fields'][i][0]
+            except IndexError:
+                print "WARN: deprecated form description"
+                ft='text-single'
+            except TypeError:
+                print "WARN: deprecated form description!"
+                return ''
+            try:
+                fd=form['fields'][i][1]
+            except IndexError:
+                print "WARN: deprecated form description"
+                fd=''
+            #fe=u'%s: %s - %s'%(i,ft,fd)
+            fe=u'%s: %s'%(i,fd)
+            ret="%s\n%s"%(ret,fe)
+        return ret
+    def assignArgs(self,args):
+        ret={}
+        for i in self.args:
+            try:
+                ret[self.args[i]]=args[i]
+            except IndexError:
+                print("args error")
+                return {}
+        return ret
     def onMsg(self,jid,text):
         #return "not implemented"
         args=text.split(",")
@@ -204,7 +246,7 @@ class echoCmd(basicCommand):
             try:
                 self.trans.sendMessage(self.trans.jid,jid,args[1])
             except:
-                return {"status":"executing","title":u"echo command","form":{"fields":["text"]}}
+                return {"status":"executing","title":u"echo command","form":{"fields":{"text":("text-single",u"Текст")}}}
         return {"status":"completed","title":u"echo command",'message':'completed!'}
 
 class setStatusCmd(basicCommand):
@@ -228,7 +270,7 @@ class setStatusCmd(basicCommand):
                 return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
             print ("done")
         else:
-            return {"status":"executing","title":u"Установка статуса","form":{"fields":["text"]},'message':u'Введите статус'}
+            return {"status":"executing","title":u"Установка статуса","form":{"fields":{"text":('text-single',u'Статус')}},'message':u'Введите статус'}
         return {"status":"completed","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
 
 class loginCmd(basicCommand):
@@ -299,5 +341,5 @@ class sendWallMessageCmd(basicCommand):
                 return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
             print ("done")
         else:
-            return {"status":"executing","title":u"Отправка на стену","form":{"fields":["text"]},'message':u'Введите текст сообщения для отправки на стену'}
+            return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение')}},'message':u'Введите текст сообщения для отправки на стену'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
