@@ -814,9 +814,10 @@ class pyvk_t(component.Service,vkonClient):
             #log.msg("sendPresence: possible charset error")
             #pr["to"]=dest
         pr["from"]=src
+        pr["ver"]=self.revision
         if(status):
             pr.addElement("status").addContent(status)
-        pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com","ver":self.revision}
+        pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
         try:
             self.xmlstream.send(pr)
         except UnicodeDecodeError:

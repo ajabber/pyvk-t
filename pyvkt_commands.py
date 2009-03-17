@@ -112,21 +112,20 @@ class cmdManager:
                 x.addElement("instructions").addContent(res["message"])
             except:
                 pass
-            #try:
-            fields=res["form"]["fields"]
-            for i in fields:
-                try:
-                    ft=fields[i][0]
-                except IndexError:
-                    ft='text-single'
-                try:
-                    fd=fields[i][1]
-                except IndexError:
-                    fd=i
-                x.addElement("field").attributes={"type":"text-single", 'var':i,'label':fd}
-
-            #except:
-                #pass
+            try:
+                fields=res["form"]["fields"]
+                for i in fields:
+                    try:
+                        ft=fields[i][0]
+                    except IndexError:
+                        ft='text-single'
+                    try:
+                        fd=fields[i][1]
+                    except IndexError:
+                        fd=i
+                    x.addElement("field").attributes={"type":"text-single", 'var':i,'label':fd}
+            except KeyError:
+                pass
             return resp
         else:
             #FIXME error strnza
