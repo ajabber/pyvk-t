@@ -380,8 +380,12 @@ class vkonThread(threading.Thread):
             print page
             return
         ahash=hashfield["value"]
-        dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
-        req=urllib2.Request("http://wap.vkontakte.ru/setstatus?pda=1",urlencode(dat))
+        if text:
+            dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
+            req=urllib2.Request("http://wap.vkontakte.ru/setstatus?pda=1",urlencode(dat))
+        else:
+            dat={'activityhash':ahash,'clearactivity':"1"}
+            req=urllib2.Request("http://vkontakte.ru/profile.php?",urlencode(dat))
         try:
             res=self.opener.open(req)
         except urllib2.HTTPError:
