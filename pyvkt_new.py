@@ -26,6 +26,7 @@ import sys,os,cPickle
 from base64 import b64encode,b64decode
 import pyvkt_commands
 from pyvkt_user import user
+import pyvkt_global as pyvkt
 try:
     from twisted.internet.threads import deferToThreadPool
 except:
@@ -105,11 +106,11 @@ class pyvk_t(component.Service,vkonClient):
             self.show_avatars = config.getboolean("features","avatars")
         else:
             self.show_avatars = 0
-        self.threads={}
-        self.pools={}
-        self.usrconf={}
-        self.locks={}
-        self.resources={}
+        #self.threads={}
+        #self.pools={}
+        #self.usrconf={}
+        #self.locks={}
+        #self.resources={}
         self.users={}
         try:
             self.admin=config.get("general","admin")
@@ -131,7 +132,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=1
+        self.isActive=0
         #self.commands=
         # FIXME 
     def jidToId(self,jid):
@@ -171,15 +172,16 @@ class pyvk_t(component.Service,vkonClient):
             bjid=bareJid(msg["from"])
             if (body[0:1]=="/") and body[:4]!="/me ":
                 cmd=body[1:]
-                if (self.threads.has_key(bjid) and self.threads[bjid] and cmd=="get roster"):
-                    d=defer.execute(self.threads[bjid].getFriendList)
+                #if (self.users.has_key(bjid) and self.users[bjid].thread and cmd=="get roster"):
+                if (self.hasUser(bjid) and cmd=="get roster"):
+                    d=defer.execute(self.users[bjid].thread.getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
                     
-                    if (self.pools.has_key(bjid)):
-                        d=deferToThreadPool(reactor,self.pools[bjid],f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
+                    if (self.hasUser(bjid)):
+                        d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
                     else:
                         d=threads.deferToThread(f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
                     cb=lambda (x):self.sendMessage(msg['to'],msg["from"],x)
@@ -198,8 +200,8 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="start"):
                     self.isActive=1
                 elif (cmd=="stats"):
-                    ret=u"%s user(s) online"%len(self.threads)
-                    for i in self.threads:
+                    ret=u"%s user(s) online"%len(self.users)
+                    for i in self.users:
                         ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
@@ -209,7 +211,7 @@ class pyvk_t(component.Service,vkonClient):
                 else:
                     self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
                 return
-            if(msg["to"]!=self.jid and self.threads.has_key(bjid)):
+            if(msg["to"]!=self.jid and self.hasUser(bjid)):
                 dogpos=msg["to"].find("@")
                 try:
                     v_id=int(msg["to"][:dogpos])
@@ -217,14 +219,14 @@ class pyvk_t(component.Service,vkonClient):
                     log.msg("bad JID: %s"%msg["to"])
                     return
                 req=msg.request
+                #if hasAttribute(msg,"title"):
+                    #title = msg.title
+                #else:
+                #FIXME
                 title = "xmpp:%s"%bjid
-                for x in msg.elements():
-                    if x.name=="subject":
-                        title=x.__str__()
-                        break
                 if(req==None):
                     print "legacy message"
-                    self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
+                    self.users[bjid].pool.callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
                 else:
                     if (req.uri=='urn:xmpp:receipts'):
 
@@ -232,8 +234,8 @@ class pyvk_t(component.Service,vkonClient):
                         # FIXED
                         d=deferToThreadPool(
                                 reactor=reactor,
-                                threadpool=self.pools[bjid],
-                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title=title)
+                                threadpool=self.users[bjid].pool,
+                                f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -284,7 +286,7 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
                             q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
-                            if (self.pools.has_key(bjid)):
+                            if (self.hasUser(bjid)):
                                 q.addElement("feature")["var"]="jabber:iq:search"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             #q.addElement("feature")["var"]="stringprep"
@@ -320,7 +322,7 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("prompt").addContent("Vkontakte ID")
                     ans.send()
                     return
-                elif (query.uri=="jabber:iq:search") and (self.pools.has_key(bjid)):
+                elif (query.uri=="jabber:iq:search" and self.hasUser(bjid)):
                     q.addElement("instructions").addContent(u"Use the enclosed form to search. If your Jabber client does not support Data Forms, visit http://shakespeare.lit/")
                     x=q.addElement("x","jabber:x:data")
                     x['type']='form'
@@ -347,9 +349,9 @@ class pyvk_t(component.Service,vkonClient):
                         pass
                     else:
                         #log.msg("id: %s"%v_id)
-                        if (self.pools.has_key(bjid)):
+                        if (self.hasUser(bjid)):
                             time.sleep(1)
-                            self.pools[bjid].callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
+                            self.users[bjid].pool.callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
                             log.msg("thread not found!")
@@ -406,15 +408,15 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("jid").addContent("%s@%s"%(prompt,iq["to"]))
                             ans.send()
                             return
-                elif (query.uri=="jabber:iq:search") and (self.pools.has_key(bjid)):
+                elif (query.uri=="jabber:iq:search") and (self.hasUser(bjid)):
                         time.sleep(1)
-                        self.pools[bjid].callInThread(self.getSearchResult,jid=iq["from"],q=query,iq_id=iq["id"])
+                        self.users[bjid].pool.callInThread(self.getSearchResult,jid=iq["from"],q=query,iq_id=iq["id"])
                         return
 
             cmd=iq.command
             if (cmd):
-                if (self.pools.has_key(bjid)):
-                    d=deferToThreadPool(reactor,self.pools[bjid],f=self.commands.onIqSet,iq=iq)
+                if (self.hasUser(bjid)):
+                    d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onIqSet,iq=iq)
                 else:
                     d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 d.addCallback(self.xmlstream.send)
@@ -426,6 +428,7 @@ class pyvk_t(component.Service,vkonClient):
         err.addElement("feature-not-implemented","urn:ietf:params:xml:ns:xmpp-stanzas")
         #print iq
         self.xmlstream.send(iq)
+
     def register2(self,qres,jid,iq_id,success):
         #FIXME failed registration
         ans=xmlstream.IQ(self.xmlstream,"result")
@@ -444,76 +447,6 @@ class pyvk_t(component.Service,vkonClient):
         pr["from"]=self.jid
         self.xmlstream.send(pr)
         self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
-    def login(self,jid):
-        # TODO bare jid?
-        if (not self.isActive and bareJid(jid)!=self.admin):
-            #log.msg("isActive==0, login attempt aborted")
-            self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
-            return
-
-        if (self.threads.has_key(jid)):
-            return
-        if (self.locks.has_key(jid)):
-            return
-        self.locks[jid]=1
-        mq="SELECT * FROM users WHERE jid='%s'"%safe(bareJid(jid))
-        log.msg(mq)
-        q=self.dbpool.runQuery(mq)
-        q.addCallback(self.login1)
-        pass
-    def login1(self,data):
-        t=data[0]
-        bjid=data[0][0].lower()
-        defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
-        try:
-            if (data[0][3]==" "):
-                self.usrconf[t[0]]={}
-            self.usrconf[t[0]]=cPickle.loads(b64decode(data[0][3]))
-            print 'got config',self.usrconf[t[0]]
-        except:
-            self.usrconf[t[0]]={}
-            log.msg("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
-            self.usrconf[t[0]]=None
-        p = self.foregroundPresence(bjid)
-        if p:
-            self.sendPresence(self.jid,bjid,status=p["status"],show=p["show"])
-            self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
-        else:
-            self.sendPresence(self.jid,bjid)
-
-    def loginFailed(self,data,jid):
-        msg.log("login failed for %s"%jid)
-        del self.threads[jid]
-    def logout(self,bjid):
-        try:
-            defer.execute(self.threads[bjid].logout).addCallback(self.delThread,bjid=bjid)
-        except KeyError:
-            pass
-        try:
-            self.pools[jid].stop()
-            del self.pools[jid]
-        except KeyError:
-            pass
-        try:
-            del self.usrconf[bjid]
-        except KeyError:
-            pass
-
-    def delThread(self,v,bjid):
-        del self.threads[bjid]
-
-    def createThread(self,jid,email,pw):
-        jid=bareJid(jid)
-        self.threads[jid]=vkonThread(cli=self,jid=jid,email=email,passw=pw)
-        del self.locks[jid]
-        self.pools[jid]=ThreadPool(1,1)
-        self.pools[jid].start()
-        #log.msg("%s,%s,%s"%(jid,email,pw))
-        #log.msg(self.threads)
-        self.threads[jid].start()
-        self.threads[jid].feedOnly=0
-    #def usersOnline(self,jid,users):
-        #log.msg(users)
 
     def sendFriendlist(self,fl,jid):
         #log.msg("fiendlist ",jid)
@@ -558,7 +491,7 @@ class pyvk_t(component.Service,vkonClient):
         bjid=bareJid(jid)
         try:
             if text: 
-                items=self.threads[bjid].searchUsers(text)
+                items=self.users[bjid].thread.searchUsers(text)
                 if items:
                     x=query.addElement("x","jabber:x:data")
                     x['type']='result'
@@ -604,7 +537,7 @@ class pyvk_t(component.Service,vkonClient):
         #log.msg(v_id)
         bjid=bareJid(jid)
         try:
-            card=self.threads[bjid].getVcard(v_id, self.show_avatars)
+            card=self.users[bjid].thread.getVcard(v_id, self.show_avatars)
         except:
             log.msg("some fcky error")
             card = None
@@ -680,14 +613,18 @@ class pyvk_t(component.Service,vkonClient):
             #log.msg(ans.toXml())
 
     def requestMessage(self,jid,msgid):
-        msg=self.threads[jid].getMessage(msgid)
+        print "msg request"
+        bjid=jid
+        msg=self.users[bjid].thread.getMessage(msgid)
         #log.msg(msg)
+        print msg
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,msg["text"])
 
     def submitMessage(self,jid,v_id,body,title):
         #log.msg((jid,v_id,body,title))
+        bjid=jid
         try:
-            self.threads[jid].sendMessage(to_id=v_id,body=body,title=title)
+            self.users[bjid].thread.sendMessage(to_id=v_id,body=body,title=title)
         except:
             print "submit failed"
 
@@ -751,21 +688,39 @@ class pyvk_t(component.Service,vkonClient):
         """
         update site stuse if enabled
         """
-        if self.threads.has_key(bjid) and self.sync_status:
+        if self.hasUser(bjid) and self.sync_status:
             print "updating status for",bjid,":",text.encode("ascii","replace")
-            self.threads[bjid].setStatus(text)
-
+            self.users[bjid].thread.setStatus(text)
+    def hasUser(self,bjid):
+        #print "hasUser (%s)"%bjid
+        if (self.users.has_key(bjid)):
+            if (self.users[bjid].active):
+                return 1
+            else:
+                del self.users[bjid]
+        return 0
+    def addResource(self,jid):
+        bjid=pyvkt.bareJid(jid)
+        if (self.hasUser(bjid)==0):
+            #print "creating user %s"
+            self.users[bjid]=user(self,jid)
+        self.users[bjid].addResource(jid)
+    def delResource(self,jid):
+        bjid=pyvkt.bareJid(jid)
+        if (self.hasUser(jid)):
+            #TODO resource magic
+            self.users[bjid].delResource(jid)
     def onPresence(self, prs):
         """
         Act on the presence stanza that has just been received.
         """
+        #return
         bjid=bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable":
-                if self.hasReource(bjid):
-                    del self.resources[bjid]
-                self.logout(bjid=bjid)
-                #FIXME
+                #if self.hasReource(bjid):
+                    #del self.resources[bjid]
+                self.delResource(prs["from"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
                 pr["to"]=bjid
@@ -775,27 +730,31 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        if not self.hasReource(prs["from"]) and self.hasReource(bjid) and self.isActive:
-            self.usersOnline(prs["from"],self.threads[bjid].onlineList)
+        self.addResource(prs["from"])
+        return 
+        #TODO fix autologin
+        return
+        if not self.hasReource(prs["from"]) and self.hasReource(bjid):
+            self.usersOnline(prs["from"],self.users[bjid].thread.onlineList)
             self.storePresence(prs)
             p = self.foregroundPresence(bjid)
             #new resouce has bigger priority - foreground presence changed
             if p and p.has_key("jid") and p["jid"]==prs["from"] and not self.locks.has_key(jid):
                 self.sendPresence(self.jid,bjid,status=p["status"],show=p["show"])
-                if self.pools.has_key(bjid):
-                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+                if self.hasUser(bjid):
+                    self.users[bjid].pool.callInThread(self.updateStatus,bjid=bjid,text=p["status"])
             elif p:
                 self.sendPresence(self.jid,prs["from"],status=p["status"],show=p["show"])
             return
-        elif self.hasReource(bjid) and not self.locks.has_key(jid) and self.isActive:
+        elif self.hasReource(bjid) and not self.locks.has_key(jid):
             p = self.foregroundPresence(bjid)
             self.storePresence(prs)
             pn = self.foregroundPresence(bjid)
             #foreground status changed
             if p["show"]!=pn["show"] or p["status"]!=pn["status"]:
                 self.sendPresence(self.jid,bjid,status=pn["status"],show=pn["show"])
-                if self.pools.has_key(bjid):
-                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=pn["status"])
+                if self.hasUser(bjid):
+                    self.users[bjid].pool.callInThread(self.updateStatus,bjid=bjid,text=pn["status"])
             return
         self.storePresence(prs)
         self.login(bjid)
@@ -810,15 +769,16 @@ class pyvk_t(component.Service,vkonClient):
         for k in feed.keys():
             if (k!="user" and feed[k]["count"]):
                 ret=ret+"new %s: %s\n"%(k,feed[k]["count"])
-        try:
-            if (feed["messages"]["count"] ):
-                for i in feed ["messages"]["items"].keys():
-                    self.pools[jid].callInThread(self.requestMessage,jid=jid,msgid=i)
+        #try:
+        if (feed["messages"]["count"] ):
+            for i in feed ["messages"]["items"].keys():
+                print "requesting message"
+                self.users[jid].pool.callInThread(self.requestMessage,jid=jid,msgid=i)
             #if (feed["groups"]["count"]):
                 #for i in feed["groups"]["items"]:
                     #ret=ret+"\n"+feed["groups"]["items"][i]+" [http://vkontakte.ru/club%s]"%i
-        except:
-            log.msg("feed error")
+        #except KeyError:
+            #log.msg("feed error")
         self.sendPresence(self.jid,jid,status=ret)
     def usersOnline(self,jid,users):
         for i in users:
@@ -832,6 +792,7 @@ class pyvk_t(component.Service,vkonClient):
         elif(err=="auth"):
             self.sendMessage(self.jid,jid,u"Ошибка входа. Возможно, неправильный логин/пароль.")
         try:
+            print "FIXME!!!"
             self.threads[jid].exit()
             del self.threads[jid]
             self.pools[jid].stop()
@@ -841,13 +802,10 @@ class pyvk_t(component.Service,vkonClient):
         self.sendPresence(self.jid,jid,"unavailable")
     def stopService(self):
         print "logging out..."
-        for u in self.threads.keys():
+        for u in self.users:
             try:
-                self.threads[u].exit()
-                del self.threads[u]
-                self.pools[u].stop()
-                del self.pools[u]
-                del self.resources[u]
+                #FIXME
+                self.users[i].logout()
             except:
                 pass
             self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
@@ -856,7 +814,7 @@ class pyvk_t(component.Service,vkonClient):
         return None
     def saveConfig(self,bjid):
         try:
-            pcs=b64encode(cPickle.dumps(self.usrconf[bjid]))
+            pcs=b64encode(cPickle.dumps(self.users[bjid].config))
         except KeyError:
             print "keyError"
             return -1
