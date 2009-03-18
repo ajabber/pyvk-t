@@ -8,6 +8,7 @@ except:
 #from pyvkt_new import bareJid
 
 def bareJid(jid):
+    
     n=jid.find("/")
     if (n==-1):
         return jid
@@ -274,9 +275,9 @@ class setStatusCmd(basicCommand):
         if (args.has_key("text")):
             print ("setting status...")
             #FIXME "too fast" safe!!!
-            if (self.trans.threads.has_key(bjid)):
+            if (self.trans.hasUser(bjid)):
                 print ("setting status...")
-                self.trans.threads[bjid].setStatus(args["text"])
+                self.trans.users[bjid].thread.setStatus(args["text"])
                 print ("done")
             else:
                 #print ("done")
@@ -293,7 +294,7 @@ class loginCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=bareJid(jid)
-        self.trans.login(bjid)
+        self.trans.addResource(bjid)
         return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}
 
 class logoutCmd(basicCommand):
@@ -316,7 +317,7 @@ class getHistioryCmd(basicCommand):
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
-        hist=self.trans.threads[bjid].getHistory(to_id)
+        hist=self.trans.users[bjid].thread.getHistory(to_id)
         msg=u''
         for t,m in hist:
             msg=u'%s\n%s: %s'%(msg,t,m)
@@ -338,9 +339,9 @@ class sendWallMessageCmd(basicCommand):
         if (args.has_key("text")):
             print ("sending wall message...")
             #FIXME "too fast" safe!!!
-            if (self.trans.threads.has_key(bjid)):
+            if (self.trans.hasUser(bjid)):
                 print ("sending wall message...")
-                res=self.trans.threads[bjid].sendWallMessage(to_id,args["text"])
+                res=self.trans.users[bjid].thread.sendWallMessage(to_id,args["text"])
                 if res==1:
                     return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
                 elif res==2:
@@ -369,19 +370,17 @@ class setConfigCmd(basicCommand):
         if (len(args)):
             try:
                 for i in args:
-                    self.trans.usrconf[bjid][i]=args[i]
-                nc=str(self.trans.usrconf[bjid])
+                    self.trans.users[bjid].config=args[i]
+                nc=str(self.ans.users[bjid].config)
                 self.trans.saveConfig(bjid)
             except KeyError:
                 print "keyError"
                 ns="[void]"
-            
-
             return {"status":"completed","title":self.name,'message':u'вот тут настройки должны были бы сохраниться\n%s'%nc}
             
         else:
             try:
-                conf=self.trans.usrconf[bjid]
+                conf=self.trans.users[bjid].config
             except KeyError:
                 return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
             fl={}
