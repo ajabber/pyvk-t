@@ -217,10 +217,11 @@ class pyvk_t(component.Service,vkonClient):
                     log.msg("bad JID: %s"%msg["to"])
                     return
                 req=msg.request
-                if hasAttribute(msg,"title"):
-                    title = msg.title
-                else:
-                    title = "xmpp:%s"%bjid
+                title = "xmpp:%s"%bjid
+                for x in msg.elements():
+                    if x.name=="subject":
+                        title=x.__str__()
+                        break
                 if(req==None):
                     print "legacy message"
                     self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
@@ -445,7 +446,7 @@ class pyvk_t(component.Service,vkonClient):
         self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
     def login(self,jid):
         # TODO bare jid?
-        if (self.isActive==0 and bareJid(jid)!=self.admin):
+        if (not self.isActive and bareJid(jid)!=self.admin):
             #log.msg("isActive==0, login attempt aborted")
             self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
             return
@@ -774,7 +775,7 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        if not self.hasReource(prs["from"]) and self.hasReource(bjid):
+        if not self.hasReource(prs["from"]) and self.hasReource(bjid) and self.isActive:
             self.usersOnline(prs["from"],self.threads[bjid].onlineList)
             self.storePresence(prs)
             p = self.foregroundPresence(bjid)
@@ -786,7 +787,7 @@ class pyvk_t(component.Service,vkonClient):
             elif p:
                 self.sendPresence(self.jid,prs["from"],status=p["status"],show=p["show"])
             return
-        elif self.hasReource(bjid) and not self.locks.has_key(jid):
+        elif self.hasReource(bjid) and not self.locks.has_key(jid) and self.isActive:
             p = self.foregroundPresence(bjid)
             self.storePresence(prs)
             pn = self.foregroundPresence(bjid)
@@ -846,6 +847,7 @@ class pyvk_t(component.Service,vkonClient):
                 del self.threads[u]
                 self.pools[u].stop()
                 del self.pools[u]
+                del self.resources[u]
             except:
                 pass
             self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
