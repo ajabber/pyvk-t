@@ -13,7 +13,7 @@ from twisted.python import log
 from twisted.words.xish import domish
 from twisted.words.protocols.jabber.xmlstream import IQ
 from twisted.enterprise import adbapi 
-from twisted.enterprise.util import safe 
+from twisted.enterprise.adbapi import safe 
 
 from twisted.words.protocols.jabber.ijabber import IService
 from twisted.words.protocols.jabber import component,xmlstream
@@ -22,8 +22,10 @@ from zope.interface import Interface, implements
 import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
-import sys,os
+import sys,os,cPickle
+from base64 import b64encode,b64decode
 import pyvkt_commands
+from pyvkt_user import user
 try:
     from twisted.internet.threads import deferToThreadPool
 except:
@@ -108,6 +110,7 @@ class pyvk_t(component.Service,vkonClient):
         self.usrconf={}
         self.locks={}
         self.resources={}
+        self.users={}
         try:
             self.admin=config.get("general","admin")
         except:
@@ -439,7 +442,7 @@ class pyvk_t(component.Service,vkonClient):
     def login(self,jid):
         # TODO bare jid?
         if (self.isActive==0 and bareJid(jid)!=self.admin):
-            log.msg("isActive==0, login attempt aborted")
+            #log.msg("isActive==0, login attempt aborted")
             self.sendMessage(self.jid,jid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
             return
 
@@ -458,8 +461,12 @@ class pyvk_t(component.Service,vkonClient):
         bjid=data[0][0].lower()
         defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
         try:
-            self.usrconf[t[0]]=t[3]
+            if (data[0][3]==" "):
+                self.usrconf[t[0]]={}
+            self.usrconf[t[0]]=cPickle.loads(b64decode(data[0][3]))
+            print 'got config',self.usrconf[t[0]]
         except:
+            self.usrconf[t[0]]={}
             log.msg("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
             self.usrconf[t[0]]=None
         p = self.foregroundPresence(bjid)
@@ -836,6 +843,16 @@ class pyvk_t(component.Service,vkonClient):
             self.sendPresence(self.jid,u,"unavailable")
         print "done"
         return None
+    def saveConfig(self,bjid):
+        try:
+            pcs=b64encode(cPickle.dumps(self.usrconf[bjid]))
+        except KeyError:
+            print "keyError"
+            return -1
+        q="UPDATE users SET config = '%s' WHERE jid = '%s';"%(safe(pcs),safe(bjid))
+        print q
+        qq=self.dbpool.runQuery(q)
+        return 0
     def sendMessage(self,src,dest,body):
         msg=domish.Element((None,"message"))
         #try:

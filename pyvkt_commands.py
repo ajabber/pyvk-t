@@ -21,7 +21,8 @@ class cmdManager:
                 "echo":echoCmd(trans),
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
-                "logout":logoutCmd(trans)}
+                "logout":logoutCmd(trans),
+                "config":setConfigCmd(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
@@ -123,7 +124,15 @@ class cmdManager:
                         fd=fields[i][1]
                     except IndexError:
                         fd=i
-                    x.addElement("field").attributes={"type":"text-single", 'var':i,'label':fd}
+                    try:
+                        val=fields[i][2]
+                    except IndexError:
+                        print "initial value isn't set"
+                        val=''
+
+                    f=x.addElement("field")
+                    f.attributes={"type":"text-single", 'var':i,'label':fd}
+                    f.addElement("value").addContent(val)
             except KeyError:
                 pass
             return resp
@@ -208,8 +217,13 @@ class basicCommand:
             except IndexError:
                 print "WARN: deprecated form description"
                 fd=''
+            try:
+                val=form['fields'][i][2]
+            except IndexError:
+                print "initial value isn't set"
+                val=''
             #fe=u'%s: %s - %s'%(i,ft,fd)
-            fe=u'%s: %s'%(i,fd)
+            fe=u"%s='%s': %s"%(i,val,fd)
             ret="%s\n%s"%(ret,fe)
         return ret
     def assignArgs(self,args):
@@ -340,5 +354,41 @@ class sendWallMessageCmd(basicCommand):
                 return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
             print ("done")
         else:
-            return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение')}},'message':u'Введите текст сообщения для отправки на стену'}
+            return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
+class setConfigCmd(basicCommand):
+    name=u"Настройки транспорта"
+    args={0:"test"}
+    confList=["test"]
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        print("echo from %s"%jid)
+        bjid=bareJid(jid)
+        print(args)
+        if (len(args)):
+            try:
+                for i in args:
+                    self.trans.usrconf[bjid][i]=args[i]
+                nc=str(self.trans.usrconf[bjid])
+                self.trans.saveConfig(bjid)
+            except KeyError:
+                print "keyError"
+                ns="[void]"
+            
+
+            return {"status":"completed","title":self.name,'message':u'вот тут настройки должны были бы сохраниться\n%s'%nc}
+            
+        else:
+            try:
+                conf=self.trans.usrconf[bjid]
+            except KeyError:
+                return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+            fl={}
+            for i in self.confList:
+                try:
+                    val=conf[i]
+                except:
+                    val='[default]'
+                fl[i]=(i,i,val)
+            return {"status":"executing","title":u"Установка статуса","form":{"fields":fl},'message':u''}
