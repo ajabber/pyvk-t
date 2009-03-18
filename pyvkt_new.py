@@ -792,11 +792,7 @@ class pyvk_t(component.Service,vkonClient):
         elif(err=="auth"):
             self.sendMessage(self.jid,jid,u"Ошибка входа. Возможно, неправильный логин/пароль.")
         try:
-            print "FIXME!!!"
-            self.threads[jid].exit()
-            del self.threads[jid]
-            self.pools[jid].stop()
-            del self.pools[jid]
+            self.users[i].logout()
         except:
             pass
         self.sendPresence(self.jid,jid,"unavailable")
