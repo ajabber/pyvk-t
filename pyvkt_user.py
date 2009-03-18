@@ -6,32 +6,77 @@ import pyvkt_global as pyvkt
 from twisted.internet import defer
 import sys,os,cPickle
 from base64 import b64encode,b64decode
+import time
+
 class user:
     def __init__(self,trans,jid):
         bjid=pyvkt.bareJid(jid)
         #print "user constructor: %s"%bjid
         
         self.trans=trans
-        self.bjid=bjid
-        self.resources=[]
-        self.lock=0
+        self.bjid=bjid      #bare jid of a contact
+        self.resources={}   #available resources with their status
+        self.lock=0 
         self.active=1
         self.FUsent=0
+        self.VkStatus=u""   #status which is set on web
+        self.status=u""     #status which is show in jabber
         pass
-    def addResource(self,jid):
-        if(len(self.resources)==0 and self.lock==0):
+
+    def addResource(self,prs):
+        """
+        adds resource to jid's reources list
+        stores it's presence and does some work of resending presences
+        """
+        jid=prs["from"]
+        firstTime = 0
+        #if had no resources before and not trying to login now
+        if not (self.resources or self.lock):
+            firstTime = 1
             self.login()
-        if (jid in self.resources):
+        #new status of a resource
+        if jid in self.resources:
             pass
+        #new resource should be added
         else:
-            self.resources.append(jid)
             #TODO resend presence
+            pass
+        str = self.prsToVkStatus(self.storePresence(prs))
+        #if VkStatus has to be changed and should be done now
+        if str!=self.VkStatus or firstTime and not lock:
+            #TODO send status to a site
+            pass
+
+    def prsToVkStatus(self,prs):
+        """
+        converts stores presence int  a string which can be send to a site
+        """
+        str = prs["status"]
+        return str
+
+    def storePresence(self, prs):
+        """
+        stores presence of a resource and returns it
+        """
+        jid=prs["from"]
+        p={"jid":jid,"priority":'0',"status":u"","time":time.time()}
+        for i in prs.elements():
+            if i.children and i.name in p:
+                p[i.name]=i.children[0]
+        p["priority"]=int(p["priority"])
+        self.resources[jid]=p
+        return p
+
     def delResource(self,jid):
-        if (jid in self.resources):
-            self.resources.remove(jid)
-        if (len(self.resources)==0):
+        """
+        deletes resource and does some other work if needed
+        """
+        if jid in self.resources:
+            del self.resources[jid]
+        if not self.resources:
             self.logout()
         #TODO any resources left?
+
     def createThread(self,jid,email,pw):
         jid=pyvkt.bareJid(jid)
         # TODO self.jid
@@ -42,6 +87,7 @@ class user:
         self.pool.start()
         self.thread.start()
         self.thread.feedOnly=0
+
     def login(self):
         # TODO bare jid?
         self.active=1
@@ -63,6 +109,7 @@ class user:
         print mq
         q=self.trans.dbpool.runQuery(mq)
         q.addCallback(self.login1)
+
     def login1(self,data):
         t=data[0]
         bjid=data[0][0].lower()
@@ -78,19 +125,12 @@ class user:
             self.config={}
             print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
         
-        ## wtf??
         return
-        p = self.trans.foregroundPresence(bjid)
-        if p:
-            self.trans.sendPresence(self.trans.jid,bjid,status=p["status"],show=p["show"])
-            #FIXME "too fast"!!
-            self.pool.callInThread(self.updateStatus,bjid=bjid,text=p["status"])
-        else:
-            self.trans.sendPresence(self.trans.jid,bjid)
 
     def loginFailed(self,data,jid):
         print ("login failed for %s"%self.bjid)
         #del self.thread
+
     def logout(self):
         try:
             defer.execute(self.thread.logout).addCallback(self.delThread,bjid=bjid)
@@ -105,34 +145,23 @@ class user:
             del self.config
         except KeyError:
             pass
+
     def delThread(self):
         del self.thread
         self.active=0
+
     def hasResource(self,jid):
         """
-        return 1 if
-            bare jid set and has any resources available
-            full jid set and is available
+        return 1 if resource is available
         otherwise returns 0 
         """
         bjid=pyvkt.bareJid(jid)
         #barejid - just check if any resources available
-        if jid==bjid and self.resources.has_key(bjid) and len(self.resources[bjid]):
+        if jid==bjid and self.resources:
             return 1
         #full jid - check for certain resource
-        if jid!=bjid and self.resources.has_key(bjid) and self.resources[bjid].has_key(jid):
+        if jid!=bjid and jid in self.resources:
             return 1
         #nothing
         return 0
 
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
