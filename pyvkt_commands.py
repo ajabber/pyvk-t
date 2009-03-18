@@ -21,8 +21,8 @@ class cmdManager:
                 "echo":echoCmd(trans),
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
-                "logout":logoutCmd(trans),
-                "config":setConfigCmd(trans)}
+                "logout":logoutCmd(trans)}
+                #"config":setConfigCmd(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin

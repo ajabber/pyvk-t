@@ -217,9 +217,13 @@ class pyvk_t(component.Service,vkonClient):
                     log.msg("bad JID: %s"%msg["to"])
                     return
                 req=msg.request
+                if hasAttribute(msg,"title"):
+                    title = msg.title
+                else:
+                    title = "xmpp:%s"%bjid
                 if(req==None):
                     print "legacy message"
-                    self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title="[sent by pyvk-t]")
+                    self.pools[bjid].callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
                 else:
                     if (req.uri=='urn:xmpp:receipts'):
 
@@ -228,7 +232,7 @@ class pyvk_t(component.Service,vkonClient):
                         d=deferToThreadPool(
                                 reactor=reactor,
                                 threadpool=self.pools[bjid],
-                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title="[sent by pyvk-t]")
+                                f=self.threads[bjid].sendMessage,to_id=v_id,body=body,title=title)
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -551,48 +555,50 @@ class pyvk_t(component.Service,vkonClient):
             else:
                 break
         bjid=bareJid(jid)
-        #try:
-        if text: 
-            items=self.threads[bjid].searchUsers(text)
-            if items:
-                x=query.addElement("x","jabber:x:data")
-                x['type']='result'
-                hidden=x.addElement("field")
-                hidden['type']='hidden'
-                hidden['var']='FORM_TYPE'
-                hidden.addElement('value').addContent(u'jabber:iq:search')
-                item=x.addElement("reported")
-                field=item.addElement("field")
-                field['type']='text-single'
-                field['label']=u'Полное имя'
-                field['var']='FN'
-                field=item.addElement("field")
-                field['type']='text-single'
-                field['label']=u'Jabber ID'
-                field['var']='jid'
-                field=item.addElement("field")
-                field['type']='text-single'
-                field['label']=u'Vkontakte ID'
-                field['var']='vid'
-                for i in items:
-                    item=x.addElement("item")
+        try:
+            if text: 
+                items=self.threads[bjid].searchUsers(text)
+                if items:
+                    x=query.addElement("x","jabber:x:data")
+                    x['type']='result'
+                    hidden=x.addElement("field")
+                    hidden['type']='hidden'
+                    hidden['var']='FORM_TYPE'
+                    hidden.addElement('value').addContent(u'jabber:iq:search')
+                    item=x.addElement("reported")
                     field=item.addElement("field")
-                    field['var']='FN'
-                    field.addElement("value").addContent(items[i])
-                    field=item.addElement("field")
+                    field['type']='text-single'
+                    field['label']=u'Jabber ID'
                     field['var']='jid'
-                    field.addElement("value").addContent(i+u'@'+self.jid)
                     field=item.addElement("field")
-                    field['var']='vid'
-                    field.addElement("value").addContent(i)
-        #except:
-        #    log.msg("some fcky error when searching")
-
+                    field['type']='text-single'
+                    field['label']=u'Полное имя'
+                    field['var']='FN'
+                    field=item.addElement("field")
+                    field['type']='text-single'
+                    field['label']=u'Страница Вконтакте'
+                    field['var']='vk.ru'
+                    for i in items:
+                        item=x.addElement("item")
+                        field=item.addElement("field")
+                        field['var']='jid'
+                        field.addElement("value").addContent(i+u'@'+self.jid)
+                        field=item.addElement("field")
+                        field['var']='FN'
+                        field.addElement("value").addContent(items[i])
+                        field=item.addElement("field")
+                        field['var']='vk.ru'
+                        field.addElement("value").addContent(u"http://vkontakte.ru/id%s"%i)
+        except:
+            log.msg("some fcky error when searching")
         #log.msg(card)
         ans.send()
 
 
     def getsendVcard(self,jid,v_id,iq_id):
+        """
+        get vCard (user info) from vkontakte.ru and send it
+        """
         #log.msg(jid)
         #log.msg(v_id)
         bjid=bareJid(jid)
@@ -741,6 +747,9 @@ class pyvk_t(component.Service,vkonClient):
         return mp
 
     def updateStatus(self, bjid, text):
+        """
+        update site stuse if enabled
+        """
         if self.threads.has_key(bjid) and self.sync_status:
             print "updating status for",bjid,":",text.encode("ascii","replace")
             self.threads[bjid].setStatus(text)
@@ -785,7 +794,7 @@ class pyvk_t(component.Service,vkonClient):
             if p["show"]!=pn["show"] or p["status"]!=pn["status"]:
                 self.sendPresence(self.jid,bjid,status=pn["status"],show=pn["show"])
                 if self.pools.has_key(bjid):
-                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=p["status"])
+                    self.pools[bjid].callInThread(self.updateStatus,bjid=bjid,text=pn["status"])
             return
         self.storePresence(prs)
         self.login(bjid)
