@@ -118,7 +118,7 @@ class vkonThread(threading.Thread):
         try:
             return demjson.decode(s)
         except:
-            log.msg("JSON decode error")
+            print("JSON decode error")
             self.dumpString(s,"feed")
         return {}
     def flParse(self,page):
@@ -508,6 +508,7 @@ class vkonThread(threading.Thread):
             return ret
         return self.flParse(page)
     def loop(self):
+        tonline=[]
         while(self.alive):
             tfeed=self.getFeed()
             if (tfeed!=self.oldFeed):

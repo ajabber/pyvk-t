@@ -294,7 +294,7 @@ class loginCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=bareJid(jid)
-        if (self.trans.isActive==0 and bjid!=self.admin):
+        if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
         self.trans.addResource(bjid)
         return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}

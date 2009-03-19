@@ -7,6 +7,7 @@ from twisted.internet import defer
 import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
+from traceback import print_stack
 
 class user:
     def __init__(self,trans,jid):
@@ -33,30 +34,28 @@ class user:
         #if had no resources before and not trying to login now
         if not (self.resources or self.lock):
             firstTime = 1
+            self.lock=1
             self.login()
         #new status of a resource
         if jid in self.resources:
             pass
         #new resource should be added
         else:
+            self.storePresence(prs)
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
-        status=self.prsToVkStatus(prs)
+        status=self.prsToVkStatus(self.storePresence(prs))
         if status!=self.VkStatus or firstTime and not self.lock:
             #TODO send status to a site
             pass
 
     def prsToVkStatus(self,prs):
         """
-        converts stores presence int  a string which can be sent to a site
+        converts stores presence int  a string which can be send to a site
         """
-        status=""
-        try:
-            status=prs.status.children[0]
-        except (KeyError, IndexError,AttributeError):
-            pass
-        return status
+        st = prs["status"]
+        return st
 
     def storePresence(self, prs):
         """
@@ -82,10 +81,20 @@ class user:
         #TODO any resources left?
 
     def createThread(self,jid,email,pw):
+        print "createThread %s"%self.bjid
         jid=pyvkt.bareJid(jid)
         # TODO self.jid
+        try:
+            self.pool.stop()
+            del self.pool
+        except:
+            pass
+        try:
+            del self.thread
+        except:
+            pass
+
         self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw)
-        #del self.locks[jid]
         self.lock=0
         self.pool=ThreadPool(1,1)
         self.pool.start()
@@ -105,12 +114,9 @@ class user:
             self.active=0
             #WARN bjid?
             return
-        if (self.lock):
-            
-            return
-        self.lock=1
         mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
         print mq
+        #print_stack()
         q=self.trans.dbpool.runQuery(mq)
         q.addCallback(self.login1)
 
@@ -143,6 +149,7 @@ class user:
         self.pool.stop()
 
     def delThread(self,void):
+        print "delThread %s"%self.bjid
         del self.thread
         self.active=0
 
