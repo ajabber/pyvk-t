@@ -23,12 +23,12 @@ class user:
         self.status=u""     #status which is show in jabber
         pass
 
-    def addResource(self,prs):
+    def addResource(self,jid,status=""):
         """
         adds resource to jid's reources list
         stores it's presence and does some work of resending presences
         """
-        jid=prs["from"]
+        #jid=prs["from"]
         firstTime = 0
         #if had no resources before and not trying to login now
         if not (self.resources or self.lock):
@@ -41,18 +41,21 @@ class user:
         else:
             #TODO resend presence
             pass
-        str = self.prsToVkStatus(self.storePresence(prs))
         #if VkStatus has to be changed and should be done now
-        if str!=self.VkStatus or firstTime and not lock:
+        if status!=self.VkStatus or firstTime and not self.lock:
             #TODO send status to a site
             pass
 
     def prsToVkStatus(self,prs):
         """
-        converts stores presence int  a string which can be send to a site
+        converts stores presence int  a string which can be sent to a site
         """
-        str = prs["status"]
-        return str
+        status=""
+        try:
+            status=prs.status.children[0]
+        except (KeyError, IndexError,AttributeError):
+            pass
+        return status
 
     def storePresence(self, prs):
         """
@@ -132,21 +135,11 @@ class user:
         #del self.thread
 
     def logout(self):
-        try:
-            defer.execute(self.thread.logout).addCallback(self.delThread,bjid=bjid)
-        except KeyError:
-            pass
-        try:
-            self.pool.stop()
-            del self.pool
-        except KeyError:
-            pass
-        try:
-            del self.config
-        except KeyError:
-            pass
+        print "logout %s"%self.bjid
+        defer.execute(self.thread.logout).addCallback(self.delThread)
+        self.pool.stop()
 
-    def delThread(self):
+    def delThread(self,void):
         del self.thread
         self.active=0
 
@@ -164,4 +157,5 @@ class user:
             return 1
         #nothing
         return 0
+    #TODO destructor
 

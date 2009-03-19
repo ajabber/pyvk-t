@@ -106,11 +106,7 @@ class pyvk_t(component.Service,vkonClient):
             self.show_avatars = config.getboolean("features","avatars")
         else:
             self.show_avatars = 0
-        #self.threads={}
-        #self.pools={}
-        #self.usrconf={}
-        #self.locks={}
-        #self.resources={}
+
         self.users={}
         try:
             self.admin=config.get("general","admin")
@@ -643,16 +639,16 @@ class pyvk_t(component.Service,vkonClient):
             else:
                 del self.users[bjid]
         return 0
-    def addResource(self,prs):
-        jid=prs["from"]
+    def addResource(self,jid,status=""):
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)==0):
             #print "creating user %s"
             self.users[bjid]=user(self,jid)
-        self.users[bjid].addResource(prs)
+        self.users[bjid].addResource(jid,status)
     def delResource(self,jid):
+        print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
-        if (self.hasUser(jid)):
+        if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
     def onPresence(self, prs):
@@ -675,9 +671,13 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        self.addResource(prs)
-        return 
-
+        status=""
+        try:
+            status=prs.status.children[0]
+        except (KeyError, IndexError,AttributeError):
+            pass
+        if (self.isActive or (bjid==self.admin)):
+            self.addResource(prs["from"],status)
     def feedChanged(self,jid,feed):
         ret=""
         for k in feed.keys():
