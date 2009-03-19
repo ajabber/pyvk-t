@@ -346,7 +346,7 @@ class pyvk_t(component.Service,vkonClient):
                     else:
                         #log.msg("id: %s"%v_id)
                         if (self.hasUser(bjid)):
-                            time.sleep(1)
+                            self.users[bjid].pool.callInThread(time.sleep(1))
                             self.users[bjid].pool.callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
@@ -640,6 +640,7 @@ class pyvk_t(component.Service,vkonClient):
                 del self.users[bjid]
         return 0
     def addResource(self,jid,prs=None):
+        #print "addRes"
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)==0):
             #print "creating user %s"
@@ -671,7 +672,7 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        if (self.isActive or (bjid==self.admin)):
+        if (self.isActive or bjid==self.admin):
             self.addResource(prs["from"],prs)
     def feedChanged(self,jid,feed):
         ret=""
@@ -715,6 +716,7 @@ class pyvk_t(component.Service,vkonClient):
                 pass
             self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
             self.sendPresence(self.jid,u,"unavailable")
+        time.sleep(15)
         print "done"
         return None
     def saveConfig(self,bjid):
@@ -776,5 +778,8 @@ class pyvk_t(component.Service,vkonClient):
             except:
                 pass
             pass
-        
+    def __del__(self):
+        print "stopping service..."
+        self.stopService()
+        print "done"
 
