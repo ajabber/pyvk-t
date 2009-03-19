@@ -128,7 +128,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=0
+        self.isActive=1
         #self.commands=
         # FIXME 
     def jidToId(self,jid):
@@ -639,12 +639,12 @@ class pyvk_t(component.Service,vkonClient):
             else:
                 del self.users[bjid]
         return 0
-    def addResource(self,jid,status=""):
+    def addResource(self,jid,prs=None):
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)==0):
             #print "creating user %s"
             self.users[bjid]=user(self,jid)
-        self.users[bjid].addResource(jid,status)
+        self.users[bjid].addResource(jid,prs)
     def delResource(self,jid):
         print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
@@ -671,13 +671,8 @@ class pyvk_t(component.Service,vkonClient):
                 self.sendPresence(prs["to"],prs["from"],"subscribed")
             return
         #if (prs["to"]==self.jid):
-        status=""
-        try:
-            status=prs.status.children[0]
-        except (KeyError, IndexError,AttributeError):
-            pass
         if (self.isActive or (bjid==self.admin)):
-            self.addResource(prs["from"],status)
+            self.addResource(prs["from"],prs)
     def feedChanged(self,jid,feed):
         ret=""
         for k in feed.keys():
