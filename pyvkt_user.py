@@ -23,7 +23,7 @@ class user:
         self.status=u""     #status which is show in jabber
         pass
 
-    def addResource(self,jid,status=""):
+    def addResource(self,jid,prs=None):
         """
         adds resource to jid's reources list
         stores it's presence and does some work of resending presences
@@ -42,6 +42,7 @@ class user:
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
+        status=self.prsToVkStatus(prs)
         if status!=self.VkStatus or firstTime and not self.lock:
             #TODO send status to a site
             pass
@@ -120,9 +121,11 @@ class user:
             return
         defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
         try:
-            if (data[0][3]==" "):
+            try:
+                self.config=cPickle.loads(b64decode(data[0][3]))
+            except EOFError:
+                print "error while parsing config"
                 self.config={}
-            self.config=cPickle.loads(b64decode(data[0][3]))
             print 'got config',self.config
         except IndexError:
             self.config={}
@@ -157,5 +160,9 @@ class user:
             return 1
         #nothing
         return 0
+    def __del__(self):
+        self.thread.logout()
+        self.thread.stop()
+        self.pool.stop()
     #TODO destructor
 
