@@ -550,10 +550,11 @@ class vkonThread(threading.Thread):
                     
             #print tonline,self.onlineList
             if (tonline!=self.onlineList):
-                self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.count(x)-1,tonline))
+                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.count(x)-1,tonline))
                 self.client.usersOffline(self.jid,filter(lambda x:tonline.count(x)-1,self.onlineList))
-                self.onlineList=tonline
+                if self.alive: self.onlineList=tonline
             time.sleep(10)
+
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList)
         self.logout()

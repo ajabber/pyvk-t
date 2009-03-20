@@ -615,7 +615,7 @@ class pyvk_t(component.Service,vkonClient):
         msg=self.users[bjid].thread.getMessage(msgid)
         #log.msg(msg)
         print msg
-        self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,msg["text"])
+        self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,msg["text"],msg["title"])
 
     def submitMessage(self,jid,v_id,body,title):
         #log.msg((jid,v_id,body,title))
@@ -681,7 +681,7 @@ class pyvk_t(component.Service,vkonClient):
     def feedChanged(self,jid,feed):
         ret=""
         for k in feed.keys():
-            if (k!="user" and feed[k]["count"]):
+            if (k!="user" and k!="messages" and feed[k]["count"]):
                 ret=ret+"new %s: %s\n"%(k,feed[k]["count"])
         #try:
         if (feed["messages"]["count"] ):
@@ -729,7 +729,7 @@ class pyvk_t(component.Service,vkonClient):
         print q
         qq=self.dbpool.runQuery(q)
         return 0
-    def sendMessage(self,src,dest,body):
+    def sendMessage(self,src,dest,body,title=None):
         msg=domish.Element((None,"message"))
         #try:
             #msg["to"]=dest.encode("utf-8")
@@ -741,6 +741,8 @@ class pyvk_t(component.Service,vkonClient):
         msg["id"]="msg%s"%(int(time.time())%10000)
         
         msg.addElement("body").addContent(body)
+        if title:
+            msg.addElement("subject").addContent(title)
         
         #FIXME "id"???
         try:
