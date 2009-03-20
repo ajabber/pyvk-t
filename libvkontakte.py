@@ -43,6 +43,7 @@ class vkonThread(threading.Thread):
     error=0
     def __init__(self,cli,jid,email,passw):
         threading.Thread.__init__(self,target=self.loop)
+        self.daemon=True
         self.alive=0
         config = ConfigParser.ConfigParser()
         confName="pyvk-t_new.cfg"
@@ -57,11 +58,16 @@ class vkonThread(threading.Thread):
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         cjar.clear()
         try:
-            
             self.dumpPath=config.get("debug","dump_path")
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "debug/dump_path isn't set. disabling dumps"
             self.dumpPath=None
+        try:
+            self.cachePath=config.get("features","cache_path")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "debug/dump_path isn't set. disabling dumps"
+            self.cachePath=None
+        
         authData={'email':email, 'pass':passw}
         params=urllib.urlencode(authData)
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
@@ -162,7 +168,7 @@ class vkonThread(threading.Thread):
         return self.flParse(page)
     def dumpString(self,string,fn=""):
         if (self.dumpPath==None or self.dumpPath==''):
-            print "dump disabled"
+            #print "dump disabled"
             return
         fname="%s/%s-%s"%(self.dumpPath,int(time.time()),fn)
         fil=open(fname,"w")
@@ -310,15 +316,30 @@ class vkonThread(threading.Thread):
             print "cannot parse user data"
         #avatars are asked only if needed
         if show_avatars:
-            try:
-                photourl=lc.find(name="img")['src']
+            photourl=lc.find(name="img")['src']
+            fpath=''
+            photo=None
+            if (self.cachePath):
+                pos=photourl.find(".ru/u")
+                if (pos!=-1):
+                    fname=photourl[pos+4:].replace("/","_")
+                    fpath="%s/avatar-%s"%(self.cachePath,fname)
+                    try:
+                        cfile=open(fpath,"r")
+                        photo=cfile.read()
+                        cfile.close()
+                    except:
+                        print "can't read cache: %s"%fname
+            if (photo==None):
                 req=urllib2.Request(photourl)
                 res=self.opener.open(req)
                 photo=base64.encodestring(res.read())
-                result["PHOTO"]=photo
-            except:
-                print 'cannot load avatar'
-
+                if (self.cachePath):
+                    #FIXME check for old avatars
+                    cfile=open(fpath,'w')
+                    cfile.write(photo)
+                    cfile.close()
+            result["PHOTO"]=photo
         return result
     def searchUsers(self, text):
         '''
