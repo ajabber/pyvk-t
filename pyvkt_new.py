@@ -346,11 +346,11 @@ class pyvk_t(component.Service,vkonClient):
                     else:
                         #log.msg("id: %s"%v_id)
                         if (self.hasUser(bjid)):
-                            self.users[bjid].pool.callInThread(time.sleep(1))
+                            #self.users[bjid].pool.callInThread(time.sleep(1))
                             self.users[bjid].pool.callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
-                            log.msg("thread not found!")
+                            print("thread not found: %s"%bjid)
                 else:
                     ans=xmlstream.IQ(self.xmlstream,"result")
                     ans["to"]=iq["from"]
@@ -532,11 +532,11 @@ class pyvk_t(component.Service,vkonClient):
         #log.msg(jid)
         #log.msg(v_id)
         bjid=bareJid(jid)
-        try:
-            card=self.users[bjid].thread.getVcard(v_id, self.show_avatars)
-        except:
-            log.msg("some fcky error")
-            card = None
+        #try:
+        card=self.users[bjid].thread.getVcard(v_id, self.show_avatars)
+        #except:
+            #log.msg("some fcky error")
+            #card = None
 
         #log.msg(card)
         ans=xmlstream.IQ(self.xmlstream,"result")
@@ -647,7 +647,7 @@ class pyvk_t(component.Service,vkonClient):
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
     def delResource(self,jid):
-        print "delResource %s"%jid
+        #print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
@@ -709,11 +709,7 @@ class pyvk_t(component.Service,vkonClient):
     def stopService(self):
         print "logging out..."
         for u in self.users:
-            try:
-                #FIXME
-                self.users[i].logout()
-            except:
-                pass
+            self.users[u].logout()
             self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
             self.sendPresence(self.jid,u,"unavailable")
         time.sleep(15)

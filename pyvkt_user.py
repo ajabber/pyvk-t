@@ -121,7 +121,10 @@ class user:
         q.addCallback(self.login1)
 
     def login1(self,data):
-        t=data[0]
+        try:
+            t=data[0]
+        except IndexError:
+            print "FIXME unregistered user: %s ?"%self.bjid
         bjid=data[0][0].lower()
         if (bjid!=self.bjid):
             return
@@ -145,7 +148,10 @@ class user:
 
     def logout(self):
         print "logout %s"%self.bjid
-        defer.execute(self.thread.logout).addCallback(self.delThread)
+        try:
+            defer.execute(self.thread.logout).addCallback(self.delThread)
+        except AttributeError:
+            print "thread doesn't exists (%s)"%self.bjid
         self.pool.stop()
 
     def delThread(self,void):
