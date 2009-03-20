@@ -172,6 +172,7 @@ class user:
 
     def logout(self):
         print "logout %s"%self.bjid
+        self.lock=1
         try:
             defer.execute(self.thread.logout).addCallback(self.delThread)
         except AttributeError:
@@ -180,6 +181,7 @@ class user:
             self.pool.stop()
         except AttributeError:
             print "%s: thread without pool??"%self.bjid
+        self.lock=0
 
     def delThread(self,void):
         print "delThread %s"%self.bjid
