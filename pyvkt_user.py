@@ -19,6 +19,7 @@ class user:
         self.bjid=bjid      #bare jid of a contact
         self.resources={}   #available resources with their status
         self.lock=0 
+        self.status_lock = 0
         self.active=1
         self.FUsent=0
         self.VkStatus=u""   #status which is set on web
@@ -34,23 +35,28 @@ class user:
         firstTime = 0
         #if had no resources before and not trying to login now
         if not (self.resources or self.lock):
-            firstTime = 1
             self.lock=1
+            firstTime = 1
             self.login()
         #new status of a resource
         if jid in self.resources:
             pass
         #new resource should be added
-        else:
-            self.storePresence(prs)
+        elif self.resources and not self.lock:
+            self.trans.sendPresence(self.trans.jid,jid)
+            self.trans.usersOnline(self.bjid,self.thread.onlineList)
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
         if (prs!=None):
             status=self.prsToVkStatus(self.storePresence(prs))
-            if status!=self.VkStatus or firstTime and not self.lock:
+            if status!=self.VkStatus and not self.lock:
+                self.trans.updateStatus(self.bjid,status)
+                self.VkStatus = status
                 #TODO send status to a site
                 pass
+            if firstTime:
+                self.VkStatus = status
         else:
             self.resources[jid]=None
 
@@ -58,7 +64,17 @@ class user:
         """
         converts stores presence int  a string which can be send to a site
         """
-        st = prs["status"]
+        st=u""
+        if prs["show"]=="away":
+            st = u"отошел ("+prs["status"]+")"
+        elif prs["show"]=="xa":
+            st = u"давно отошел ("+prs["status"]+")"
+        elif prs["show"]=="dnd":
+            st = u"занят ("+prs["status"]+")"
+        elif prs["show"]=="chat":
+            st = u"хочет поговорить ("+prs["status"]+")"
+        else:
+            st = prs["status"]
         return st
 
     def storePresence(self, prs):
@@ -67,7 +83,7 @@ class user:
         """
         if (prs==None):return
         jid=prs["from"]
-        p={"jid":jid,"priority":'0',"status":u"","time":time.time()}
+        p={"jid":jid,"priority":'0',"status":u"","show":u"","time":time.time()}
         for i in prs.elements():
             if i.children and i.name in p:
                 p[i.name]=i.children[0]
@@ -106,6 +122,8 @@ class user:
         self.pool.start()
         self.thread.start()
         self.thread.feedOnly=0
+        self.trans.sendPresence(self.trans.jid,jid)
+        self.trans.updateStatus(self.bjid,self.VkStatus)
 
     def login(self):
         # TODO bare jid?
