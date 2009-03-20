@@ -27,10 +27,10 @@ from base64 import b64encode,b64decode
 import pyvkt_commands
 from pyvkt_user import user
 import pyvkt_global as pyvkt
-try:
-    from twisted.internet.threads import deferToThreadPool
-except:
-    from pyvkt_spikes import deferToThreadPool
+#try:
+    #from twisted.internet.threads import deferToThreadPool
+#except:
+from pyvkt_spikes import deferToThreadPool
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -198,7 +198,8 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="stats"):
                     ret=u"%s user(s) online"%len(self.users)
                     for i in self.users:
-                        ret=ret+u"\nxmpp:%s"%i
+                        if (self.hasUser(i)):
+                            ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.users:

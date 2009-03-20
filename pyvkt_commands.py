@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 from twisted.words.protocols.jabber import jid, xmlstream
 from twisted.internet.defer import waitForDeferred
-try:
-    from twisted.internet.threads import deferToThreadPool
-except:
-    from pyvkt_spikes import deferToThreadPool
+#try:
+    #from twisted.internet.threads import deferToThreadPool
+#except:
+from pyvkt_spikes import deferToThreadPool
 #from pyvkt_new import bareJid
 
 def bareJid(jid):

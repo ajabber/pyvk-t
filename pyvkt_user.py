@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import libvkontakte
-from twisted.python.threadpool import ThreadPool
+#from twisted.python.threadpool import ThreadPool
+from pyvkt_spikes import reqQueue
 from twisted.enterprise.adbapi import safe 
 import pyvkt_global as pyvkt
 from twisted.internet import defer
@@ -45,10 +46,13 @@ class user:
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
-        status=self.prsToVkStatus(self.storePresence(prs))
-        if status!=self.VkStatus or firstTime and not self.lock:
-            #TODO send status to a site
-            pass
+        if (prs!=None):
+            status=self.prsToVkStatus(self.storePresence(prs))
+            if status!=self.VkStatus or firstTime and not self.lock:
+                #TODO send status to a site
+                pass
+        else:
+            self.resources[jid]=None
 
     def prsToVkStatus(self,prs):
         """
@@ -61,6 +65,7 @@ class user:
         """
         stores presence of a resource and returns it
         """
+        if (prs==None):return
         jid=prs["from"]
         p={"jid":jid,"priority":'0',"status":u"","time":time.time()}
         for i in prs.elements():
@@ -96,7 +101,8 @@ class user:
 
         self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw)
         self.lock=0
-        self.pool=ThreadPool(1,1)
+        #self.pool=ThreadPool(1,1)
+        self.pool=reqQueue()
         self.pool.start()
         self.thread.start()
         self.thread.feedOnly=0
@@ -125,6 +131,7 @@ class user:
             t=data[0]
         except IndexError:
             print "FIXME unregistered user: %s ?"%self.bjid
+            return
         bjid=data[0][0].lower()
         if (bjid!=self.bjid):
             return
@@ -152,7 +159,10 @@ class user:
             defer.execute(self.thread.logout).addCallback(self.delThread)
         except AttributeError:
             print "thread doesn't exists (%s)"%self.bjid
-        self.pool.stop()
+        try:
+            self.pool.stop()
+        except AttributeError:
+            print "%s: thread without pool??"%self.bjid
 
     def delThread(self,void):
         print "delThread %s"%self.bjid
