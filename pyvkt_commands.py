@@ -285,7 +285,8 @@ class setStatusCmd(basicCommand):
             print ("done")
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":{"text":('text-single',u'Статус')}},'message':u'Введите статус'}
-        return {"status":"completed","title":u"Установка статуса",'message':u'Похоже, статус установлен'}
+        self.trans.users[bjid].VkStatus = args["text"]
+        return {"status":"completed","title":u"Установка статуса",'message':u'Похоже, статус установлен (%s)'%args["text"]}
 
 class loginCmd(basicCommand):
     name=u"Подключиться"

@@ -122,7 +122,7 @@ class pyvk_t(component.Service,vkonClient):
         else:
             p=s.find(":")
             ver=s[p+1:-1]
-            self.revision="svn rev. %s"%ver
+            self.revision="svn-rev.%s"%ver
         #self.commands=pyvktCommands(self)
         self.commands=pyvkt_commands.cmdManager(self)
         #except:
@@ -197,7 +197,7 @@ class pyvk_t(component.Service,vkonClient):
                     self.isActive=1
                 elif (cmd=="stats"):
                     ret=u"%s user(s) online"%len(self.users)
-                    for i in self.users:
+                    for i in self.users.keys():
                         if (self.hasUser(i)):
                             ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
@@ -629,9 +629,12 @@ class pyvk_t(component.Service,vkonClient):
         """
         update site stuse if enabled
         """
-        if self.hasUser(bjid) and self.sync_status:
+        if self.hasUser(bjid) and self.sync_status and self.users[bjid].active and not self.users[bjid].status_lock and not self.users[bjid].lock:
             print "updating status for",bjid,":",text.encode("ascii","replace")
+            self.users[bjid].status_lock = 1
             self.users[bjid].thread.setStatus(text)
+            self.users[bjid].status_lock = 0
+
     def hasUser(self,bjid):
         #print "hasUser (%s)"%bjid
         if (self.users.has_key(bjid)):
