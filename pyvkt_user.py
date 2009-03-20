@@ -131,22 +131,21 @@ class user:
             t=data[0]
         except IndexError:
             print "FIXME unregistered user: %s ?"%self.bjid
+            self.lock=0
+            self.active=0
             return
         bjid=data[0][0].lower()
         if (bjid!=self.bjid):
             return
         defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
         try:
-            try:
-                self.config=cPickle.loads(b64decode(data[0][3]))
-            except EOFError:
-                print "error while parsing config"
-                self.config={}
-            print 'got config',self.config
+            self.config=cPickle.loads(b64decode(data[0][3]))
+        except EOFError:
+            print "error while parsing config"
+            self.config={}
         except IndexError:
             self.config={}
             print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
-        
         return
 
     def loginFailed(self,data,jid):

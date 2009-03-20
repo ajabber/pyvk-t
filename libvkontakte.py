@@ -65,7 +65,7 @@ class vkonThread(threading.Thread):
         try:
             self.cachePath=config.get("features","cache_path")
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            print "debug/dump_path isn't set. disabling dumps"
+            print "features/cache_path isn't set. disabling cache"
             self.cachePath=None
         
         authData={'email':email, 'pass':passw}
@@ -168,7 +168,6 @@ class vkonThread(threading.Thread):
         return self.flParse(page)
     def dumpString(self,string,fn=""):
         if (self.dumpPath==None or self.dumpPath==''):
-            #print "dump disabled"
             return
         fname="%s/%s-%s"%(self.dumpPath,int(time.time()),fn)
         fil=open(fname,"w")
