@@ -198,8 +198,7 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="stats"):
                     ret=u"%s user(s) online"%len(self.users)
                     for i in self.users.keys():
-                        if (self.hasUser(i)):
-                            ret=ret+u"\nxmpp:%s"%i
+                        ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.users:
@@ -712,9 +711,10 @@ class pyvk_t(component.Service,vkonClient):
         self.sendPresence(self.jid,jid,"unavailable")
     def stopService(self):
         print "logging out..."
-        for u in self.users:
-            self.users[u].logout()
-            self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+        for u in self.users.keys():
+            if (self.hasUser(u)):
+                self.users[u].logout()
+                self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
             self.sendPresence(self.jid,u,"unavailable")
         time.sleep(15)
         print "done"

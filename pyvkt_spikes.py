@@ -8,7 +8,7 @@ from traceback import print_stack
 def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     #WARN "too fast"?
     print "deprecated deferToThreadPool"
-    print "this in NOT ERROR!"
+    print "this in NOT an ERROR!"
     print_stack(limit=2)
     return threadpool.defer(f,**kwargs)
     
@@ -23,7 +23,7 @@ class reqQueue(threading.Thread):
         self.alive=1
     def callInThread(self,foo,**kw):
         print "deprecated callInThread"
-        print "this in NOT ERROR!"
+        print "this in NOT an ERROR!"
         print_stack(limit=2)
         self.call(foo,**kw)
     def call(self,foo,**kw):

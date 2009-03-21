@@ -285,7 +285,7 @@ class vkonThread(threading.Thread):
                     result['NICKNAME']=list[2].strip()
                     result['FAMILY']=list[3].strip()
         except:
-            self.checkPage()
+            self.checkPage(page)
             try:
                 wr=bs.find(name="div",id="wrapH1")
                 result['FN']=wr.div.h1.string
