@@ -42,9 +42,21 @@ class user:
         if jid in self.resources:
             pass
         #new resource should be added
+<<<<<<< .mine
+        else:
+            print "addResource(%s)"%jid
+            print_stack()
+            try:
+                for i in self.thread.onlineList:
+                    self.trans.sendPresence("%s@%s"%(i,self.trans.jid),jid)
+            except AttributeError:
+                pass
+                #self.storePresence(prs)
+=======
         elif self.resources and not self.lock:
             self.trans.sendPresence(self.trans.jid,jid)
             self.trans.usersOnline(self.bjid,self.thread.onlineList)
+>>>>>>> .r78
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
@@ -138,7 +150,13 @@ class user:
             self.active=0
             #WARN bjid?
             return
-        mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
+        try:
+            mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
+        except UnicodeEncodeError:
+            print "unicode error, possible bad JID: %s"%self.bjid
+            self.lock=0
+            self.active=0
+            return
         print mq
         #print_stack()
         q=self.trans.dbpool.runQuery(mq)
@@ -180,7 +198,7 @@ class user:
         try:
             self.pool.stop()
         except AttributeError:
-            print "%s: thread without pool??"%self.bjid
+            print "%s: user without pool??"%self.bjid
         self.lock=0
 
     def delThread(self,void):
@@ -203,8 +221,18 @@ class user:
         #nothing
         return 0
     def __del__(self):
-        self.thread.logout()
-        self.thread.stop()
-        self.pool.stop()
+        try:
+            self.thread.logout()
+        except:
+            pass
+        try:
+            self.thread.stop()
+        except:
+            pass
+        try:
+            self.pool.stop()
+        except:
+            pass
+
     #TODO destructor
 

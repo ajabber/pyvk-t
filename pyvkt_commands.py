@@ -297,7 +297,8 @@ class loginCmd(basicCommand):
         bjid=bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
-        self.trans.addResource(bjid)
+        self.trans.addResource(jid)
+        print "resources: ",self.trans.users[bjid].resources
         return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}
 
 class logoutCmd(basicCommand):
