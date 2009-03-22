@@ -154,6 +154,7 @@ class pyvk_t(component.Service,vkonClient):
         xmlstream.addObserver('/iq', self.onIq, 1)
         #xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
+        print "component ready!"
 
     def onMessage(self, msg):
         """
@@ -177,9 +178,9 @@ class pyvk_t(component.Service,vkonClient):
                 else:
                     
                     if (self.hasUser(bjid)):
-                        d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
+                        d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
                     else:
-                        d=threads.deferToThread(f=self.commands.onMsg,jid=bjid,text=cmd,v_id=v_id)
+                        d=threads.deferToThread(f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
                     cb=lambda (x):self.sendMessage(msg['to'],msg["from"],x)
                     d.addCallback(cb)
                 return
@@ -198,7 +199,8 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="stats"):
                     ret=u"%s user(s) online"%len(self.users)
                     for i in self.users.keys():
-                        ret=ret+u"\nxmpp:%s"%i
+                        if (self.hasUser(i)):
+                            ret=ret+u"\nxmpp:%s"%i
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.users:

@@ -31,7 +31,6 @@ class user:
         adds resource to jid's reources list
         stores it's presence and does some work of resending presences
         """
-        #jid=prs["from"]
         firstTime = 0
         #if had no resources before and not trying to login now
         if not (self.resources or self.lock):
@@ -42,21 +41,18 @@ class user:
         if jid in self.resources:
             pass
         #new resource should be added
-<<<<<<< .mine
-        else:
-            print "addResource(%s)"%jid
-            print_stack()
-            try:
-                for i in self.thread.onlineList:
-                    self.trans.sendPresence("%s@%s"%(i,self.trans.jid),jid)
-            except AttributeError:
-                pass
+        #else:
+            #print "addResource(%s)"%jid
+            #print_stack()
+            #try:
+                #for i in self.thread.onlineList:
+                    #self.trans.sendPresence("%s@%s"%(i,self.trans.jid),jid)
+            #except AttributeError:
+                #pass
                 #self.storePresence(prs)
-=======
         elif self.resources and not self.lock:
             self.trans.sendPresence(self.trans.jid,jid)
             self.trans.usersOnline(self.bjid,self.thread.onlineList)
->>>>>>> .r78
             #TODO resend presence
             pass
         #if VkStatus has to be changed and should be done now
@@ -71,7 +67,6 @@ class user:
                 self.VkStatus = status
         else:
             self.resources[jid]=None
-
     def prsToVkStatus(self,prs):
         """
         converts stores presence int  a string which can be send to a site
@@ -111,7 +106,6 @@ class user:
             del self.resources[jid]
         if not self.resources:
             self.logout()
-        #TODO any resources left?
 
     def createThread(self,jid,email,pw):
         print "createThread %s"%self.bjid

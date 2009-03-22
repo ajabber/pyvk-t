@@ -14,6 +14,7 @@ import demjson
 import re
 import base64
 import ConfigParser,os
+from BaseHTTPServer import BaseHTTPRequestHandler as http
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
 
@@ -75,8 +76,8 @@ class vkonThread(threading.Thread):
 
         try:
             res=self.opener.open(req)
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             self.error=1
             self.alive=0
             return
@@ -116,8 +117,8 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoqg")
         try:
             res=self.opener.open(req)
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return {"messages":{"count":0}}
         s=res.read().decode("cp1251")
         #print repr(s)
@@ -162,8 +163,8 @@ class vkonThread(threading.Thread):
             res=self.opener.open(req)
             page=res.read()
             
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return list()
         return self.flParse(page)
     def dumpString(self,string,fn=""):
@@ -233,8 +234,8 @@ class vkonThread(threading.Thread):
             req=urllib2.Request("http://pda.vkontakte.ru%s&%s"%(formurl,params))
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1 
         return 0
 
@@ -247,8 +248,8 @@ class vkonThread(threading.Thread):
             req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return {"FN":""}
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
@@ -355,8 +356,8 @@ class vkonThread(threading.Thread):
             req=urllib2.Request("http://vkontakte.ru/search.php?%s"%params)
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return None
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
@@ -392,8 +393,9 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return 
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
         hashfield=bs.find("postfield",attrs={'name':'activityhash'})
         if (hashfield==None):
@@ -408,7 +410,8 @@ class vkonThread(threading.Thread):
             req=urllib2.Request("http://vkontakte.ru/profile.php?",urlencode(dat))
         try:
             res=self.opener.open(req)
-        except urllib2.HTTPError:
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
 
     def getMessage_old(self,msgid):
@@ -428,8 +431,8 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return {"text":"error: html exception","from":"error","title":""}
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
         trgForm=bs.find(name="form", action="/mailsent?pda=1")
@@ -463,7 +466,7 @@ class vkonThread(threading.Thread):
             res=self.opener.open(req)
             page=res.read()
         except:
-            print "urllib2 exception, possible http error"
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
             
         try:
@@ -490,8 +493,8 @@ class vkonThread(threading.Thread):
         req=urllib2.Request("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
         try:
             res=self.opener.open(req)
-        except urllib2.HTTPError:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
         page=res.read()
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
@@ -523,8 +526,8 @@ class vkonThread(threading.Thread):
         try:
             res=self.opener.open(req)
             page=res.read()
-        except:
-            print "urllib2 exception, possible http error"
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return ret
         return self.flParse(page)
     def loop(self):
