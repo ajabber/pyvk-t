@@ -5,10 +5,12 @@ from twisted.internet.defer import waitForDeferred
     #from twisted.internet.threads import deferToThreadPool
 #except:
 from pyvkt_spikes import deferToThreadPool
+from traceback import print_stack
 #from pyvkt_new import bareJid
 
 def bareJid(jid):
-    
+    print "deprecated bareJid"
+    print_stack(limit=2)
     n=jid.find("/")
     if (n==-1):
         return jid

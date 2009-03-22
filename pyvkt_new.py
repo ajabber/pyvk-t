@@ -27,6 +27,7 @@ from base64 import b64encode,b64decode
 import pyvkt_commands
 from pyvkt_user import user
 import pyvkt_global as pyvkt
+from traceback import print_stack
 #try:
     #from twisted.internet.threads import deferToThreadPool
 #except:
@@ -59,6 +60,8 @@ class LogService(component.Service):
         pass
 
 def bareJid(jid):
+    print "deprecated bareJid"
+    print_stack(limit=2)
     n=jid.find("/")
     if (n==-1):
         return jid.lower()
@@ -162,6 +165,10 @@ class pyvk_t(component.Service,vkonClient):
 
         """
         v_id=self.jidToId(msg["to"])
+        if (msg["type"]=="error"):
+            print "XMPP ERROR:"
+            print msg.toXml()
+            return None
         if (v_id==-1):
             return None
         if (msg.body):
@@ -717,6 +724,7 @@ class pyvk_t(component.Service,vkonClient):
             if (self.hasUser(u)):
                 self.users[u].logout()
                 self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+                self.hasUser(u)
             self.sendPresence(self.jid,u,"unavailable")
         time.sleep(15)
         print "done"
