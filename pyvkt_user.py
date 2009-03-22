@@ -24,7 +24,11 @@ class user:
         self.FUsent=0
         self.VkStatus=u""   #status which is set on web
         self.status=u""     #status which is show in jabber
-        pass
+
+        #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
+        #subscribed means transported contact recieves status
+        #subscribe meanes transported contact send status
+        self.roster={}      
 
     def addResource(self,jid,prs=None):
         """
@@ -67,20 +71,71 @@ class user:
                 self.VkStatus = status
         else:
             self.resources[jid]=None
+
+    def askSubscibtion(self, bjid):
+        """just ask for subscribtion if needed"""
+        if not self.subscribed(bjid):
+            self.trans.sendPresence(bjid,self.bjid,"subscribe")
+
+    def subscribe(self,bjid):
+        """ answer on subscription request """
+        if not bjid in self.roster:
+            self.roster[bjid]={"subscribe":0,"subscribed":0}
+        self.trans.sendPresence(bjid, self.bjid, "subscribed")
+        if not self.roster[bjid]["subscribe"] and pyvkt.jidToId(bjid) in self.thread.onlineList:
+            self.trans.sendPresence(bjid,self.bjid)
+        self.roster[bjid]["subscribe"] = 1
+        self.askSubscibtion(bjid)
+
+    def onSubscribed(self,bjid):
+        """ when subscribtion recieved """
+        if not bjid in self.roster:
+            self.roster[bjid]={"subscribe":0,"subscribed":0}
+        self.roster[bjid]["subscribed"] = 1
+
+    def subscribed(self,bjid):
+        """ check for "subscribed" field """
+        try:
+            if self.roster[bjid]["subscribed"]:
+                return 1
+        except KeyError:
+            pass
+        return 0
+    def unsubscribe(self,bjid):
+        """ delete subscribtion """
+        if not bjid in self.roster:
+            self.roster[bjid]={"subscribe":0,"subscribed":0}
+        self.roster[bjid]["subscribe"] = 0
+        self.trans.sendPresence(bjid,self.bjid,"unsubscribed")
+        self.askUnsubscibtion(bjid)
+
+    def askUnsubscibtion(self, bjid):
+        """just ask for unsubscribtion if needed"""
+        if self.subscribed(bjid):
+            self.trans.sendPresence(bjid,self.bjid,"unsubscribe")
+
+    def onUnsubscribed(self,bjid):
+        """ when unsubscribtion recieved """
+        if not bjid in self.roster:
+            self.roster[bjid]={"subscribe":0,"subscribed":0}
+        self.roster[bjid]["subscribed"] = 0
+
     def prsToVkStatus(self,prs):
         """
         converts stores presence int  a string which can be send to a site
         """
         st=u""
         if prs["show"]=="away":
-            st = u"отошел ("+prs["status"]+")"
+            st = u"отошел"
         elif prs["show"]=="xa":
-            st = u"давно отошел ("+prs["status"]+")"
+            st = u"давно отошел"
         elif prs["show"]=="dnd":
-            st = u"занят ("+prs["status"]+")"
+            st = u"занят:"
         elif prs["show"]=="chat":
-            st = u"хочет поговорить ("+prs["status"]+")"
-        else:
+            st = u"хочет поговорить"
+        if st and prs["status"]:
+            st = st + " (" + prs["status"] + ")"
+        elif prs["status"]:
             st = prs["status"]
         return st
 
@@ -104,8 +159,6 @@ class user:
         """
         if jid in self.resources:
             del self.resources[jid]
-        if not self.resources:
-            self.logout()
 
     def createThread(self,jid,email,pw):
         print "createThread %s"%self.bjid
@@ -167,15 +220,26 @@ class user:
         bjid=data[0][0].lower()
         if (bjid!=self.bjid):
             return
-        defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
+        #getting config
+        self.config={}
         try:
-            self.config=cPickle.loads(b64decode(data[0][3]))
+            if data[0][3]:
+                self.config=cPickle.loads(b64decode(data[0][3]))
         except EOFError:
             print "error while parsing config"
-            self.config={}
         except IndexError:
-            self.config={}
             print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
+        #getting roster
+        self.roster={}
+        try:
+            if data[0][4]:
+                self.roster=cPickle.loads(b64decode(data[0][4]))
+        except EOFError:
+            print "error while parsing roster"
+        except IndexError:
+            print ("roster field not found! please add it to your database (see pyvk-t_new.sql for details)")
+
+        defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
         return
 
     def loginFailed(self,data,jid):
@@ -185,6 +249,16 @@ class user:
     def logout(self):
         print "logout %s"%self.bjid
         self.lock=1
+        #saving data
+        try:
+            mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster)),b64encode(cPickle.dumps(self.config)),safe(self.bjid))
+        except UnicodeEncodeError:
+            print "unicode error, possible bad JID: %s"%self.bjid
+            self.lock=0
+            self.active=0
+            return
+        q=self.trans.dbpool.runQuery(mq)
+
         try:
             defer.execute(self.thread.logout).addCallback(self.delThread)
         except AttributeError:
@@ -214,6 +288,7 @@ class user:
             return 1
         #nothing
         return 0
+
     def __del__(self):
         try:
             self.thread.logout()
