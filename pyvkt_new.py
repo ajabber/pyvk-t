@@ -102,6 +102,10 @@ class pyvk_t(component.Service,vkonClient):
             self.show_avatars = config.getboolean("features","avatars")
         else:
             self.show_avatars = 0
+        if config.has_option("features","roster_management"):
+            self.roster_management = config.getboolean("features","roster_management")
+        else:
+            self.roster_management= 0
 
         self.users={}
         try:
@@ -127,15 +131,7 @@ class pyvk_t(component.Service,vkonClient):
         self.isActive=1
         #self.commands=
         # FIXME 
-    def jidToId(self,jid):
-        dogpos=jid.find("@")
-        if (dogpos==-1):
-            return 0
-        try:
-            v_id=int(jid[:dogpos])
-            return v_id
-        except:
-            return -1
+
     def componentConnected(self, xmlstream):
         """
         This method is called when the componentConnected event gets called.
@@ -157,7 +153,7 @@ class pyvk_t(component.Service,vkonClient):
         Act on the message stanza that has just been received.
 
         """
-        v_id=self.jidToId(msg["to"])
+        v_id=pyvkt.jidToId(msg["to"])
         if (msg["type"]=="error"):
             print "XMPP ERROR:"
             print msg.toXml()
@@ -452,11 +448,14 @@ class pyvk_t(component.Service,vkonClient):
     def sendFriendlist(self,fl,jid):
         #log.msg("fiendlist ",jid)
         #log.msg(fl)
+        bjid=pyvkt.bareJid(jid)
         for f in fl:
             src="%s@%s"%(f,self.jid)
             log.msg(src)
+            if self.hasUser(bjid):
+                self.users[bjid].askSubscibtion(src)
             #self.sendPresence(src,jid,"subscribed")
-            self.sendPresence(src,jid,"subscribe")
+            #self.sendPresence(src,jid,"subscribe")
             #return
         return
 
@@ -655,22 +654,22 @@ class pyvk_t(component.Service,vkonClient):
             #print "creating user %s"
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
+
     def delResource(self,jid):
         #print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
+            self.users[bjid].logout()
+
     def onPresence(self, prs):
         """
         Act on the presence stanza that has just been received.
         """
-        #return
         bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
-            if prs["type"]=="unavailable":
-                #if self.hasReource(bjid):
-                    #del self.resources[bjid]
+            if prs["type"]=="unavailable" and self.hasUser(bjid) and (prs["to"]==self.jid or self.users[bjid].subscribed(prs["to"]) or not self.roster_management):
                 self.delResource(prs["from"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
@@ -678,11 +677,21 @@ class pyvk_t(component.Service,vkonClient):
                 pr["from"]=self.jid
                 self.xmlstream.send(pr)
             elif(prs["type"]=="subscribe"):
-                self.sendPresence(prs["to"],prs["from"],"subscribed")
+                if self.hasUser(prs["from"]):
+                    self.users[bjid].subscribe(pyvkt.bareJid(prs["to"]))
+            elif(prs["type"]=="subscribed"):
+                if self.hasUser(prs["from"]):
+                    self.users[bjid].onSubscribed(pyvkt.bareJid(prs["to"]))
+            elif(prs["type"]=="unsubscribe"):
+                if self.hasUser(prs["from"]):
+                    self.users[bjid].unsubscribe(pyvkt.bareJid(prs["to"]))
+            elif(prs["type"]=="unsubscribed"):
+                if self.hasUser(prs["from"]):
+                    self.users[bjid].onUnsubscribed(pyvkt.bareJid(prs["to"]))
             return
-        #if (prs["to"]==self.jid):
         if (self.isActive or bjid==self.admin):
             self.addResource(prs["from"],prs)
+
     def feedChanged(self,jid,feed):
         ret=""
         for k in feed.keys():
@@ -699,12 +708,17 @@ class pyvk_t(component.Service,vkonClient):
         #except KeyError:
             #log.msg("feed error")
         self.sendPresence(self.jid,jid,status=ret)
+
     def usersOnline(self,jid,users):
         for i in users:
-            self.sendPresence("%s@%s"%(i,self.jid),jid)
+            if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
+                self.sendPresence("%s@%s"%(i,self.jid),jid)
+
     def usersOffline(self,jid,users):
         for i in users:
-            self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+            if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
+                self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+
     def threadError(self,jid,err):
         if (err=="banned"):
             self.sendMessage(self.jid,jid,u"Слишком много запросов однотипных страниц.\nКонтакт частично заблокировал доступ на 10-15 минут. На всякий случай, транспорт отключается")
@@ -726,6 +740,7 @@ class pyvk_t(component.Service,vkonClient):
         time.sleep(15)
         print "done"
         return None
+
     def saveConfig(self,bjid):
         try:
             pcs=b64encode(cPickle.dumps(self.users[bjid].config))
@@ -787,6 +802,7 @@ class pyvk_t(component.Service,vkonClient):
             except:
                 pass
             pass
+
     def __del__(self):
         print "stopping service..."
         self.stopService()

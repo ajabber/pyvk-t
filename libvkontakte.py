@@ -399,7 +399,7 @@ class vkonThread(threading.Thread):
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
         hashfield=bs.find("postfield",attrs={'name':'activityhash'})
         if (hashfield==None):
-            print page
+            #print page
             return
         ahash=hashfield["value"]
         if text:

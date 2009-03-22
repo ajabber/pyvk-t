@@ -72,7 +72,7 @@ class cmdManager:
         pass
     def onIqSet(self,iq):
         node=iq.command["node"]
-        v_id=self.trans.jidToId(iq["to"])
+        v_id=pyvkt.jidToId(iq["to"])
         cmdList=self.makeCmdList(iq["from"],v_id)
         #cmdList=self.transportCmdList
         if (cmdList.has_key(node)):
@@ -151,7 +151,7 @@ class cmdManager:
         print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
-        v_id=self.trans.jidToId(iq["to"])
+        v_id=pyvkt.jidToId(iq["to"])
         cmdList=self.makeCmdList(iq["from"],v_id)
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
@@ -175,7 +175,7 @@ class cmdManager:
         cmdList={}
         #if (iq["to"]==self.trans.jid):
             #cmdList=self.transportCmdList
-        v_id=self.trans.jidToId(iq["to"])
+        v_id=pyvkt.jidToId(iq["to"])
         cmdList=self.makeCmdList(iq["from"],v_id)
         resp=xmlstream.toResponse(iq)
         resp["type"]="result"
