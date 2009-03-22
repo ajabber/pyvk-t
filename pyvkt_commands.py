@@ -40,12 +40,10 @@ class cmdManager:
         else:
             for i in self.contactCmdList:
                 ret[i]=self.contactCmdList[i]
-        print ret
+        #print ret
         return ret
     def onMsg(self,jid,text,v_id=0):
         print "command:", text
-        #return "not implemented"
-        #cmdList=self.transportCmdList
         cmdList=self.makeCmdList(jid,v_id)
         cl=text.find(" ")
         if (cl==-1):
