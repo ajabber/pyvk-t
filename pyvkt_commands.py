@@ -6,15 +6,8 @@ from twisted.internet.defer import waitForDeferred
 #except:
 from pyvkt_spikes import deferToThreadPool
 from traceback import print_stack
-#from pyvkt_new import bareJid
+import pyvkt_global as pyvkt
 
-def bareJid(jid):
-    print "deprecated bareJid"
-    print_stack(limit=2)
-    n=jid.find("/")
-    if (n==-1):
-        return jid
-    return jid[:n]
 
 class cmdManager:
     def __init__(self,trans):
@@ -31,7 +24,7 @@ class cmdManager:
         self.admin=trans.admin
     def makeCmdList(self,s_jid,v_id):
         ret={}
-        bjid=bareJid(s_jid)
+        bjid=pyvkt.bareJid(s_jid)
         print bjid,v_id
         if (v_id==0):
             for i in self.transportCmdList:
@@ -270,7 +263,7 @@ class setStatusCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         print("echo from %s"%jid)
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         print(args)
         if (args.has_key("text")):
             print ("setting status...")
@@ -294,7 +287,7 @@ class loginCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
         self.trans.addResource(jid)
@@ -307,7 +300,7 @@ class logoutCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         if(self.trans.hasUser(bjid)):
             self.trans.users[bjid].logout()
         return {"status":"completed","title":u"Отключение",'message':u'Производится отключение...'}
@@ -318,7 +311,7 @@ class getHistioryCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
@@ -336,7 +329,7 @@ class sendWallMessageCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         print("echo from %s"%jid)
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
@@ -370,7 +363,7 @@ class setConfigCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         print("echo from %s"%jid)
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         print(args)
         if (len(args)):
             try:

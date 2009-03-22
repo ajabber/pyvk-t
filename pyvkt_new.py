@@ -59,13 +59,6 @@ class LogService(component.Service):
         #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
-def bareJid(jid):
-    print "deprecated bareJid"
-    print_stack(limit=2)
-    n=jid.find("/")
-    if (n==-1):
-        return jid.lower()
-    return jid[:n].lower()
 
 class pyvk_t(component.Service,vkonClient):
 
@@ -173,7 +166,7 @@ class pyvk_t(component.Service,vkonClient):
             return None
         if (msg.body):
             body=msg.body.children[0]
-            bjid=bareJid(msg["from"])
+            bjid=pyvkt.bareJid(msg["from"])
             if (body[0:1]=="/") and body[:4]!="/me ":
                 cmd=body[1:]
                 #if (self.users.has_key(bjid) and self.users[bjid].thread and cmd=="get roster"):
@@ -204,10 +197,13 @@ class pyvk_t(component.Service,vkonClient):
                 elif (cmd=="start"):
                     self.isActive=1
                 elif (cmd=="stats"):
-                    ret=u"%s user(s) online"%len(self.users)
+                    count = 0
+                    ret = u''
                     for i in self.users.keys():
                         if (self.hasUser(i)):
                             ret=ret+u"\nxmpp:%s"%i
+                            count+=1
+                    ret=u"%s user(s) online"%count + ret
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd[:4]=="wall"):
                     for i in self.users:
@@ -273,7 +269,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         #log.msg(iq["type"])
         #log.msg(iq.firstChildElement().toXml().encode("utf-8"))
-        bjid=bareJid(iq["from"])
+        bjid=pyvkt.bareJid(iq["from"])
         if (iq["type"]=="get"):
             query=iq.query
             if (query):
@@ -386,9 +382,9 @@ class pyvk_t(component.Service,vkonClient):
             if (query):
                 if (query.uri=="jabber:iq:register"):
                     if (query.remove):
-                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';"%safe(bareJid(iq["from"])))
+                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';"%safe(pyvkt.bareJid(iq["from"])))
                         return
-                    log.msg("from %s"%bareJid(iq["from"]))
+                    log.msg("from %s"%pyvkt.bareJid(iq["from"]))
                     log.msg(query.toXml())
                     email=""
                     pw=""
@@ -399,7 +395,7 @@ class pyvk_t(component.Service,vkonClient):
                         if (i.name=="password"):
                             pw=i.children[0]
                     qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
-                        (safe(bareJid(iq["from"])),safe(bareJid(iq["from"])),safe(email),safe(pw)))
+                        (safe(pyvkt.bareJid(iq["from"])),safe(pyvkt.bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     return
                 if (query.uri=="jabber:iq:gateway"):
@@ -493,7 +489,7 @@ class pyvk_t(component.Service,vkonClient):
                 text=u''
             else:
                 break
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         try:
             if text: 
                 items=self.users[bjid].thread.searchUsers(text)
@@ -540,7 +536,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         #log.msg(jid)
         #log.msg(v_id)
-        bjid=bareJid(jid)
+        bjid=pyvkt.bareJid(jid)
         #try:
         card=self.users[bjid].thread.getVcard(v_id, self.show_avatars)
         #except:
@@ -575,7 +571,8 @@ class pyvk_t(component.Service,vkonClient):
                 vc.addElement("BDAY").addContent(card[u"День рождения:"])
             #description
             descr=u""
-            for x in (u"Деятельность:",
+            for x in (u"Семейное положение:",
+                      u"Деятельность:",
                       u"Интересы:",
                       u"Любимая музыка:",
                       u"Любимые фильмы:",
@@ -669,7 +666,7 @@ class pyvk_t(component.Service,vkonClient):
         Act on the presence stanza that has just been received.
         """
         #return
-        bjid=bareJid(prs["from"])
+        bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable":
                 #if self.hasReource(bjid):
