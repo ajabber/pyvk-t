@@ -12,13 +12,12 @@ import pyvkt_global as pyvkt
 class cmdManager:
     def __init__(self,trans):
         self.trans=trans
-        self.cmdList={"test":basicCommand(trans),"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
-        self.transportCmdList={"test":basicCommand(trans),
-                "echo":echoCmd(trans),
+        self.cmdList={"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
+        self.transportCmdList={"echo":echoCmd(trans),
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
-                "logout":logoutCmd(trans)}
-                #"config":setConfigCmd(trans)}
+                "logout":logoutCmd(trans),
+                "config":setConfigCmd(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
@@ -120,12 +119,18 @@ class cmdManager:
                         fd=i
                     try:
                         val=fields[i][2]
+                        print "val=",val
+                        if (val==True):
+                            val='1'
+                        elif(val==False):
+                            val='0'
+                        #FIXME
                     except IndexError:
                         print "initial value isn't set"
                         val=''
 
                     f=x.addElement("field")
-                    f.attributes={"type":"text-single", 'var':i,'label':fd}
+                    f.attributes={"type":ft, 'var':i,'label':fd}
                     f.addElement("value").addContent(val)
             except KeyError:
                 pass
@@ -144,10 +149,15 @@ class cmdManager:
         #TODO check namespace
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
-                try:
+                if (f["type"]=="text-single"):
                     ret[f['var']]=f.value.children[0]
-                except:
-                    print("bad field: %s"%f.toXml())
+                elif (f["type"]=="boolean"):
+                    if (f.value.children[0]=='1'):
+                        ret[f['var']]=True
+                    else:
+                        ret[f['var']]=False
+                else:
+                    print "unsupported type: %s"%f["type"]
         print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
@@ -367,9 +377,13 @@ class setConfigCmd(basicCommand):
         print(args)
         if (len(args)):
             try:
+                if (type(self.trans.users[bjid].config)==bool):
+                    print "someone fucked our config"
+                    self.trans.users[bjid].config={}
                 for i in args:
-                    self.trans.users[bjid].config=args[i]
-                nc=str(self.ans.users[bjid].config)
+                    self.trans.users[bjid].config[i]=args[i]
+                nc=str(self.trans.users[bjid].config)
+                print nc
                 self.trans.saveConfig(bjid)
             except KeyError:
                 print "keyError"
@@ -378,14 +392,14 @@ class setConfigCmd(basicCommand):
             
         else:
             try:
-                conf=self.trans.users[bjid].config
+                user=self.trans.users[bjid]
             except KeyError:
                 return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
             fl={}
-            for i in self.confList:
-                try:
-                    val=conf[i]
-                except:
-                    val='[default]'
-                fl[i]=(i,i,val)
+            cf=pyvkt.userConfigFields
+            for i in cf:
+                print "field ",i
+                val=user.getConfig(i)
+                fl[i]=(cf[i]["type"],cf[i]["desc"],val)
+            print "fieldList: ",fl
             return {"status":"executing","title":u"Установка статуса","form":{"fields":fl},'message':u''}

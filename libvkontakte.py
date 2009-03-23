@@ -42,10 +42,11 @@ class vkonThread(threading.Thread):
     onlineList=[]
     alive=1
     error=0
-    def __init__(self,cli,jid,email,passw):
+    def __init__(self,cli,jid,email,passw,user):
         threading.Thread.__init__(self,target=self.loop)
         self.daemon=True
         self.alive=0
+        self.user=user
         config = ConfigParser.ConfigParser()
         confName="pyvk-t_new.cfg"
         if(os.environ.has_key("PYVKT_CONFIG")):
@@ -274,17 +275,18 @@ class vkonThread(threading.Thread):
             lc=prof.find(name="div", id="leftColumn")
             profName=rc.find("div", {"class":"profileName"})
             result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-            list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
-            if len(list)==6:
-                result['GIVEN']=list[1].strip()
-                result['NICKNAME']=list[2].strip()
-                result['FAMILY']=list[3].strip()
-            else:
-                list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
-                if len(list)==5:
+            if (self.user.getConfig("resolve_nick")):
+                list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
+                if len(list)==6:
                     result['GIVEN']=list[1].strip()
                     result['NICKNAME']=list[2].strip()
                     result['FAMILY']=list[3].strip()
+                else:
+                    list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
+                    if len(list)==5:
+                        result['GIVEN']=list[1].strip()
+                        result['NICKNAME']=list[2].strip()
+                        result['FAMILY']=list[3].strip()
         except:
             self.checkPage(page)
             try:
@@ -315,7 +317,7 @@ class vkonThread(threading.Thread):
         except:
             print "cannot parse user data"
         #avatars are asked only if needed
-        if show_avatars:
+        if show_avatars and self.user.getConfig("vcard_avatar"):
             photourl=lc.find(name="img")['src']
             fpath=''
             photo=None

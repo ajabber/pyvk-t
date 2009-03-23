@@ -451,7 +451,6 @@ class pyvk_t(component.Service,vkonClient):
         bjid=pyvkt.bareJid(jid)
         for f in fl:
             src="%s@%s"%(f,self.jid)
-            log.msg(src)
             if self.hasUser(bjid):
                 self.users[bjid].askSubscibtion(src)
             #self.sendPresence(src,jid,"subscribed")
@@ -633,7 +632,11 @@ class pyvk_t(component.Service,vkonClient):
         """
         update site stuse if enabled
         """
-        if self.hasUser(bjid) and self.sync_status and self.users[bjid].active and not self.users[bjid].status_lock and not self.users[bjid].lock:
+        if (self.hasUser(bjid)):
+            user=self.users[bjid]
+        else:
+            return
+        if self.hasUser(bjid) and self.sync_status and user.active and not user.status_lock and not user.lock and user.getConfig("sync_status"):
             print "updating status for",bjid,":",text.encode("ascii","replace")
             self.users[bjid].status_lock = 1
             self.users[bjid].thread.setStatus(text)
@@ -730,14 +733,27 @@ class pyvk_t(component.Service,vkonClient):
             pass
         self.sendPresence(self.jid,jid,"unavailable")
     def stopService(self):
-        print "logging out..."
+        #FIXME call this from different thread??
+        print "stopping transport..."
+        print "stage 1: stopping users' loops..."
+        for u in self.users.keys():
+            if (self.hasUser(u)):
+                try:
+                    self.users[bjid].thread.alive=0
+                except:
+                    pass
+        print "done.\nsending messages and presences..."
+        for u in self.users:
+            self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+            self.sendPresence(self.jid,u,"unavailable")
+        print "done\nwaiting 15 seconds..."
+        time.sleep(15)
+        print "logging out (may take a veery long time)..."
+        #TODO parallel logout via threadPool
         for u in self.users.keys():
             if (self.hasUser(u)):
                 self.users[u].logout()
-                self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
                 self.hasUser(u)
-            self.sendPresence(self.jid,u,"unavailable")
-        time.sleep(15)
         print "done"
         return None
 
