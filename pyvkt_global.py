@@ -14,3 +14,9 @@ def jidToId(jid):
         return v_id
     except:
         return -1
+userConfigFields={
+    "sync_status":{"type":"boolean", "default":False, "desc":u"Синхронизация статуса"}
+    ,"vcard_avatar":{"type":"boolean", "default":False, "desc":u"Аватары в vCard"}
+    ,"resolve_nick":{"type":"boolean", "default":False, "desc":u"Пытаться выделить ник"}
+#TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
+}

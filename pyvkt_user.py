@@ -130,7 +130,7 @@ class user:
         elif prs["show"]=="xa":
             st = u"давно отошел"
         elif prs["show"]=="dnd":
-            st = u"занят:"
+            st = u"занят"
         elif prs["show"]=="chat":
             st = u"хочет поговорить"
         if st and prs["status"]:
@@ -174,7 +174,7 @@ class user:
         except:
             pass
 
-        self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw)
+        self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
         self.lock=0
         #self.pool=ThreadPool(1,1)
         self.pool=reqQueue()
@@ -302,6 +302,16 @@ class user:
             self.pool.stop()
         except:
             pass
+    def getConfig(self,fieldName):
+        if (not fieldName in pyvkt.userConfigFields):
+            raise KeyError("user config: no such field (%s)"%fieldName)
+        try:
+            return self.config[fieldName]
+        except KeyError:
+            #FIXME!!
+            print "%s: '%s' isn't set. using default"%(self.bjid,fieldName)
+            return pyvkt.userConfigFields[fieldName]["default"]
+        
 
     #TODO destructor
 
