@@ -715,11 +715,14 @@ class pyvk_t(component.Service,vkonClient):
         self.sendPresence(self.jid,jid,status=ret)
 
     def usersOnline(self,jid,users):
+        #FIXME not thread-safe!!
+        # need to call sendPresence from reactor thread!
         for i in users:
             if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
                 self.sendPresence("%s@%s"%(i,self.jid),jid)
 
     def usersOffline(self,jid,users):
+        #FIXME not thread-safe!!
         for i in users:
             if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
                 self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
@@ -737,25 +740,41 @@ class pyvk_t(component.Service,vkonClient):
     def stopService(self):
         #FIXME call this from different thread??
         print "stopping transport..."
-        print "stage 1: stopping users' loops..."
+        if (len(self.users)==0):
+            return
+        print "stage 1: stopping users' loops, sending messages and presences..."
         for u in self.users.keys():
             if (self.hasUser(u)):
                 try:
                     self.users[bjid].thread.alive=0
                 except:
                     pass
-        print "done.\nsending messages and presences..."
-        for u in self.users:
-            self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
-            self.sendPresence(self.jid,u,"unavailable")
+                self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+                self.sendPresence(self.jid,u,"unavailable")
+                try:
+                    self.usersOffline(u,self.users[u].thread.onlineList)
+                except:
+                    pass
         print "done\nwaiting 15 seconds..."
         time.sleep(15)
-        print "logging out (may take a veery long time)..."
+        dl=[]
+        for i in self.users:
+            try:
+                d=self.users[i].pool.defer(self.users[i].logout)
+                dl.append(d)
+            except AttributeError:
+                pass
+        print "%s logout()'s pending.. now we will wait..'"%len(dl)
+        deflist=defer.DeferredList(dl)
+        defer.waitForDeferred(deflist)
+        print "done\ndeleting user objects"
+        for i in self.users.keys():
+            del self.users[i]
         #TODO parallel logout via threadPool
-        for u in self.users.keys():
-            if (self.hasUser(u)):
-                self.users[u].logout()
-                self.hasUser(u)
+        #for u in self.users.keys():
+            #if (self.hasUser(u)):
+                #self.users[u].logout()
+                #self.hasUser(u)
         print "done"
         return None
 
@@ -786,6 +805,7 @@ class pyvk_t(component.Service,vkonClient):
         
         #FIXME "id"???
         try:
+            
             self.xmlstream.send(msg)
         except UnicodeDecodeError:
             #FIXME user notify
