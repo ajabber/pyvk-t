@@ -4,6 +4,7 @@
  Example component service.
  
 """
+import platform
 import time
 import twisted
 from twisted.words.protocols.jabber import jid, xmlstream
@@ -312,6 +313,7 @@ class pyvk_t(component.Service,vkonClient):
                 elif (query.uri=="jabber:iq:version"):
                     q.addElement("name").addContent("pyvk-t [twisted]")
                     q.addElement("version").addContent(self.revision)
+                    q.addElement("os").addContent(platform.system()+" "+platform.release()+" "+platform.machine())
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:gateway"):

@@ -149,15 +149,7 @@ class cmdManager:
         #TODO check namespace
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
-                if (f["type"]=="text-single"):
-                    ret[f['var']]=f.value.children[0]
-                elif (f["type"]=="boolean"):
-                    if (f.value.children[0]=='1'):
-                        ret[f['var']]=True
-                    else:
-                        ret[f['var']]=False
-                else:
-                    print "unsupported type: %s"%f["type"]
+                ret[f['var']]=f.value.children[0]
         print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
@@ -375,13 +367,17 @@ class setConfigCmd(basicCommand):
         print("echo from %s"%jid)
         bjid=pyvkt.bareJid(jid)
         print(args)
+        cf=pyvkt.userConfigFields
         if (len(args)):
             try:
                 if (type(self.trans.users[bjid].config)==bool):
                     print "someone fucked our config"
                     self.trans.users[bjid].config={}
                 for i in args:
-                    self.trans.users[bjid].config[i]=args[i]
+                    if cf[i]["type"]=="boolean":
+                        self.trans.users[bjid].config[i]=args[i]=="1"
+                    else:
+                        self.trans.users[bjid].config[i]=args[i]
                 nc=str(self.trans.users[bjid].config)
                 print nc
                 self.trans.saveConfig(bjid)
@@ -396,7 +392,6 @@ class setConfigCmd(basicCommand):
             except KeyError:
                 return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
             fl={}
-            cf=pyvkt.userConfigFields
             for i in cf:
                 print "field ",i
                 val=user.getConfig(i)
