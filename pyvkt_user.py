@@ -258,6 +258,20 @@ class user:
             self.active=0
             return
         q=self.trans.dbpool.runQuery(mq)
+        defer.waitForDeferred(q)
+        #now it's blocking ;)
+        try:
+            self.thread.logout()
+            self.delThread()
+        except AttributeError:
+            print "thread doesn't exists (%s)"%self.bjid
+        #try:
+            #self.pool.stop()
+        #except AttributeError:
+            #print "%s: user without pool??"%self.bjid
+        # now pool is necessary
+        self.isActive=0
+        return 0
 
         try:
             defer.execute(self.thread.logout).addCallback(self.delThread)
@@ -269,7 +283,7 @@ class user:
             print "%s: user without pool??"%self.bjid
         self.lock=0
 
-    def delThread(self,void):
+    def delThread(self,void=0):
         print "delThread %s"%self.bjid
         del self.thread
         self.active=0
@@ -290,16 +304,18 @@ class user:
         return 0
 
     def __del__(self):
-        try:
-            self.thread.logout()
-        except:
-            pass
+        #try:
+            #self.thread.logout()
+        #except:
+            #pass
         try:
             self.thread.stop()
+            del self.thread
         except:
             pass
         try:
             self.pool.stop()
+            del self.pool
         except:
             pass
     def getConfig(self,fieldName):

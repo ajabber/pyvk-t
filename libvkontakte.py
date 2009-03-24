@@ -15,6 +15,7 @@ import re
 import base64
 import ConfigParser,os
 from BaseHTTPServer import BaseHTTPRequestHandler as http
+import xml.dom.minidom
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
 
@@ -417,18 +418,6 @@ class vkonThread(threading.Thread):
             return 1
 
     def getMessage_old(self,msgid):
-        prs=msgPrs()
-        
-        req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
-        res=self.opener.open(req)
-        page=res.read()
-        prs.feed(page)
-        t=prs.msg
-        if(prs.msg["text"][-5:]=="\n\n\t\t\t"):
-            prs.msg["text"]=prs.msg["text"][:-5]
-        #t['text']=t['text']
-        return prs.msg
-    def getMessage(self,msgid):
         req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
         try:
             res=self.opener.open(req)
@@ -450,7 +439,41 @@ class vkonThread(threading.Thread):
         body=body[5:]
         #print body
         return {"text":body,"from":from_id,"title":title}
-        #print strings
+    def getMessage(self,msgid):
+        """
+        retrieves message from the server
+        """
+        req=urllib2.Request("http://wap.vkontakte.ru/letter%s"%msgid)
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return {"text":"error: html exception","from":"error","title":""}
+        
+        dom = xml.dom.minidom.parseString(page)
+        p=dom.getElementsByTagName("p")[0]
+        p.normalize()
+        anchors=p.getElementsByTagName("anchor")
+        
+        from_id=anchors[1].getElementsByTagName('go')[0].getAttribute("href")[2:]
+        i_s=p.getElementsByTagName("i")
+        date=i_s[2].nextSibling.data
+        title=i_s[3].nextSibling.data
+        msg=""
+        t=i_s[3].nextSibling
+        while(1):
+            t=t.nextSibling
+            try:
+                if (t.nodeName=="i"):
+                    break
+            except AttributeError:
+                pass
+            #print t.toxml()
+            msg="%s%s"%(msg,t.toxml())
+        msg=msg.replace("<br/>","\n")[4:-4]
+        #print msg
+        return {"from":from_id,"date":date,"title":title,"text":msg}
     def sendMessage(self,to_id,body,title="[null]"):
         """
         Sends message through website
@@ -532,6 +555,20 @@ class vkonThread(threading.Thread):
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return ret
         return self.flParse(page)
+    def isFriend(self,v_id):
+        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
+        ret=list()
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return -1
+        #print page
+        if (page.find('<go href="/deletefriend%s"'%v_id)==-1):
+            return 0
+        return 1
+        
     def loop(self):
         tonline=[]
         while(self.alive):
