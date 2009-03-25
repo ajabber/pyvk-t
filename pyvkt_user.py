@@ -4,7 +4,7 @@ import libvkontakte
 from pyvkt_spikes import reqQueue
 from twisted.enterprise.adbapi import safe 
 import pyvkt_global as pyvkt
-from twisted.internet import defer
+from twisted.internet import defer,reactor
 import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
@@ -271,6 +271,8 @@ class user:
             #print "%s: user without pool??"%self.bjid
         # now pool is necessary
         self.isActive=0
+        self.lock=0
+        self.trans.hasUser(self.bjid)
         return 0
 
         try:

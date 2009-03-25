@@ -257,6 +257,7 @@ class vkonThread(threading.Thread):
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             #bs=BeautifulSoup(page)
         except:
+            #FIXME exception type
             print "parse error\ntrying to filter bad entities..."
             page2=re.sub("&#x.{1,5}?;","",page)
             m1=page2.find("<!-- End pageBody -->") 
@@ -266,41 +267,47 @@ class vkonThread(threading.Thread):
             try:
                 bs=BeautifulSoup(page2,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             except:
+                #FIXME exception type
                 print "vCard retrieve failed\ndumping page..."
                 self.dumpString(page,"vcard_parse_error")
                 return None
         result = {}
-        try:
-            prof=bs.find(name="div", id="userProfile")
+        prof=bs.find(name="div", id="userProfile")
+        if (prof==None):
+            # search page
+            self.checkPage(page)
+            cont=bs.find(name="div",id="content")
+            result['FN']=cont.find(name='div',style="overflow: hidden;").string
+            lc=cont
+        else:
             rc=prof.find(name="div", id="rightColumn")
-            lc=prof.find(name="div", id="leftColumn")
-            profName=rc.find("div", {"class":"profileName"})
-            result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-            if (self.user.getConfig("resolve_nick")):
-                list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
-                if len(list)==6:
+            if (rc!=None):
+                lc=prof.find(name="div", id="leftColumn")
+                profName=rc.find("div", {"class":"profileName"})
+                result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
+                result[u"О себе:"]=[u"[страница удалена ее владельцем]"]
+            else:
+                # deleted page
+                pt=bs.head.title.string
+                del_pos=pt.find(" | ")
+                lc=None
+                result['FN']=pt[del_pos+3:]
+        if (self.user.getConfig("resolve_nick")):
+            list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
+            if len(list)==6:
+                result['GIVEN']=list[1].strip()
+                result['NICKNAME']=list[2].strip()
+                result['FAMILY']=list[3].strip()
+            else:
+                list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
+                if len(list)==5:
                     result['GIVEN']=list[1].strip()
                     result['NICKNAME']=list[2].strip()
                     result['FAMILY']=list[3].strip()
-                else:
-                    list=re.split("^(\S+?) (.*) (\S+?)$",result['FN'])
-                    if len(list)==5:
-                        result['GIVEN']=list[1].strip()
-                        result['NICKNAME']=list[2].strip()
-                        result['FAMILY']=list[3].strip()
-        except:
-            self.checkPage(page)
-            try:
-                wr=bs.find(name="div",id="wrapH1")
-                result['FN']=wr.div.h1.string
-                print "'deleted' page parsed"
-            except:
-                print "wrong page format"
-                self.dumpString(page,"vcard_wrong_format")
-                return None
         #now parsing additional user data
         #there are several tables
         try:
+            #FIXME font use try/except
             profTables = rc.findAll(name="table",attrs={"class":"profileTable"})
             for profTable in profTables:
                 #parse each line of table
@@ -318,7 +325,8 @@ class vkonThread(threading.Thread):
         except:
             print "cannot parse user data"
         #avatars are asked only if needed
-        if show_avatars and self.user.getConfig("vcard_avatar"):
+        if lc and show_avatars and self.user.getConfig("vcard_avatar"):
+            
             photourl=lc.find(name="img")['src']
             fpath=''
             photo=None
@@ -399,12 +407,12 @@ class vkonThread(threading.Thread):
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 
-        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
-        hashfield=bs.find("postfield",attrs={'name':'activityhash'})
-        if (hashfield==None):
-            #print page
-            return
-        ahash=hashfield["value"]
+        dom=xml.dom.minidom.parseString(page)
+        fields=dom.getElementsByTagName("postfield")
+        hashfield=filter(lambda x:x.getAttribute("name")=='activityhash',fields)[0]
+        ahash=hashfield.getAttribute("value")
+        #if (hashfield==None):
+            #return
         if text:
             dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
             req=urllib2.Request("http://wap.vkontakte.ru/setstatus?pda=1",urlencode(dat))
@@ -416,7 +424,6 @@ class vkonThread(threading.Thread):
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
-
     def getMessage_old(self,msgid):
         req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
         try:
@@ -474,7 +481,7 @@ class vkonThread(threading.Thread):
         msg=msg.replace("<br/>","\n")[4:-4]
         #print msg
         return {"from":from_id,"date":date,"title":title,"text":msg}
-    def sendMessage(self,to_id,body,title="[null]"):
+    def sendMessage_legacy(self,to_id,body,title="[null]"):
         """
         Sends message through website
         
@@ -543,6 +550,53 @@ class vkonThread(threading.Thread):
             
             #return 0
         #print res.read()
+    def sendMessage(self,to_id,body,title="[null]"):
+        """
+        Sends message through website
+        
+        Return value:
+        0   - success
+        1   - http error
+        2   - too fast sending
+        -1  - unknown error
+        """
+        req=urllib2.Request("http://wap.vkontakte.ru/?act=write&to=%s"%to_id)
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return 1
+        dom = xml.dom.minidom.parseString(page)
+        inputs=dom.getElementsByTagName("postfield")
+        c_input=filter(lambda x:x.getAttribute("name")=='chas',inputs)[0]
+        chas=c_input.getAttribute("value")
+        if (type(body)==unicode):
+            tbody=body.encode("utf-8")
+        else:
+            tbody=body
+        if (type(title)==unicode):
+            ttitle=title.encode("utf-8")
+        else:
+            ttitle=title
+
+        data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
+        req=urllib2.Request("http://wap.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        try:
+            res=self.opener.open(req)
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return 1
+        page=res.read()
+        if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
+            print "message delivered"
+            return 0
+        elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
+            #FIXME adapt to wap version
+            print "too fast sending messages"
+            return 2
+        print "unknown error"
+        return -1
 
     def getFriendList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
