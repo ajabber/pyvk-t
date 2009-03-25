@@ -285,7 +285,7 @@ class vkonThread(threading.Thread):
                 lc=prof.find(name="div", id="leftColumn")
                 profName=rc.find("div", {"class":"profileName"})
                 result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-                result[u"О себе:"]=[u"[страница удалена ее владельцем]"]
+                result[u"О себе:"]=u"[страница удалена ее владельцем]"
             else:
                 # deleted page
                 pt=bs.head.title.string
