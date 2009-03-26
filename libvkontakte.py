@@ -328,29 +328,32 @@ class vkonThread(threading.Thread):
         if lc and show_avatars and self.user.getConfig("vcard_avatar"):
             
             photourl=lc.find(name="img")['src']
-            fpath=''
-            photo=None
-            if (self.cachePath):
-                pos=photourl.find(".ru/u")
-                if (pos!=-1):
-                    fname=photourl[pos+4:].replace("/","_")
-                    fpath="%s/avatar-%s"%(self.cachePath,fname)
-                    try:
-                        cfile=open(fpath,"r")
-                        photo=cfile.read()
-                        cfile.close()
-                    except:
-                        print "can't read cache: %s"%fname
-            if (photo==None):
-                req=urllib2.Request(photourl)
-                res=self.opener.open(req)
-                photo=base64.encodestring(res.read())
+            #if user has no avatar we wont process it
+            if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif":
+                fpath=''
+                photo=None
                 if (self.cachePath):
-                    #FIXME check for old avatars
-                    cfile=open(fpath,'w')
-                    cfile.write(photo)
-                    cfile.close()
-            result["PHOTO"]=photo
+                    pos=photourl.find(".ru/u")
+                    if (pos!=-1):
+                        fname=photourl[pos+4:].replace("/","_")
+                        fpath="%s/avatar-%s"%(self.cachePath,fname)
+                        try:
+                            cfile=open(fpath,"r")
+                            photo=cfile.read()
+                            cfile.close()
+                        except:
+                            print "can't read cache: %s"%fname
+                if not photo:
+                    req=urllib2.Request(photourl)
+                    res=self.opener.open(req)
+                    photo=base64.encodestring(res.read())
+                    if (self.cachePath):
+                        #FIXME check for old avatars
+                        cfile=open(fpath,'w')
+                        cfile.write(photo)
+                        cfile.close()
+                if photo:
+                    result["PHOTO"]=photo
         return result
     def searchUsers(self, text):
         '''
@@ -647,9 +650,11 @@ class vkonThread(threading.Thread):
             #print tonline,self.onlineList
             if (tonline!=self.onlineList):
                 if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.count(x)-1,tonline))
-                self.client.usersOffline(self.jid,filter(lambda x:tonline.count(x)-1,self.onlineList))
+                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:tonline.count(x)-1,self.onlineList))
                 if self.alive: self.onlineList=tonline
-            time.sleep(10)
+            for i in range(1,11):
+                if not self.alive: return
+                time.sleep(1)
 
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList)
