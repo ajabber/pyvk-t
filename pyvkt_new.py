@@ -710,16 +710,16 @@ class pyvk_t(component.Service,vkonClient):
             self.users[jid].status = ret.strip()
             self.sendPresence(self.jid,jid,status=ret.strip())
         ret=""
-        if (feed["messages"]["count"] ):
+        if (feed["messages"]["count"]):
             for i in feed ["messages"]["items"].keys():
                 print "requesting message"
                 self.users[jid].pool.callInThread(self.requestMessage,jid=jid,msgid=i)
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
-                gr=""
-                gc=0
-                if "items" in feed[j]:
+                if "items" in feed[j] and j!="messages":
+                    gr=""
+                    gc=0
                     for i in feed[j]["items"]:
                         if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:

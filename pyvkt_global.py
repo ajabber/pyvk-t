@@ -62,5 +62,8 @@ feedInfo = {
     ,"photos":{"message":u"фотографий","url":u"http://vkontakte.ru/photos.php?act=show&id=%s&added=1"}
     ,"videos":{"message":u"видеозаписей","url":u"http://vkontakte.ru/video%s?added=1"}
     ,"gifts":{"message":u"подарков","url":u""}
+    ,"opinions":{"message":u"мнений","url":u""}
+    ,"offers":{"message":u"отзывов на предложения","url":u""}
+    ,"questions":{"message":u"ответов на вопросы","url":u""}
     ,"notes":{"message":u"комментаириев к заметкам","url":u""}
 }
