@@ -706,9 +706,10 @@ class pyvk_t(component.Service,vkonClient):
         for k in feed.keys():
             if (k!="user" and k!="messages" and feed[k]["count"]):
                 ret=ret+u"Новых %s - %s\n"%(pyvkt.feedInfo[k]["message"],feed[k]["count"])
+        ret = ret.strip()
         if self.hasUser(jid) and ret!=self.users[jid].status:
-            self.users[jid].status = ret.strip()
-            self.sendPresence(self.jid,jid,status=ret.strip())
+            self.users[jid].status = ret
+            self.sendPresence(self.jid,jid,status=ret)
         ret=""
         if (feed["messages"]["count"]):
             for i in feed ["messages"]["items"].keys():
@@ -717,7 +718,7 @@ class pyvk_t(component.Service,vkonClient):
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
-                if j in feed amd "items" in feed[j] and j!="messages":
+                if j in feed and "items" in feed[j] and j!="messages":
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
