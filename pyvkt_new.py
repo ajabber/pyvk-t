@@ -17,7 +17,6 @@ from twisted.enterprise import adbapi
 from twisted.enterprise.adbapi import safe 
 
 from twisted.words.protocols.jabber.ijabber import IService
-from twisted.web import microdom
 from twisted.words.protocols.jabber import component,xmlstream
 from libvkontakte import *
 from zope.interface import Interface, implements
@@ -724,7 +723,7 @@ class pyvk_t(component.Service,vkonClient):
                     for i in feed[j]["items"]:
                         if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
-                                gr+="\n  "+microdom.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
+                                gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:
