@@ -19,6 +19,7 @@ userConfigFields={
     ,"vcard_avatar":{"type":"boolean", "default":False, "desc":u"Аватары в vCard"}
     ,"resolve_nick":{"type":"boolean", "default":False, "desc":u"Пытаться выделить ник"}
     ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
+    ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
 #TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
 }
 feedInfo = {

@@ -56,7 +56,7 @@ class user:
                 #pass
                 #self.storePresence(prs)
         elif self.resources and not self.lock:
-            self.trans.sendPresence(self.trans.jid,jid)
+            self.trans.sendPresence(self.trans.jid,jid,status=self.status)
             self.trans.usersOnline(self.bjid,self.thread.onlineList)
             #TODO resend presence
             pass
@@ -152,6 +152,10 @@ class user:
                 p[i.name]=i.children[0]
         p["priority"]=int(p["priority"])
         self.resources[jid]=p
+
+        for j in self.resources:
+            if self.resources[j] and self.resources[j]['priority'] > p['priority']:
+                p=self.resources[j]
         return p
 
     def delResource(self,jid):
@@ -182,7 +186,7 @@ class user:
         self.pool.start()
         self.thread.start()
         self.thread.feedOnly=0
-        self.trans.sendPresence(self.trans.jid,jid)
+        self.trans.sendPresence(self.trans.jid,jid,status=self.status)
         self.trans.updateStatus(self.bjid,self.VkStatus)
 
     def login(self):
@@ -321,6 +325,7 @@ class user:
             del self.pool
         except:
             pass
+
     def getConfig(self,fieldName):
         if (not fieldName in pyvkt.userConfigFields):
             raise KeyError("user config: no such field (%s)"%fieldName)
