@@ -755,8 +755,8 @@ class pyvk_t(component.Service,vkonClient):
                     self.usersOffline(u,self.users[u].thread.onlineList)
                 except:
                     pass
-        print "done\nwaiting 15 seconds..."
-        time.sleep(15)
+        print "done\nwaiting 5 seconds..."
+        time.sleep(5)
         dl=[]
         for i in self.users:
             try:
