@@ -717,7 +717,7 @@ class pyvk_t(component.Service,vkonClient):
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
-                if "items" in feed[j] and j!="messages":
+                if j in feed amd "items" in feed[j] and j!="messages":
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
