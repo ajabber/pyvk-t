@@ -17,6 +17,7 @@ from twisted.enterprise import adbapi
 from twisted.enterprise.adbapi import safe 
 
 from twisted.words.protocols.jabber.ijabber import IService
+from twisted.web import microdom
 from twisted.words.protocols.jabber import component,xmlstream
 from libvkontakte import *
 from zope.interface import Interface, implements
@@ -707,15 +708,15 @@ class pyvk_t(component.Service,vkonClient):
             if (k!="user" and k!="messages" and feed[k]["count"]):
                 ret=ret+u"Новых %s - %s\n"%(pyvkt.feedInfo[k]["message"],feed[k]["count"])
         if self.hasUser(jid) and ret!=self.users[jid].status:
-            self.users[jid].status = ret
+            self.users[jid].status = ret.strip()
             self.sendPresence(self.jid,jid,status=ret.strip())
         ret=""
         if (feed["messages"]["count"] ):
             for i in feed ["messages"]["items"].keys():
                 print "requesting message"
                 self.users[jid].pool.callInThread(self.requestMessage,jid=jid,msgid=i)
-        if self.hasUser(jid) and feed != self.users[jid].feed and self.users[jid].getConfig("feed_notify") and self.feed_notify:
-            oldfeed = self.users[jid].feed
+        oldfeed = self.users[jid].feed
+        if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
                 gr=""
                 gc=0
@@ -723,7 +724,7 @@ class pyvk_t(component.Service,vkonClient):
                     for i in feed[j]["items"]:
                         if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
-                                gr+="\n  "+feed[j]["items"][i]+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
+                                gr+="\n  "+microdom.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:
@@ -775,8 +776,8 @@ class pyvk_t(component.Service,vkonClient):
                     self.usersOffline(u,self.users[u].thread.onlineList)
                 except:
                     pass
-        print "done\nwaiting 5 seconds..."
-        time.sleep(5)
+        print "done\nwaiting 15 seconds..."
+        time.sleep(15)
         dl=[]
         for i in self.users:
             try:
