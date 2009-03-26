@@ -630,9 +630,7 @@ class vkonThread(threading.Thread):
         tonline=[]
         while(self.alive):
             tfeed=self.getFeed()
-            if (tfeed!=self.oldFeed):
-                self.oldFeed=tfeed
-                self.client.feedChanged(self.jid,tfeed)
+            self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
                 tonline=[]
             else:

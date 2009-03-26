@@ -24,6 +24,7 @@ class user:
         self.FUsent=0
         self.VkStatus=u""   #status which is set on web
         self.status=u""     #status which is show in jabber
+        self.feed = None    #feed
 
         #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
         #subscribed means transported contact recieves status

@@ -107,6 +107,10 @@ class pyvk_t(component.Service,vkonClient):
             self.roster_management = config.getboolean("features","roster_management")
         else:
             self.roster_management= 0
+        if config.has_option("features","feed_notify"):
+            self.feed_notify = config.getboolean("features","feed_notify")
+        else:
+            self.feed_notify= 0
 
         self.users={}
         try:
@@ -697,22 +701,38 @@ class pyvk_t(component.Service,vkonClient):
         if (self.isActive or bjid==self.admin):
             self.addResource(prs["from"],prs)
 
-    def feedChanged(self,jid,feed):
+    def updateFeed(self,jid,feed):
         ret=""
         for k in feed.keys():
             if (k!="user" and k!="messages" and feed[k]["count"]):
-                ret=ret+"new %s: %s\n"%(k,feed[k]["count"])
-        #try:
+                ret=ret+u"Новых %s - %s\n"%(pyvkt.feedInfo[k]["message"],feed[k]["count"])
+        if self.hasUser(jid) and ret!=self.users[jid].status:
+            self.users[jid].status = ret
+            self.sendPresence(self.jid,jid,status=ret.strip())
+        ret=""
         if (feed["messages"]["count"] ):
             for i in feed ["messages"]["items"].keys():
                 print "requesting message"
                 self.users[jid].pool.callInThread(self.requestMessage,jid=jid,msgid=i)
-            #if (feed["groups"]["count"]):
-                #for i in feed["groups"]["items"]:
-                    #ret=ret+"\n"+feed["groups"]["items"][i]+" [http://vkontakte.ru/club%s]"%i
-        #except KeyError:
-            #log.msg("feed error")
-        self.sendPresence(self.jid,jid,status=ret)
+        if self.hasUser(jid) and feed != self.users[jid].feed and self.users[jid].getConfig("feed_notify") and self.feed_notify:
+            oldfeed = self.users[jid].feed
+            for j in pyvkt.feedInfo:
+                gr=""
+                gc=0
+                if "items" in feed[j]:
+                    for i in feed[j]["items"]:
+                        if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
+                            if pyvkt.feedInfo[j]["url"]:
+                                gr+="\n  "+feed[j]["items"][i]+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
+                            gc+=1
+                    if gc:
+                        if pyvkt.feedInfo[j]["url"]:
+                            ret+=u"Новых %s - %s:%s\n"%(pyvkt.feedInfo[j]["message"],gc,gr)
+                        else:
+                            ret+=u"Новых %s - %s\n"%(pyvkt.feedInfo[j]["message"],gc)
+            if ret:
+                self.sendMessage(self.jid,jid,ret.strip())
+        self.users[jid].feed = feed
 
     def usersOnline(self,jid,users):
         #FIXME not thread-safe!!
