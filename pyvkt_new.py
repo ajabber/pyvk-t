@@ -133,7 +133,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=1
+        self.isActive=0
         #self.commands=
         # FIXME 
 
@@ -174,16 +174,18 @@ class pyvk_t(component.Service,vkonClient):
                 if (self.hasUser(bjid) and cmd=="get roster"):
                     d=defer.execute(self.users[bjid].thread.getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
+                    d.addErrback(self.errorback)
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
                     
                     if (self.hasUser(bjid)):
-                        d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
+                        d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
                     else:
                         d=threads.deferToThread(f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
                     cb=lambda (x):self.sendMessage(msg['to'],msg["from"],x)
                     d.addCallback(cb)
+                    d.addErrback(self.errorback)
                 return
 
             if (body[0:1]=="#" and bjid==self.admin and msg["to"]==self.jid):
@@ -228,7 +230,7 @@ class pyvk_t(component.Service,vkonClient):
                 title = "xmpp:%s"%bjid
                 if(req==None):
                     print "legacy message"
-                    self.users[bjid].pool.callInThread(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
+                    self.users[bjid].pool.call(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
                 else:
                     if (req.uri=='urn:xmpp:receipts'):
 
@@ -306,6 +308,14 @@ class pyvk_t(component.Service,vkonClient):
                         if (query["node"]=="http://jabber.org/protocol/commands"):
                             self.xmlstream.send(self.commands.onDiscoItems(iq))
                             return
+                        elif(query["node"]=="friendsonline"):
+                            if (self.hasUser(bjid)):
+                                for i in self.users[bjid].thread.onlineList:
+                                    q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'id%s'%i,'jid':"%s@%s"%(i,self.jid)}
+                    else:
+                        q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'Pyvk-t commands','jid':self.jid}
+                        if (self.hasUser(bjid)):
+                            q.addElement("item").attributes={"node":"friendsonline",'name':'Friends online','jid':self.jid}
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:register"):
@@ -354,7 +364,7 @@ class pyvk_t(component.Service,vkonClient):
                         #log.msg("id: %s"%v_id)
                         if (self.hasUser(bjid)):
                             #self.users[bjid].pool.callInThread(time.sleep(1))
-                            self.users[bjid].pool.callInThread(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
+                            self.users[bjid].pool.call(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
                             print("thread not found: %s"%bjid)
@@ -399,6 +409,7 @@ class pyvk_t(component.Service,vkonClient):
                     qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
                         (safe(pyvkt.bareJid(iq["from"])),safe(pyvkt.bareJid(iq["from"])),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
+                    qq.addErrback(self.errorback)
                     return
                 if (query.uri=="jabber:iq:gateway"):
                     for prompt in query.elements():
@@ -413,13 +424,13 @@ class pyvk_t(component.Service,vkonClient):
                             return
                 elif (query.uri=="jabber:iq:search") and (self.hasUser(bjid)):
                         time.sleep(1)
-                        self.users[bjid].pool.callInThread(self.getSearchResult,jid=iq["from"],q=query,iq_id=iq["id"])
+                        self.users[bjid].pool.call(self.getSearchResult,jid=iq["from"],q=query,iq_id=iq["id"])
                         return
 
             cmd=iq.command
             if (cmd):
                 if (self.hasUser(bjid)):
-                    d=deferToThreadPool(reactor,self.users[bjid].pool,f=self.commands.onIqSet,iq=iq)
+                    d=self.users[bjid].pool.defer(f=self.commands.onIqSet,iq=iq)
                 else:
                     d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 d.addCallback(self.xmlstream.send)
@@ -654,7 +665,8 @@ class pyvk_t(component.Service,vkonClient):
             if (self.users[bjid].active):
                 return 1
             else:
-                del self.users[bjid]
+                if (not self.users[bjid].lock):
+                    del self.users[bjid]
         return 0
     def addResource(self,jid,prs=None):
         #print "addRes"
@@ -714,7 +726,7 @@ class pyvk_t(component.Service,vkonClient):
         if (feed["messages"]["count"]):
             for i in feed ["messages"]["items"].keys():
                 print "requesting message"
-                self.users[jid].pool.callInThread(self.requestMessage,jid=jid,msgid=i)
+                self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
@@ -741,15 +753,24 @@ class pyvk_t(component.Service,vkonClient):
     def usersOnline(self,jid,users):
         #FIXME not thread-safe!!
         # need to call sendPresence from reactor thread!
-        for i in users:
-            if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
-                self.sendPresence("%s@%s"%(i,self.jid),jid)
+        bjid=pyvkt.bareJid(jid)
+        if (self.hasUser(bjid)):
+            for i in users:
+                if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
+                    self.sendPresence("%s@%s"%(i,self.jid),jid)
+        else:
+            print "usersOnline: no such user: %s"%jid
 
     def usersOffline(self,jid,users):
         #FIXME not thread-safe!!
-        for i in users:
-            if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
-                self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+        bjid=pyvkt.bareJid(jid)
+        
+        if (self.hasUser(bjid)):
+            for i in users:
+                if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
+                    self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+        else:
+            print "usersOffline: no such user: %s"%jid
 
     def threadError(self,jid,err):
         if (err=="banned"):
@@ -869,4 +890,8 @@ class pyvk_t(component.Service,vkonClient):
         print "stopping service..."
         self.stopService()
         print "done"
+    def errorback(self,err):
+        print "error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
+        err.printTraceback()
+
 
