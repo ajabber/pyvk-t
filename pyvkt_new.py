@@ -725,6 +725,9 @@ class pyvk_t(component.Service,vkonClient):
                         if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
                                 gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
+                                #FIXME
+                                if (pyvkt.feedInfo[j].has_key("jid")):
+                                    gr+="\n  "+pyvkt.feedInfo[j]["jid"]%(i,self.jid)
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:

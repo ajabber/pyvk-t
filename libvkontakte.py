@@ -57,6 +57,8 @@ class vkonThread(threading.Thread):
         
         global opener
         self.jid=jid
+        #deprecated self.jid
+        self.bjid=jid
         cjar=cookielib.FileCookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         cjar.clear()
@@ -622,10 +624,32 @@ class vkonThread(threading.Thread):
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return -1
         #print page
-        if (page.find('<go href="/deletefriend%s"'%v_id)==-1):
+        if (page.find('<go href="/addfriend%s"'%v_id)==-1):
+            return 1
+        return 0
+    def addDeleteFriend(self,v_id,isAdd):
+        if (isAdd):
+            print "%s: add friend %s"%(self.bjid,v_id)
+            print "%s: del friend %s"%(self.bjid,v_id)
+            req=urllib2.Request("http://wap.vkontakte.ru/addfriend%s"%v_id)
+            try:
+                res=self.opener.open(req)
+                page=res.read()
+            except urllib2.HTTPError, err:
+                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+                return -1
             return 0
-        return 1
-        
+        else:
+            print "%s: del friend %s"%(self.bjid,v_id)
+            req=urllib2.Request("http://wap.vkontakte.ru/deletefriend%s"%v_id)
+            try:
+                res=self.opener.open(req)
+                page=res.read()
+            except urllib2.HTTPError, err:
+                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+                return -1
+            return 0
+            
     def loop(self):
         tonline=[]
         while(self.alive):

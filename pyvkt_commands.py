@@ -18,7 +18,7 @@ class cmdManager:
                 "login":loginCmd(trans),
                 "logout":logoutCmd(trans),
                 "config":setConfigCmd(trans)}
-        self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans)}
+        self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans),"friend":addDelFriendCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
     def makeCmdList(self,s_jid,v_id):
@@ -360,41 +360,77 @@ class sendWallMessageCmd(basicCommand):
 class setConfigCmd(basicCommand):
     name=u"Настройки транспорта"
     args={0:"test"}
-    confList=["test"]
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
+    def assignArgs(self,args):
+        if (len(args)!=2):
+            return {}
+        return {args[0]:args[1]}
     def run(self,jid,args,sessid="0",to_id=0):
-        print("echo from %s"%jid)
         bjid=pyvkt.bareJid(jid)
         print(args)
         cf=pyvkt.userConfigFields
+        try:
+            user=self.trans.users[bjid]
+        except KeyError:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+
         if (len(args)):
-            try:
-                if (type(self.trans.users[bjid].config)==bool):
-                    print "someone fucked our config"
-                    self.trans.users[bjid].config={}
-                for i in args:
+            #try:
+            if (type(user.config)==bool):
+                print "someone fucked our config"
+                user.config={}
+            for i in args:
+                if cf.has_key(i):
                     if cf[i]["type"]=="boolean":
-                        self.trans.users[bjid].config[i]=args[i]=="1"
+                        user.config[i]=args[i]=="1"
                     else:
-                        self.trans.users[bjid].config[i]=args[i]
-                nc=str(self.trans.users[bjid].config)
-                print nc
-                self.trans.saveConfig(bjid)
-            except KeyError:
-                print "keyError"
-                ns="[void]"
+                        user.config[i]=args[i]
+            nc=str(user.config)
+            print nc
+            self.trans.saveConfig(bjid)
+            #except KeyError:
+                #print "keyError"
+                #nc="[void]"
             return {"status":"completed","title":self.name,'message':u'вот тут настройки должны были бы сохраниться\n%s'%nc}
             
         else:
-            try:
-                user=self.trans.users[bjid]
-            except KeyError:
-                return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
             fl={}
             for i in cf:
                 print "field ",i
                 val=user.getConfig(i)
                 fl[i]=(cf[i]["type"],cf[i]["desc"],val)
             print "fieldList: ",fl
-            return {"status":"executing","title":u"Установка статуса","form":{"fields":fl},'message':u''}
+            return {"status":"executing","title":self.name,"form":{"fields":fl},'message':u''}
+class addDelFriendCmd(basicCommand):
+    name=u"Добавить/удалить друга"
+    args={0:"confirm"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=pyvkt.bareJid(jid)
+        try:
+            user=self.trans.users[bjid]
+        except KeyError:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+        isFriend=self.trans.users[bjid].thread.isFriend(to_id)
+        #TODO run in pool?
+        if (isFriend==-1):
+            return {"status":"completed","title":self.name,'message':u'Внутренняя ошибка транспорта'}
+            #TODO exceptions?
+            #FIXME not 'completed'
+        if (len(args)!=1):
+            fl={"confirm":("boolean",u'Подтверждение',"0")}
+            if(isFriend):
+                return {"status":"executing","title":u'Удаление из списка друзей',"form":{"fields":fl},
+                    'message':u'Пользователь будет УДАЛЕН из списка друзей на сайте, не в транспорте, а именно на сайте!'}
+            else:
+                return {"status":"executing","title":u'Добавление в список друзей',"form":{"fields":fl},
+                    'message':u'Будет отправлено приглашене стать другом или подтверждено полученное приглашение'}
+        if (args.has_key("confirm") and args["confirm"]=='1'):
+            user.thread.addDeleteFriend(to_id,not isFriend)
+            return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}
+            pass
+        else:
+            return {"status":"completed","title":self.name,'message':u'Операция отменена'}
+
