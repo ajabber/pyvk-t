@@ -242,8 +242,42 @@ class vkonThread(threading.Thread):
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1 
         return 0
-
-
+    def sendWallMessage2(self,v_id,text):
+        """ 
+        Send a message to user's wall
+        Returns:
+        0   - seccess
+        1   - http|urllib error
+        2   - could not get form
+        3   - no data
+        -1  - unknown error
+        """
+        if not text:
+            return 3
+        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
+        res=self.opener.open(req)
+        page=res.read()
+        #print page
+        dom=xml.dom.minidom.parseString(page)
+        gos=dom.getElementsByTagName("go")
+        go=filter(lambda x: x.getAttribute("method")=='POST',gos)
+        if (len(go)!=1):
+            return -1
+        go=go[0]
+        url=go.getAttribute("href")
+        if (url==""):
+            return -1
+        url="http://pda.vkontakte.ru%s"%url
+        print url
+        params=urllib.urlencode({"message":text.encode("utf-8")})
+        req=urllib2.Request(url,params)
+        try:
+            res=self.opener.open(req)
+            #page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return 1 
+        return 0
     def getVcard(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
@@ -287,13 +321,13 @@ class vkonThread(threading.Thread):
                 lc=prof.find(name="div", id="leftColumn")
                 profName=rc.find("div", {"class":"profileName"})
                 result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-                result[u"О себе:"]=u"[страница удалена ее владельцем]"
             else:
                 # deleted page
                 pt=bs.head.title.string
                 del_pos=pt.find(" | ")
                 lc=None
                 result['FN']=pt[del_pos+3:]
+                result[u"О себе:"]=u"[страница удалена ее владельцем]"
         if (self.user.getConfig("resolve_nick")):
             list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
             if len(list)==6:
