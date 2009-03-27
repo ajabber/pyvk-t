@@ -313,6 +313,9 @@ class vkonThread(threading.Thread):
             # search page
             self.checkPage(page)
             cont=bs.find(name="div",id="content")
+            if(cont==None):
+                self.checkPage(page)
+                self.dumpString(page, "vcard_no_cont")
             result['FN']=cont.find(name='div',style="overflow: hidden;").string
             lc=cont
         else:
@@ -448,6 +451,10 @@ class vkonThread(threading.Thread):
             return 
         dom=xml.dom.minidom.parseString(page)
         fields=dom.getElementsByTagName("postfield")
+        fields=filter(lambda x:x.getAttribute("name")=='activityhash',fields)
+        if (len(fields)==0):
+            print "setstatus: cant find fields\nFIXME need page check"
+            return 0
         hashfield=filter(lambda x:x.getAttribute("name")=='activityhash',fields)[0]
         ahash=hashfield.getAttribute("value")
         #if (hashfield==None):
