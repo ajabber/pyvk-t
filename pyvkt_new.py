@@ -133,7 +133,7 @@ class pyvk_t(component.Service,vkonClient):
         #except:
             #log.msg("can't ret revision")
             #self.revision="alpha"
-        self.isActive=0
+        self.isActive=1
         #self.commands=
         # FIXME 
 
@@ -313,7 +313,8 @@ class pyvk_t(component.Service,vkonClient):
                         elif(query["node"]=="friendsonline"):
                             if (self.hasUser(bjid)):
                                 for i in self.users[bjid].thread.onlineList:
-                                    q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'id%s'%i,'jid':"%s@%s"%(i,self.jid)}
+                                    cname=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
+                                    q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)}
                     else:
                         q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'Pyvk-t commands','jid':self.jid}
                         if (self.hasUser(bjid)):
@@ -388,6 +389,7 @@ class pyvk_t(component.Service,vkonClient):
                             p.addElement("BINVAL").addContent(photo.replace("\n",""))
                         except:
                             print 'cannot load avatar'
+                    
                     ans.send()
                     return
                     

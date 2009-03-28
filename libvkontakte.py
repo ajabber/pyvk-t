@@ -40,7 +40,7 @@ class authFormError(Exception):
         return 'unexpected auth form'
 class vkonThread(threading.Thread):
     oldFeed=""
-    onlineList=[]
+    onlineList={}
     alive=1
     error=0
     def __init__(self,cli,jid,email,passw,user):
@@ -111,7 +111,7 @@ class vkonThread(threading.Thread):
     def logout(self):
         self.alive=0
         self.client.usersOffline(self.jid,self.onlineList)
-        self.onlineList=[]
+        self.onlineList={}
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', USERAGENT)]
         res=self.opener.open(req)
@@ -157,8 +157,9 @@ class vkonThread(threading.Thread):
             flist=demjson.decode(json)
         except:
             print "json decode error"
-        ret=[]
-        for i in flist:ret.append(i[0])
+        ret={}
+        for i in flist:
+            ret[i[0]]={"last":i[1]['l'],"first":i[1]['f']}
         return ret
     def getOnlineList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
@@ -365,7 +366,6 @@ class vkonThread(threading.Thread):
             print "cannot parse user data"
         #avatars are asked only if needed
         if lc and show_avatars and self.user.getConfig("vcard_avatar"):
-            
             photourl=lc.find(name="img")['src']
             #if user has no avatar we wont process it
             if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif":
@@ -692,12 +692,12 @@ class vkonThread(threading.Thread):
             return 0
             
     def loop(self):
-        tonline=[]
+        tonline={}
         while(self.alive):
             tfeed=self.getFeed()
             self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
-                tonline=[]
+                tonline={}
             else:
                 try:
                     tonline=self.getOnlineList()
@@ -711,9 +711,9 @@ class vkonThread(threading.Thread):
                     return
                     
             #print tonline,self.onlineList
-            if (tonline!=self.onlineList):
-                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.count(x)-1,tonline))
-                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:tonline.count(x)-1,self.onlineList))
+            if (tonline.keys()!=self.onlineList.keys()):
+                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
+                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
                 if self.alive: self.onlineList=tonline
             for i in range(1,11):
                 if not self.alive: return
