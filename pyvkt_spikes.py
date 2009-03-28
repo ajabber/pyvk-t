@@ -29,9 +29,9 @@ class reqQueue(threading.Thread):
     def call(self,foo,**kw):
         elem={"foo":foo,"args":kw}
         self.queue.put(elem)
-    def defer(self,foo,**kw):
+    def defer(self,f,**kw):
         d=defer.Deferred()
-        elem={"foo":foo,"args":kw,"deferred":d}
+        elem={"foo":f,"args":kw,"deferred":d}
         self.queue.put(elem)
         return d
     def stop(self):

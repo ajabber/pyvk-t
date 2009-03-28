@@ -290,6 +290,7 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
                             q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
+                            q.addElement("feature")["var"]="jabber:iq:version"
                             if (self.hasUser(bjid)):
                                 q.addElement("feature")["var"]="jabber:iq:search"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
@@ -300,6 +301,7 @@ class pyvk_t(component.Service,vkonClient):
                             #q.addElement("feature")["var"]="stringprep"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
+                            q.addElement("feature")["var"]="jabber:iq:version"
                         ans.send()
                         return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
