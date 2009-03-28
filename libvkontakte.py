@@ -114,8 +114,12 @@ class vkonThread(threading.Thread):
         self.onlineList={}
         req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
         req.addheaders = [('User-agent', USERAGENT)]
-        res=self.opener.open(req)
-        print "logout"
+        try:
+            res=self.opener.open(req)
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return {"messages":{"count":0}}
+        print "%s: logout"%self.bjid
     def getFeed(self):
         #global opener
         req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoqg")
@@ -234,7 +238,7 @@ class vkonThread(threading.Thread):
         if not type(text)==type(u""):
             text=unicode(text,"utf-8")
         params=urllib.urlencode({"message":text.encode("utf-8")})
-        print "form url:","http://pda.vkontakte.ru%s&%s"%(formurl,params)
+        #print "form url:","http://pda.vkontakte.ru%s&%s"%(formurl,params)
         try:
             req=urllib2.Request("http://pda.vkontakte.ru%s&%s"%(formurl,params))
             res=self.opener.open(req)
@@ -269,7 +273,7 @@ class vkonThread(threading.Thread):
         if (url==""):
             return -1
         url="http://pda.vkontakte.ru%s"%url
-        print url
+        #print url
         params=urllib.urlencode({"message":text.encode("utf-8")})
         req=urllib2.Request(url,params)
         try:
@@ -576,7 +580,7 @@ class vkonThread(threading.Thread):
             return 1
         page=res.read()
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
-            print "message delivered"
+            #print "message delivered"
             return 0
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
             print "too fast sending messages"
@@ -635,7 +639,7 @@ class vkonThread(threading.Thread):
             return 1
         page=res.read()
         if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
-            print "message delivered"
+            #print "message delivered"
             return 0
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
             #FIXME adapt to wap version
@@ -670,8 +674,8 @@ class vkonThread(threading.Thread):
         return 0
     def addDeleteFriend(self,v_id,isAdd):
         if (isAdd):
-            print "%s: add friend %s"%(self.bjid,v_id)
-            print "%s: del friend %s"%(self.bjid,v_id)
+            #print "%s: add friend %s"%(self.bjid,v_id)
+            #print "%s: del friend %s"%(self.bjid,v_id)
             req=urllib2.Request("http://wap.vkontakte.ru/addfriend%s"%v_id)
             try:
                 res=self.opener.open(req)
@@ -681,7 +685,7 @@ class vkonThread(threading.Thread):
                 return -1
             return 0
         else:
-            print "%s: del friend %s"%(self.bjid,v_id)
+            #print "%s: del friend %s"%(self.bjid,v_id)
             req=urllib2.Request("http://wap.vkontakte.ru/deletefriend%s"%v_id)
             try:
                 res=self.opener.open(req)
@@ -720,7 +724,7 @@ class vkonThread(threading.Thread):
                 time.sleep(1)
 
     def exit(self):
-        self.client.usersOffline(self.jid,self.onlineList)
+        self.client.usersOffline(self.jid,self.onlineList.keys())
         self.logout()
         self.alive=0
         #threading.Thread.exit(self)

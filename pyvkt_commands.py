@@ -24,7 +24,7 @@ class cmdManager:
     def makeCmdList(self,s_jid,v_id):
         ret={}
         bjid=pyvkt.bareJid(s_jid)
-        print bjid,v_id
+        #print bjid,v_id
         if (v_id==0):
             for i in self.transportCmdList:
                 ret[i]=self.transportCmdList[i]
@@ -37,7 +37,7 @@ class cmdManager:
         #print ret
         return ret
     def onMsg(self,jid,text,v_id=0):
-        print "command:", text
+        #print "command:", text
         cmdList=self.makeCmdList(jid,v_id)
         cl=text.find(" ")
         if (cl==-1):
@@ -52,8 +52,8 @@ class cmdManager:
         if (cmdList.has_key(node)):
             cmd=cmdList[node]
             ar=cmd.assignArgs(args)
-            print jid
-            print "command: '%s', args: %s"%(node,repr(ar))
+            #print jid
+            #print "command: '%s', args: %s"%(node,repr(ar))
             
             res=cmd.run(jid,ar,to_id=v_id)
             try:
@@ -63,7 +63,7 @@ class cmdManager:
             if (res.has_key("form")):
                 f=cmd.reprForm(res["form"])
                 txt="%s\n%s"%(txt,f)
-            print "cmd done"
+            #print "cmd done"
             ret="[cmd:%s]\n%s"%(res["title"],txt)
         else:
             return "unknown command: %s"%node
@@ -78,7 +78,7 @@ class cmdManager:
             if (iq.command.x!=None):
                 args=self.getXdata(iq.command.x)
             else:
-                print "empty "
+                #print "empty "
                 args={}
             cmd=cmdList[node]
             
@@ -119,14 +119,14 @@ class cmdManager:
                         fd=i
                     try:
                         val=fields[i][2]
-                        print "val=",val
+                        #print "val=",val
                         if (val==True):
                             val='1'
                         elif(val==False):
                             val='0'
                         #FIXME
                     except IndexError:
-                        print "initial value isn't set"
+                        #print "initial value isn't set"
                         val=''
 
                     f=x.addElement("field")
@@ -139,18 +139,18 @@ class cmdManager:
             #FIXME error strnza
             pass
     def getXdata(self,x):
-        print("xdata")
-        print(x.toXml().encode("ascii","replace"))
+        #print("xdata")
+        #print(x.toXml().encode("ascii","replace"))
         #x=elem.x
         ret={}
         if (x==None):
-            print "none"
+            #print "none"
             return ret
         #TODO check namespace
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
                 ret[f['var']]=f.value.children[0]
-        print "got ",ret
+        #print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
         v_id=pyvkt.jidToId(iq["to"])
@@ -264,20 +264,14 @@ class setStatusCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        print("echo from %s"%jid)
         bjid=pyvkt.bareJid(jid)
-        print(args)
         if (args.has_key("text")):
-            print ("setting status...")
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
-                print ("setting status...")
                 self.trans.users[bjid].thread.setStatus(args["text"])
-                print ("done")
             else:
                 #print ("done")
                 return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
-            print ("done")
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":{"text":('text-single',u'Статус')}},'message':u'Введите статус'}
         self.trans.users[bjid].VkStatus = args["text"]
@@ -321,7 +315,6 @@ class getHistioryCmd(basicCommand):
         msg=u''
         for t,m in hist:
             msg=u'%s\n%s: %s'%(msg,t,m)
-        #print msg
         return {"status":"completed","title":self.name,'message':msg}
 
 class sendWallMessageCmd(basicCommand):
@@ -330,17 +323,16 @@ class sendWallMessageCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        print("echo from %s"%jid)
         bjid=pyvkt.bareJid(jid)
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
         print(args)
         if (args.has_key("text")):
-            print ("sending wall message...")
+            #print ("sending wall message...")
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
-                print ("sending wall message...")
+                #print ("sending wall message...")
                 res=self.trans.users[bjid].thread.sendWallMessage(to_id,args["text"])
                 if res==1:
                     return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
@@ -349,11 +341,11 @@ class sendWallMessageCmd(basicCommand):
                 elif res!=0:
                     return {"status":"completed","title":u"Отправка на стену",'message':u'Неизвестная ошибка.'}
 
-                print ("done")
+                #print ("done")
             else:
                 #print ("done")
                 return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
-            print ("done")
+            #print ("done")
         else:
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
@@ -368,7 +360,7 @@ class setConfigCmd(basicCommand):
         return {args[0]:args[1]}
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=pyvkt.bareJid(jid)
-        print(args)
+        #print(args)
         cf=pyvkt.userConfigFields
         try:
             user=self.trans.users[bjid]
@@ -387,7 +379,7 @@ class setConfigCmd(basicCommand):
                     else:
                         user.config[i]=args[i]
             nc=str(user.config)
-            print nc
+            #print nc
             self.trans.saveConfig(bjid)
             #except KeyError:
                 #print "keyError"
@@ -397,10 +389,10 @@ class setConfigCmd(basicCommand):
         else:
             fl={}
             for i in cf:
-                print "field ",i
+                #print "field ",i
                 val=user.getConfig(i)
                 fl[i]=(cf[i]["type"],cf[i]["desc"],val)
-            print "fieldList: ",fl
+            #print "fieldList: ",fl
             return {"status":"executing","title":self.name,"form":{"fields":fl},'message':u''}
 class addDelFriendCmd(basicCommand):
     name=u"Добавить/удалить друга"
