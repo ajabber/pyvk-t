@@ -17,6 +17,7 @@ import ConfigParser,os
 from BaseHTTPServer import BaseHTTPRequestHandler as http
 import xml.dom.minidom
 import twisted.web.microdom
+
 #from lxml import etree
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
@@ -138,24 +139,24 @@ class vkonThread(threading.Thread):
             print("JSON decode error")
             self.dumpString(s,"feed")
         return {}
+
     def flParse(self,page):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
         if (res==None):
             print "wrong page format: can't fing <script>"
             self.checkPage(page)
             self.dumpString(page,"script")
-            return []
+            return {}
         tag=page[res.start():res.end()]
         res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
         if (res==None):
             if (tag.find("list:[],")!=-1):
-                return []
+                return {}
             print "wrong page format: can't fing 'list:''"
             self.checkPage(page)
             self.dumpString(page,"script")
-            self.dumpString(tag,"script_list")
-            
-            return []
+            self.dumpString(tag,"script_list")        
+            return {}
         json=tag[res.start()+6:res.end()-3]
         #print json
         json=json.decode("cp1251")
@@ -167,6 +168,7 @@ class vkonThread(threading.Thread):
         for i in flist:
             ret[i[0]]={"last":i[1]['l'],"first":i[1]['f']}
         return ret
+
     def getOnlineList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
         ret={}
@@ -177,6 +179,7 @@ class vkonThread(threading.Thread):
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return {}
         return self.flParse(page)
+
     def dumpString(self,string,fn=""):
         if (self.dumpPath==None or self.dumpPath==''):
             return
