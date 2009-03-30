@@ -4,7 +4,7 @@ from twisted.internet import defer
 from twisted.python import log, runtime, context, failure
 import Queue
 import threading
-from traceback import print_stack
+from traceback import print_stack, print_exc
 def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     #WARN "too fast"?
     print "deprecated deferToThreadPool"
@@ -42,7 +42,12 @@ class reqQueue(threading.Thread):
             elem=self.queue.get(block=True)
             f=elem["foo"]
             args=elem["args"]
-            res=f(**args)
+            try:
+                res=f(**args)
+            except Exception, exc:
+                print "Caught exception"
+                print_exc()
+                print "thread is alive!"
             try:
                 elem["deferred"].callback(res)
             except KeyError:

@@ -16,6 +16,8 @@ import base64
 import ConfigParser,os
 from BaseHTTPServer import BaseHTTPRequestHandler as http
 import xml.dom.minidom
+import twisted.web.microdom
+#from lxml import etree
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
 
@@ -167,20 +169,21 @@ class vkonThread(threading.Thread):
         return ret
     def getOnlineList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
-        ret=list()
+        ret={}
         try:
             res=self.opener.open(req)
             page=res.read()
-            
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return list()
+            return {}
         return self.flParse(page)
     def dumpString(self,string,fn=""):
         if (self.dumpPath==None or self.dumpPath==''):
             return
         fname="%s/%s-%s"%(self.dumpPath,int(time.time()),fn)
         fil=open(fname,"w")
+        if (type(string)==unicode):
+            string=strng.encode("utf-8")
         fil.write(string)
         fil.close()
         print "buggy page saved to",fname
@@ -707,14 +710,13 @@ class vkonThread(threading.Thread):
                     tonline=self.getOnlineList()
                 except tooFastError:
                     self.client.threadError(self.jid,"banned")
+                    #FIXME
                     time.sleep(100)
                 except authFormError:
                     if (self.alive):
                         self.client.threadError(self.jid,"auth")
                     self.client.usersOffline(self.jid,self.onlineList)
                     return
-                    
-            #print tonline,self.onlineList
             if (tonline.keys()!=self.onlineList.keys()):
                 if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
                 if self.alive: self.client.usersOffline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
@@ -731,3 +733,64 @@ class vkonThread(threading.Thread):
     def __del__(self):
         self.logout()
         threading.Thread.exit(self)
+    def getPage(self,url,fn=None):
+        req=urllib2.Request(url)
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return
+        if (fn):
+            f=open(fn,'w')
+            w.write(page)
+
+        else:
+            #print page.decode("cp1251")
+            page=page[page.find("</div></div>")+12:].decode("cp1251")
+            from lxml import etree
+            import StringIO
+            parser = etree.XMLParser(recover=True)
+            tree   = etree.parse(StringIO.StringIO(page), parser)
+            msgs=tree.xpath('/div/table/tr')
+            print len(msgs)
+            for i in msgs:
+                mt=i.xpath('td/div')
+                #print etree.tostring(i)
+                print "-----------"
+                print etree.tostring(mt[0])
+                print mt[0].findtext(".")
+                #for j in mt[0].getchildren():
+                    #print j
+            #print etree.tostring(tree.getroot())
+
+    def getVcard2(self,v_id, show_avatars=0):
+        '''
+        Parsing of profile page to get info suitable to show in vcard
+        '''
+        try:
+            req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
+            res=self.opener.open(req)
+            #page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return {"FN":""}
+        parser = etree.XMLParser(recover=True)
+        nsd={'x': 'http://www.w3.org/1999/xhtml'}
+        tree=etree.parse(res,parser)
+        prof=tree.xpath('//*/x:div[@id="userProfile"]',namespaces=nsd)
+        if (len(prof)==0):
+            print "FIXME search page"
+            return None
+        prof=prof[0]
+        rc=prof.xpath('x:div[@id="rigthColumn"]',namespaces=nsd)
+        if (len(rc)==0):
+            print "FIXME deleted pages"
+            return None
+        rc=rc[0]
+        pn=rc.xpath('//*/x:div[@class="profileName"]',namespaces=nsd)
+        #result["FN"]=pg.
+        if (self.user.getConfig("resolve_nick")):
+            print "FIXME nick resolve"
+
+
