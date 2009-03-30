@@ -656,7 +656,7 @@ class vkonThread(threading.Thread):
 
     def getFriendList(self):
         req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
-        ret=list()
+        ret={}
         
         try:
             res=self.opener.open(req)
@@ -667,7 +667,6 @@ class vkonThread(threading.Thread):
         return self.flParse(page)
     def isFriend(self,v_id):
         req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
-        ret=list()
         try:
             res=self.opener.open(req)
             page=res.read()
