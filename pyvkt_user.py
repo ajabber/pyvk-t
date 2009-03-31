@@ -292,8 +292,17 @@ class user:
 
     def delThread(self,void=0):
         print "delThread %s"%self.bjid
-        del self.thread
         self.active=0
+        try:
+            self.thread.stop()
+            del self.thread
+        except:
+            pass
+        try:
+            self.pool.stop()
+            del self.pool
+        except:
+            pass
 
     def hasResource(self,jid):
         """
@@ -311,20 +320,8 @@ class user:
         return 0
 
     def __del__(self):
-        #try:
-            #self.thread.logout()
-        #except:
-            #pass
-        try:
-            self.thread.stop()
-            del self.thread
-        except:
-            pass
-        try:
-            self.pool.stop()
-            del self.pool
-        except:
-            pass
+        self.delThread()
+
 
     def getConfig(self,fieldName):
         if (not fieldName in pyvkt.userConfigFields):

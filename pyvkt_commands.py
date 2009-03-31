@@ -5,7 +5,7 @@ from twisted.internet.defer import waitForDeferred
     #from twisted.internet.threads import deferToThreadPool
 #except:
 from pyvkt_spikes import deferToThreadPool
-from traceback import print_stack
+from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
 
 
@@ -70,7 +70,10 @@ class cmdManager:
         return ret
         pass
     def onIqSet(self,iq):
-        node=iq.command["node"]
+        if (iq.command["node"][:4]=='cmd:'):
+            node=iq.command["node"][4:]
+        else:
+            node=iq.command["node"]
         v_id=pyvkt.jidToId(iq["to"])
         cmdList=self.makeCmdList(iq["from"],v_id)
         #cmdList=self.transportCmdList
@@ -159,20 +162,32 @@ class cmdManager:
         resp["type"]="result"
         q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
         q["node"]=iq.query["node"]
-        cmdList={}
-        #if (iq["to"]==self.trans.jid):
-            #cmdList=self.transportCmdList
-        try:
-            cmd=cmdList[iq.query["node"]]
-        
-            q.addElement("identity").attributes={"name":cmd["name"],"category":"automation","type":"command-node"}
-        except:
-            q.addElement("identity").attributes={"name":"unknown","category":"automation","type":"command-node"}
-        # FIXME!!!!!!!
+        if (iq.query["node"][:4]=='cmd:'):
+            node=iq.query["node"][4:]
+        else:
+            node=iq.query["node"]
+        #if (type(node)==unicode):
+            #node=node.encode("utf-8")
+        #else:
+            #print "WARNING non-unicode node name: %s"%node
+        if (node=='http://jabber.org/protocol/commands'):
+            if (v_id==0):
+                q.addElement("identity").attributes={"name":"pyvk-t commands","category":"automation","type":"command-node"}
+            else:
+                q.addElement("identity").attributes={"category":"automation","type":"command-node"}
+                
+        else:
+            try:
+                cmd=cmdList[node]
+                q.addElement("identity").attributes={"name":cmd.name,"category":"automation","type":"command-node"}
+            except KeyError:
+                #print node
+                #print_exc()
+                q.addElement("identity").attributes={"name":"unknown","category":"automation","type":"command-node"}
+
         q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
         q.addElement("feature")["var"]='jabber:x:data'
         return resp
-        pass
     def onDiscoItems(self,iq):
         cmdList={}
         #if (iq["to"]==self.trans.jid):
@@ -184,7 +199,7 @@ class cmdManager:
         q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
         q["node"]='http://jabber.org/protocol/commands'
         for i in cmdList:
-            q.addElement("item").attributes={"jid":iq["to"], "node":i, "name":cmdList[i].name}
+            q.addElement("item").attributes={"jid":iq["to"], "node":"cmd:%s"%i, "name":cmdList[i].name}
         return resp
 
 class basicCommand:

@@ -36,6 +36,10 @@ class reqQueue(threading.Thread):
         return d
     def stop(self):
         self.alive=0
+        self.call(self.dummy)
+    def dummy(self):
+        print "dummy"
+        pass
     def loop(self):
         while(self.alive):
             print "waiting for task"
