@@ -709,7 +709,7 @@ class vkonThread(threading.Thread):
                 tonline={}
             else:
                 try:
-                    tonline=self.getOnlineList()
+                    self.onlineList=self.getOnlineList()
                 except tooFastError:
                     self.client.threadError(self.jid,"banned")
                     #FIXME
@@ -720,9 +720,9 @@ class vkonThread(threading.Thread):
                     self.client.usersOffline(self.jid,self.onlineList)
                     return
             if (tonline.keys()!=self.onlineList.keys()):
-                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
-                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
-                if self.alive: self.onlineList=tonline
+                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
+                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
+                if self.alive: tonline=self.onlineList
             for i in range(1,11):
                 if not self.alive: return
                 time.sleep(1)
