@@ -28,7 +28,7 @@ from base64 import b64encode,b64decode
 import pyvkt_commands
 from pyvkt_user import user
 import pyvkt_global as pyvkt
-from traceback import print_stack
+from traceback import print_stack, print_exc
 #try:
     #from twisted.internet.threads import deferToThreadPool
 #except:
@@ -731,6 +731,8 @@ class pyvk_t(component.Service,vkonClient):
 
     def updateFeed(self,jid,feed):
         ret=""
+        if (not self.hasUser(pyvkt.bareJid(jid))):
+            return
         for k in feed.keys():
             if (k in pyvkt.feedInfo) and ("count" in feed[k]) and feed[k]["count"]:
                 ret=ret+u"Новых %s - %s\n"%(pyvkt.feedInfo[k]["message"],feed[k]["count"])
@@ -773,7 +775,12 @@ class pyvk_t(component.Service,vkonClient):
         if (self.hasUser(bjid)):
             for i in users:
                 if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
-                    self.sendPresence("%s@%s"%(i,self.jid),jid)
+                    try:
+                        nick=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
+                    except:
+                        print_exc()
+                        nick=None
+                    self.sendPresence("%s@%s"%(i,self.jid),jid,nick=nick)
         else:
             print "usersOnline: no such user: %s"%jid
 
@@ -876,7 +883,7 @@ class pyvk_t(component.Service,vkonClient):
             except:
                 pass
             pass
-    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None):
+    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None, nick=None):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
@@ -892,6 +899,8 @@ class pyvk_t(component.Service,vkonClient):
         if(status):
             pr.addElement("status").addContent(status)
         pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
+        if (nick):
+            pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
         try:
             self.xmlstream.send(pr)
         except UnicodeDecodeError:
