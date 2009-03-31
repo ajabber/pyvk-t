@@ -282,12 +282,20 @@ class pyvk_t(component.Service,vkonClient):
                 ans["id"]=iq["id"]
                 q=ans.addElement("query",query.uri)
                 if (query.uri=="http://jabber.org/protocol/disco#info"):
-                    if (query.hasAttribute("node")):
+                    try:
+                        node=query["node"]
+                    except KeyError:
+                        node=u''
+                    if (node=='http://jabber.org/protocol/commands' or node[:4]=="cmd:"):
                         self.xmlstream.send(self.commands.onDiscoInfo(iq))
                         return
-                    else:
+                    elif(node==''):
+                        try:
+                            print "info: node =",query["node"]
+                        except KeyError:
+                            pass
                         if (iq["to"]==self.jid):
-                            q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [twisted]"}
+                            q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [pyvk-t]"}
                             q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
                             q.addElement("feature")["var"]="jabber:iq:version"
@@ -302,8 +310,12 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
                             q.addElement("feature")["var"]="jabber:iq:version"
-                        ans.send()
-                        return
+                    else:
+                        err=ans.addElement("error")
+                        err["type"]="cancel"
+                        err.addElement('item-not-found','urn:ietf:params:xml:ns:xmpp-stanzas')
+                    ans.send()
+                    return
                 elif (query.uri=="http://jabber.org/protocol/disco#items"):
                     if (query.hasAttribute("node")):
                         q["node"]=query["node"]
@@ -334,7 +346,7 @@ class pyvk_t(component.Service,vkonClient):
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:gateway"):
-                    q.addElement("desc").addContent(u"Пожалуйста, введите id ползователя на сайте вконтакте.ру.\nУзнать, какой ID у пользователя Вконтакте можно, например, так:\nЗайдите на его страницу. В адресной строке будет http://vkontakte.ru/profile.php?id=0000000\nЗначит его ID - 0000000")
+                    q.addElement("desc").addContent(u"Пожалуйста, введите id пользователя на сайте вконтакте.ру.\nУзнать, какой ID у пользователя Вконтакте можно, например, так:\nЗайдите на его страницу. В адресной строке будет http://vkontakte.ru/profile.php?id=0000000\nЗначит его ID - 0000000")
                     q.addElement("prompt").addContent("Vkontakte ID")
                     ans.send()
                     return
