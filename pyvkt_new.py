@@ -675,13 +675,13 @@ class pyvk_t(component.Service,vkonClient):
                 try:
                     a=self.users[bjid].pool
                 except AttributeError:
-                    print "ERROR: '%s' - active user without pool!"
-                    return 0
+                    print "WARN: '%s' - active user without pool!"
+                    #return 0
                 try:
                     a=self.users[bjid].thread
                 except AttributeError:
-                    print "ERROR: '%s' - active user without thread!"
-                    return 0
+                    print "WARN: '%s' - active user without thread!"
+                    #return 0
                 return 1
             else:
                 if (not self.users[bjid].lock):
