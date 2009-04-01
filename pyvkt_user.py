@@ -330,7 +330,7 @@ class user:
             return self.config[fieldName]
         except KeyError:
             #FIXME!!
-            print "%s: '%s' isn't set. using default"%(self.bjid,fieldName)
+            #print "%s: '%s' isn't set. using default"%(self.bjid,fieldName)
             return pyvkt.userConfigFields[fieldName]["default"]
         
 

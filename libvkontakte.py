@@ -76,7 +76,7 @@ class vkonThread(threading.Thread):
             print "features/cache_path isn't set. disabling cache"
             self.cachePath=None
         
-        authData={'email':email, 'pass':passw}
+        authData={'op':'a_login_attempt','email':email, 'pass':passw}
         params=urllib.urlencode(authData)
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
         req.addheaders = [('User-agent', USERAGENT)]
@@ -327,7 +327,8 @@ class vkonThread(threading.Thread):
             if(cont==None):
                 self.checkPage(page)
                 self.dumpString(page, "vcard_no_cont")
-            result['FN']=cont.find(name='div',style="overflow: hidden;").string
+            result['FN']=cont.find(name='div',style="overflow: hidden; width: 260px;").string
+            #FIXME 
             lc=cont
         else:
             rc=prof.find(name="div", id="rightColumn")

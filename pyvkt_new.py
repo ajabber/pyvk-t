@@ -229,17 +229,14 @@ class pyvk_t(component.Service,vkonClient):
                 #FIXME
                 title = "xmpp:%s"%bjid
                 if(req==None):
-                    print "legacy message"
+                    #print "legacy message"
                     self.users[bjid].pool.call(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
                 else:
                     if (req.uri=='urn:xmpp:receipts'):
 
                         #old versions of twisted does not have deferToThreadPool function
                         # FIXED
-                        d=deferToThreadPool(
-                                reactor=reactor,
-                                threadpool=self.users[bjid].pool,
-                                f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
+                        d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
                         d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
             #TODO delivery notification
@@ -290,10 +287,6 @@ class pyvk_t(component.Service,vkonClient):
                         self.xmlstream.send(self.commands.onDiscoInfo(iq))
                         return
                     elif(node==''):
-                        try:
-                            print "info: node =",query["node"]
-                        except KeyError:
-                            pass
                         if (iq["to"]==self.jid):
                             q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [pyvk-t]"}
                             q.addElement("feature")["var"]="jabber:iq:register"
@@ -646,11 +639,11 @@ class pyvk_t(component.Service,vkonClient):
             #log.msg(ans.toXml())
 
     def requestMessage(self,jid,msgid):
-        print "msg request"
+        #print "msg request"
         bjid=jid
         msg=self.users[bjid].thread.getMessage(msgid)
         #log.msg(msg)
-        print msg
+        #print msg
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,pyvkt.unescape(msg["text"]),msg["title"])
 
     def submitMessage(self,jid,v_id,body,title):
@@ -679,6 +672,16 @@ class pyvk_t(component.Service,vkonClient):
         #print "hasUser (%s)"%bjid
         if (self.users.has_key(bjid)):
             if (self.users[bjid].active):
+                try:
+                    a=self.users[bjid].pool
+                except AttributeError:
+                    print "ERROR: '%s' - active user without pool!"
+                    return 0
+                try:
+                    a=self.users[bjid].thread
+                except AttributeError:
+                    print "ERROR: '%s' - active user without thread!"
+                    return 0
                 return 1
             else:
                 if (not self.users[bjid].lock):
@@ -743,7 +746,7 @@ class pyvk_t(component.Service,vkonClient):
         ret=""
         if (feed["messages"]["count"]):
             for i in feed ["messages"]["items"].keys():
-                print "requesting message"
+                #print "requesting message"
                 self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
