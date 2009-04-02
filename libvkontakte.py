@@ -20,7 +20,7 @@ import twisted.web.microdom
 
 #from lxml import etree
 #user-agent used to request web pages
-USERAGENT="Opera/10.00 (X11; Linux x86_64 ; U; ru) Presto/2.2.0"
+USERAGENT="Opera/10.00 (X11; Linux; U; ru) Presto/2.2.1"
 
 class vkonClient:
     def feedChanged(self,jid,feed):
@@ -443,9 +443,17 @@ class vkonThread(threading.Thread):
         try:
             content=bs.find(name="div", id="content")
             for i in content.findAll(name="div",attrs={'class':'info'}):
-                    if i['id'][4:]:
-                        name=i.find(name='div')
-                        result[i['id'][4:]]=''.join(name.findAll(text=True)).strip()
+                id = i['id'][4:]
+                if id:
+                    name=i.find(name='div')
+                    if not id in result:
+                        result[id]={}
+                    result[i['id'][4:]]["name"]=u''.join(name.findAll(text=True)).strip()
+                    matches = i.find(name="dd",attrs={"class":"matches"}) 
+                    if matches:
+                        result[i['id'][4:]]["matches"]=u''.join(matches.findAll(text=True)).strip()
+                    else:
+                        result[i['id'][4:]]["matches"]=u''
         except:
             print "wrong page format"
             self.dumpString(page,"search_wrong_format")
