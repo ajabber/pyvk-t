@@ -75,6 +75,11 @@ class vkonThread(threading.Thread):
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "features/cache_path isn't set. disabling cache"
             self.cachePath=None
+        try:
+            self.keep_online=config.get("features","keep_online")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "features/keep_online isn't set."
+            self.keep_online=None
         
         authData={'op':'a_login_attempt','email':email, 'pass':passw}
         params=urllib.urlencode(authData)
@@ -327,7 +332,7 @@ class vkonThread(threading.Thread):
             if(cont==None):
                 self.checkPage(page)
                 self.dumpString(page, "vcard_no_cont")
-            result['FN']=cont.find(name='div',style="overflow: hidden; width: 260px;").string
+            result['FN']=cont.find(name='div',style="overflow: hidden;").string
             #FIXME 
             lc=cont
         else:
@@ -709,9 +714,22 @@ class vkonThread(threading.Thread):
                 return -1
             return 0
             
+    def dummyRequest(self):
+        """ request that means nothing"""
+        req=urllib2.Request("http://wap.vkontakte.ru/")
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return -1
+        return 0
+
     def loop(self):
         tonline={}
+        j=50
         while(self.alive):
+            j=j+1
             tfeed=self.getFeed()
             self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
@@ -732,6 +750,12 @@ class vkonThread(threading.Thread):
                 if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
                 if self.alive: self.client.usersOnline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
                 if self.alive: tonline=self.onlineList
+            if j>50 and self.keep_online and self.user.getConfig("keep_online"):
+                #FIXME online status
+                self.dummyRequest()
+                j=0
+            elif j>60:
+                j=40
             for i in range(1,11):
                 if not self.alive: return
                 time.sleep(1)

@@ -10,6 +10,7 @@ from base64 import b64encode,b64decode
 import time
 from traceback import print_stack
 
+
 class user:
     def __init__(self,trans,jid):
         bjid=pyvkt.bareJid(jid)
@@ -73,18 +74,37 @@ class user:
         else:
             self.resources[jid]=None
 
-    def askSubscibtion(self, bjid):
+    def getName(self,bjid):
+        """ returns name of roster item if set """
+        if bjid in self.roster and "name" in self.roster[bjid]:
+            return self.roster[bjid]["name"]
+        return u""
+
+    def setName(self,bjid,name):
+        """ sets name of roster item """
+        if bjid in self.roster:
+            self.roster[bjid]["name"]=name
+        else:
+            self.roster[bjid]={"subscribe":0,"subscribed":0,"name":name}
+
+    def askSubscibtion(self, bjid,nick=None):
         """just ask for subscribtion if needed"""
+        if not bjid in self.roster:
+            self.roster[bjid]={"subscribe":0,"subscribed":0}
+        if not nick:
+            nick = self.getName(bjid)
+        else:
+            self.roster[bjid]["name"]=nick
         if not self.subscribed(bjid):
-            self.trans.sendPresence(bjid,self.bjid,"subscribe")
+            self.trans.sendPresence(bjid,self.bjid,"subscribe",nick=nick)
 
     def subscribe(self,bjid):
         """ answer on subscription request """
         if not bjid in self.roster:
             self.roster[bjid]={"subscribe":0,"subscribed":0}
-        self.trans.sendPresence(bjid, self.bjid, "subscribed")
+        self.trans.sendPresence(bjid, self.bjid, "subscribed",nick=self.getName(bjid))
         if not self.roster[bjid]["subscribe"] and pyvkt.jidToId(bjid) in self.thread.onlineList:
-            self.trans.sendPresence(bjid,self.bjid)
+            self.trans.sendPresence(bjid,self.bjid,nick=self.getName(bjid))
         self.roster[bjid]["subscribe"] = 1
         self.askSubscibtion(bjid)
 
@@ -102,6 +122,7 @@ class user:
         except KeyError:
             pass
         return 0
+
     def unsubscribe(self,bjid):
         """ delete subscribtion """
         if not bjid in self.roster:

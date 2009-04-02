@@ -478,7 +478,7 @@ class pyvk_t(component.Service,vkonClient):
         for f in fl:
             src="%s@%s"%(f,self.jid)
             if self.hasUser(bjid):
-                self.users[bjid].askSubscibtion(src)
+                self.users[bjid].askSubscibtion(src,nick=fl[f]["last"]+u" "+fl[f]["first"])
             #self.sendPresence(src,jid,"subscribed")
             #self.sendPresence(src,jid,"subscribe")
             #return
@@ -786,12 +786,13 @@ class pyvk_t(component.Service,vkonClient):
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             for i in users:
-                if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
-                    try:
-                        nick=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
-                    except:
-                        print_exc()
-                        nick=None
+                try:
+                    nick=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
+                except:
+                    print_exc()
+                    nick=None
+                self.users[bjid].setName("%s@%s"%(i,self.jid),nick)
+                if not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid)):
                     self.sendPresence("%s@%s"%(i,self.jid),jid,nick=nick)
         else:
             print "usersOnline: no such user: %s"%jid
