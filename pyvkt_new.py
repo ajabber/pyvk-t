@@ -535,8 +535,12 @@ class pyvk_t(component.Service,vkonClient):
                     field['var']='FN'
                     field=item.addElement("field")
                     field['type']='text-single'
+                    field['label']=u'Совпадение'
+                    field['var']='matches'
+                    field=item.addElement("field")
+                    field['type']='text-single'
                     field['label']=u'Страница Вконтакте'
-                    field['var']='vk.ru'
+                    field['var']='url'
                     for i in items:
                         item=x.addElement("item")
                         field=item.addElement("field")
@@ -544,9 +548,12 @@ class pyvk_t(component.Service,vkonClient):
                         field.addElement("value").addContent(i+u'@'+self.jid)
                         field=item.addElement("field")
                         field['var']='FN'
-                        field.addElement("value").addContent(items[i])
+                        field.addElement("value").addContent(items[i]["name"])
                         field=item.addElement("field")
-                        field['var']='vk.ru'
+                        field['var']='matches'
+                        field.addElement("value").addContent(items[i]["matches"])
+                        field=item.addElement("field")
+                        field['var']='url'
                         field.addElement("value").addContent(u"http://vkontakte.ru/id%s"%i)
         except:
             log.msg("some fcky error when searching")
@@ -675,12 +682,14 @@ class pyvk_t(component.Service,vkonClient):
                 try:
                     a=self.users[bjid].pool
                 except AttributeError:
-                    print "WARN: '%s' - active user without pool!"
+                    pass
+                    #print "WARN: '%s' - active user without pool!",bjid
                     #return 0
                 try:
                     a=self.users[bjid].thread
                 except AttributeError:
-                    print "WARN: '%s' - active user without thread!"
+                    pass
+                    #print "WARN: '%s' - active user without thread!",bjid
                     #return 0
                 return 1
             else:
