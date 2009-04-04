@@ -85,7 +85,6 @@ class vkonThread(threading.Thread):
         params=urllib.urlencode(authData)
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
         req.addheaders = [('User-agent', USERAGENT)]
-
         try:
             res=self.opener.open(req)
         except urllib2.HTTPError, err:
@@ -93,7 +92,6 @@ class vkonThread(threading.Thread):
             self.error=1
             self.alive=0
             return
-        #print cjar
         self.cookie=cjar.make_cookies(res,req)
         self.client=cli
         self.feedOnly=1
@@ -105,8 +103,30 @@ class vkonThread(threading.Thread):
         else:
             self.error=0
             self.alive=1
-        #print res.read()
-        #print this.cookie
+
+    def getHttpPage(self,url,params=None):
+        """ get contents of web page
+            returns u'' if some of errors took place
+        """
+        if params:
+            req=urllib2.Request(url,params)
+        else:
+            req=urllib2.Request(url)
+        req.addheaders = [('User-agent', USERAGENT)]
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return u''
+        except IOError, e:
+            if hasattr(e, 'reason'):
+                print "IO error. Reason: %s.\nURL:%s"%(e.reason,req.get_full_url())
+            elif hasattr(e, 'code'):
+                print "IO error. Code: %s.\nURL:%s"%(e.code,req.get_full_url())
+            return u''
+        return page
+
     def checkPage(self,page):
         if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
             print ("%s: banned"%self.jid)
@@ -120,30 +140,19 @@ class vkonThread(threading.Thread):
         self.alive=0
         self.client.usersOffline(self.jid,self.onlineList)
         self.onlineList={}
-        req=urllib2.Request("http://vkontakte.ru/login.php?op=logout")
-        req.addheaders = [('User-agent', USERAGENT)]
-        try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return {"messages":{"count":0}}
+        self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
         print "%s: logout"%self.bjid
+
     def getFeed(self):
-        #global opener
-        req=urllib2.Request("http://vkontakte.ru/feed2.php?mask=ufmepvnoqg")
-        try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251")
+        if not s:
             return {"messages":{"count":0}}
-        s=res.read().decode("cp1251")
-        #print repr(s)
         try:
             return demjson.decode(s)
         except:
             print("JSON decode error")
             self.dumpString(s,"feed")
-        return {}
+        return {"messages":{"count":0}}
 
     def flParse(self,page):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
@@ -175,13 +184,9 @@ class vkonThread(threading.Thread):
         return ret
 
     def getOnlineList(self):
-        req=urllib2.Request("http://vkontakte.ru/friend.php?act=online&nr=1")
         ret={}
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page=self.getHttpPage("http://vkontakte.ru/friend.php","act=online&nr=1")
+        if not page:
             return {}
         return self.flParse(page)
 
@@ -198,16 +203,14 @@ class vkonThread(threading.Thread):
         
     def getInfo(self,v_id):
         prs=vcardPrs()
-        req=urllib2.Request("http://pda.vkontakte.ru/id%s"%v_id)
-        res=self.opener.open(req)
-        page=res.read()
+        page=self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
         prs.feed(page)
         return prs.vcard
+
     def getHistory(self,v_id):
-        req=urllib2.Request("http://vkontakte.ru/mail.php?act=history&mid=%s"%v_id)
-        res=self.opener.open(req)
-        page=res.read()
-        #print page
+        page=self.getHttpPage("http://vkontakte.ru/mail.php","act=history&mid=%s"%v_id)
+        if not page:
+            return []
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         msgs=bs.findAll("tr",attrs={"class":"message_shown"})
         ret=[]
@@ -223,11 +226,12 @@ class vkonThread(threading.Thread):
             ret.append((t,m.replace('<br />','\n')))
         #ret=ret.replace('<br />','\n')
         return ret
+
     def sendWallMessage(self,v_id,text):
         """ 
         Send a message to user's wall
         Returns:
-        0   - seccess
+        0   - success
         1   - http|urllib error
         2   - could not get form
         3   - no data
@@ -235,10 +239,9 @@ class vkonThread(threading.Thread):
         """
         if not text:
             return 3
-        req=urllib2.Request("http://pda.vkontakte.ru/id%s"%v_id)
-        res=self.opener.open(req)
-        page=res.read()
-        #print page
+        page=self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
+        if not page:
+            return 1
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="utf-8")
         form=bs.find(name="form")
         if not form or not form.has_key("action"):
@@ -249,20 +252,16 @@ class vkonThread(threading.Thread):
         if not type(text)==type(u""):
             text=unicode(text,"utf-8")
         params=urllib.urlencode({"message":text.encode("utf-8")})
-        #print "form url:","http://pda.vkontakte.ru%s&%s"%(formurl,params)
-        try:
-            req=urllib2.Request("http://pda.vkontakte.ru%s&%s"%(formurl,params))
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return 1 
-        return 0
+        page=self.getHttpPage("http://pda.vkontakte.ru%s&%s"%(formurl,params))
+        if page:
+            return 0
+        return 1
+
     def sendWallMessage2(self,v_id,text):
         """ 
         Send a message to user's wall
         Returns:
-        0   - seccess
+        0   - success
         1   - http|urllib error
         2   - could not get form
         3   - no data
@@ -270,10 +269,9 @@ class vkonThread(threading.Thread):
         """
         if not text:
             return 3
-        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
-        res=self.opener.open(req)
-        page=res.read()
-        #print page
+        page=self.getHttpPage("http://wap.vkontakte.ru/id%s"%v_id)
+        if not page:
+            return 1
         dom=xml.dom.minidom.parseString(page)
         gos=dom.getElementsByTagName("go")
         go=filter(lambda x: x.getAttribute("method")=='POST',gos)
@@ -283,28 +281,19 @@ class vkonThread(threading.Thread):
         url=go.getAttribute("href")
         if (url==""):
             return -1
-        url="http://pda.vkontakte.ru%s"%url
-        #print url
         params=urllib.urlencode({"message":text.encode("utf-8")})
-        req=urllib2.Request(url,params)
-        try:
-            res=self.opener.open(req)
-            #page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return 1 
-        return 0
+        page=self.getHttpPage("http://pda.vkontakte.ru%s&%s"%(formurl,params))
+        if page:
+            return 0
+        return 1
+
     def getVcard(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
         '''
-        try:
-            req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return {"FN":""}
+        page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
+        if not page:
+            return {"FN":u""}
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
             #bs=BeautifulSoup(page)
@@ -399,10 +388,8 @@ class vkonThread(threading.Thread):
                         except:
                             print "can't read cache: %s"%fname
                 if not photo:
-                    req=urllib2.Request(photourl)
-                    res=self.opener.open(req)
-                    photo=base64.encodestring(res.read())
-                    if (self.cachePath):
+                    photo = base64.encodestring(self.getHttpPage(photourl))
+                    if photo and self.cachePath:
                         #FIXME check for old avatars
                         cfile=open(fpath,'w')
                         cfile.write(photo)
@@ -410,6 +397,7 @@ class vkonThread(threading.Thread):
                 if photo:
                     result["PHOTO"]=photo
         return result
+
     def searchUsers(self, text):
         '''
         Searches 10 users using simplesearch template
@@ -421,12 +409,8 @@ class vkonThread(threading.Thread):
         data={'act':"quick", 'n':"0","q":text}
         params=urllib.urlencode(data)
 
-        try:
-            req=urllib2.Request("http://vkontakte.ru/search.php?%s"%params)
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://vkontakte.ru/search.php",params)
+        if not page:
             return None
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
@@ -466,13 +450,9 @@ class vkonThread(threading.Thread):
         return result
 
     def setStatus(self,text):
-        req=urllib2.Request("http://wap.vkontakte.ru/status")
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return 
+        page = self.getHttpPage("http://wap.vkontakte.ru/status")
+        if not page:
+            return None
         dom=xml.dom.minidom.parseString(page)
         fields=dom.getElementsByTagName("postfield")
         fields=filter(lambda x:x.getAttribute("name")=='activityhash',fields)
@@ -494,14 +474,12 @@ class vkonThread(threading.Thread):
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
+
     def getMessage_old(self,msgid):
-        req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://pda.vkontakte.ru/letter%s"%msgid)
+        if not page:
             return {"text":"error: html exception","from":"error","title":""}
+        req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
         trgForm=bs.find(name="form", action="/mailsent?pda=1")
         fromField=trgForm.find(name="input",attrs={"name":"to_id"})
@@ -512,20 +490,16 @@ class vkonThread(threading.Thread):
         body=""
         for i in range(2,len(strings)):
             body=body+"\n"+strings[i]
-        
         body=body[5:]
         #print body
         return {"text":body,"from":from_id,"title":title}
+
     def getMessage(self,msgid):
         """
         retrieves message from the server
         """
-        req=urllib2.Request("http://wap.vkontakte.ru/letter%s"%msgid)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page =self.getHttpPage("http://wap.vkontakte.ru/letter%s"%msgid)
+        if not page:
             return {"text":"error: html exception","from":"error","title":""}
         
         dom = xml.dom.minidom.parseString(page)
@@ -563,23 +537,15 @@ class vkonThread(threading.Thread):
         -1  - unknown error
         """
         #prs=chasGetter()
-        req=urllib2.Request("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://pda.vkontakte.ru/","act=write&to=%s"%to_id)
+        if not page:
             return 1
-            
         try:
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
             chas=bs.find(name="input",attrs={"name":"chas"})["value"]
         except:
             print "unknown error.. saving page.."
             self.dumpString(page,"send_chas")
-            
-        #print "chas",chas
-        #prs.feed(page)
         if (type(body)==unicode):
             tbody=body.encode("utf-8")
         else:
@@ -588,19 +554,11 @@ class vkonThread(threading.Thread):
             ttitle=title.encode("utf-8")
         else:
             ttitle=title
-
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        
-        #print "data: ",urlencode(data)
-        req=urllib2.Request("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
-        try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        if not page:
             return 1
-        page=res.read()
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
-            #print "message delivered"
             return 0
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
             print "too fast sending messages"
@@ -620,6 +578,7 @@ class vkonThread(threading.Thread):
             
             #return 0
         #print res.read()
+
     def sendMessage(self,to_id,body,title="[null]"):
         """
         Sends message through website
@@ -630,12 +589,8 @@ class vkonThread(threading.Thread):
         2   - too fast sending
         -1  - unknown error
         """
-        req=urllib2.Request("http://wap.vkontakte.ru/?act=write&to=%s"%to_id)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://wap.vkontakte.ru/?act=write&to=%s"%to_id)
+        if not page:
             return 1
         dom = xml.dom.minidom.parseString(page)
         inputs=dom.getElementsByTagName("postfield")
@@ -651,13 +606,9 @@ class vkonThread(threading.Thread):
             ttitle=title
 
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        req=urllib2.Request("http://wap.vkontakte.ru/mailsent?pda=1",urlencode(data))
-        try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page=self.getHttpPage("http://wap.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        if not page:
             return 1
-        page=res.read()
         if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
             #print "message delivered"
             return 0
@@ -669,65 +620,34 @@ class vkonThread(threading.Thread):
         return -1
 
     def getFriendList(self):
-        req=urllib2.Request("http://vkontakte.ru/friend.php?nr=1")
-        ret={}
-        
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return ret
+        page = self.getHttpPage("http://vkontakte.ru/friend.php?nr=1")
+        if not page:
+            return {}
         return self.flParse(page)
+
     def isFriend(self,v_id):
-        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://wap.vkontakte.ru/id%s"%v_id)
+        if not page: 
             return -1
-        #print page
         if (page.find('<go href="/addfriend%s"'%v_id)==-1):
             return 1
         return 0
+
     def addDeleteFriend(self,v_id,isAdd):
         if (isAdd):
-            #print "%s: add friend %s"%(self.bjid,v_id)
-            #print "%s: del friend %s"%(self.bjid,v_id)
-            req=urllib2.Request("http://wap.vkontakte.ru/addfriend%s"%v_id)
-            try:
-                res=self.opener.open(req)
-                page=res.read()
-            except urllib2.HTTPError, err:
-                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-                return -1
-            return 0
-        else:
-            #print "%s: del friend %s"%(self.bjid,v_id)
-            req=urllib2.Request("http://wap.vkontakte.ru/deletefriend%s"%v_id)
-            try:
-                res=self.opener.open(req)
-                page=res.read()
-            except urllib2.HTTPError, err:
-                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-                return -1
-            return 0
-            
-    def dummyRequest(self):
-        """ request that means nothing"""
-        req=urllib2.Request("http://wap.vkontakte.ru/")
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            page = self.getHttpPage("http://wap.vkontakte.ru/addfriend%s"%v_id)
+            if page:
+                return 0
             return -1
-        return 0
-
+        else:
+            page = self.getHttpPage("http://wap.vkontakte.ru/deletefriend%s"%v_id)
+            if page:
+                return 0
+            return -1
+            
     def loop(self):
         tonline={}
-        j=50
+        j=80
         while(self.alive):
             j=j+1
             tfeed=self.getFeed()
@@ -750,13 +670,14 @@ class vkonThread(threading.Thread):
                 if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
                 if self.alive: self.client.usersOnline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
                 if self.alive: tonline=self.onlineList
-            if j>50 and self.keep_online and self.user.getConfig("keep_online"):
+            time.sleep(1)
+            if self.alive and j>80 and self.keep_online and self.user.getConfig("keep_online"):
                 #FIXME online status
-                self.dummyRequest()
+                self.getHttpPage("http://wap.vkontakte.ru/id1")
                 j=0
-            elif j>60:
-                j=40
-            for i in range(1,11):
+            elif j>81:
+                j=75
+            for i in range(1,10):
                 if not self.alive: return
                 time.sleep(1)
 
@@ -768,47 +689,43 @@ class vkonThread(threading.Thread):
     def __del__(self):
         self.logout()
         threading.Thread.exit(self)
-    def getPage(self,url,fn=None):
-        req=urllib2.Request(url)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return
-        if (fn):
-            f=open(fn,'w')
-            w.write(page)
-
-        else:
-            #print page.decode("cp1251")
-            page=page[page.find("</div></div>")+12:].decode("cp1251")
-            from lxml import etree
-            import StringIO
-            parser = etree.XMLParser(recover=True)
-            tree   = etree.parse(StringIO.StringIO(page), parser)
-            msgs=tree.xpath('/div/table/tr')
-            print len(msgs)
-            for i in msgs:
-                mt=i.xpath('td/div')
-                #print etree.tostring(i)
-                print "-----------"
-                print etree.tostring(mt[0])
-                print mt[0].findtext(".")
-                #for j in mt[0].getchildren():
-                    #print j
-            #print etree.tostring(tree.getroot())
+#    def getPage(self,url,fn=None):
+#        req=urllib2.Request(url)
+#        try:
+#            res=self.opener.open(req)
+#            page=res.read()
+#        except urllib2.HTTPError, err:
+#            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+#            return
+#        if (fn):
+#            f=open(fn,'w')
+#            w.write(page)
+#
+#        else:
+#            #print page.decode("cp1251")
+#            page=page[page.find("</div></div>")+12:].decode("cp1251")
+#            from lxml import etree
+#            import StringIO
+#            parser = etree.XMLParser(recover=True)
+#            tree   = etree.parse(StringIO.StringIO(page), parser)
+#            msgs=tree.xpath('/div/table/tr')
+#            print len(msgs)
+#            for i in msgs:
+#                mt=i.xpath('td/div')
+#                #print etree.tostring(i)
+#                print "-----------"
+#                print etree.tostring(mt[0])
+#                print mt[0].findtext(".")
+#                #for j in mt[0].getchildren():
+#                    #print j
+#            #print etree.tostring(tree.getroot())
 
     def getVcard2(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
         '''
-        try:
-            req=urllib2.Request("http://vkontakte.ru/id%s"%v_id)
-            res=self.opener.open(req)
-            #page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+        page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
+        if not page:
             return {"FN":""}
         parser = etree.XMLParser(recover=True)
         nsd={'x': 'http://www.w3.org/1999/xhtml'}
