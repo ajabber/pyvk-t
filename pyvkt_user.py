@@ -179,12 +179,28 @@ class user:
                 p=self.resources[j]
         return p
 
+    def getHighestPresence(self):
+        """ returns prs with maximal priority or latest if several"""
+        p=None
+        for j in self.resources:
+            q=self.resources[j]
+            if q and (not p or p["priority"]<q["priority"] or (p["priority"]==q["priority"] and p["time"]<q["time"])):
+                p = q
+        return p
+
     def delResource(self,jid):
         """
         deletes resource and does some other work if needed
         """
         if jid in self.resources:
             del self.resources[jid]
+        p = self.getHighestPresence()
+        if p:
+            status=self.prsToVkStatus(p)
+            if status!=self.VkStatus and not self.lock:
+                self.trans.updateStatus(self.bjid,status)
+                self.VkStatus = status
+
 
     def createThread(self,jid,email,pw):
         print "createThread %s"%self.bjid

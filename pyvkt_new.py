@@ -156,10 +156,9 @@ class pyvk_t(component.Service,vkonClient):
     def onMessage(self, msg):
         """
         Act on the message stanza that has just been received.
-
         """
         v_id=pyvkt.jidToId(msg["to"])
-        if (msg["type"]=="error"):
+        if ("type" in msg) and msg["type"]=="error":
             print "XMPP ERROR:"
             print msg.toXml()
             return None
@@ -704,12 +703,13 @@ class pyvk_t(component.Service,vkonClient):
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
 
-    def delResource(self,jid):
+    def delResource(self,jid,to=None):
         #print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
+        if (not self.users[bjid].resources) or to==self.jid:
             self.users[bjid].logout()
 
     def onPresence(self, prs):
@@ -719,7 +719,7 @@ class pyvk_t(component.Service,vkonClient):
         bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable" and self.hasUser(bjid) and (prs["to"]==self.jid or self.users[bjid].subscribed(prs["to"]) or not self.roster_management):
-                self.delResource(prs["from"])
+                self.delResource(prs["from"],prs["to"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
                 pr["to"]=bjid
