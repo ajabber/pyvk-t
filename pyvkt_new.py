@@ -23,11 +23,13 @@ from zope.interface import Interface, implements
 import ConfigParser
 from twisted.internet import defer
 from twisted.python.threadpool import ThreadPool
-import sys,os,cPickle
+import sys,os,cPickle,sha
 from base64 import b64encode,b64decode
 import pyvkt_commands
 from pyvkt_user import user
 import pyvkt_global as pyvkt
+#import pyvkt_pubsub as pubsub
+import pyvkt_user
 from traceback import print_stack, print_exc
 #try:
     #from twisted.internet.threads import deferToThreadPool
@@ -111,7 +113,16 @@ class pyvk_t(component.Service,vkonClient):
             self.feed_notify = config.getboolean("features","feed_notify")
         else:
             self.feed_notify= 0
-
+        try:
+            self.cachePath=config.get("features","cache_path")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "features/cache_path isn't set. disabling cache"
+            self.cachePath=None
+        #try:
+        #if config.has_option("features","pubsub_avatars"):
+            #self.pubsub=pubsub.pubsubMgr(self)
+        #else:
+        self.pubsub=None
         self.users={}
         try:
             self.admin=config.get("general","admin")
@@ -128,14 +139,9 @@ class pyvk_t(component.Service,vkonClient):
             p=s.find(":")
             ver=s[p+1:-1]
             self.revision="svn-rev.%s"%ver
-        #self.commands=pyvktCommands(self)
         self.commands=pyvkt_commands.cmdManager(self)
-        #except:
-            #log.msg("can't ret revision")
-            #self.revision="alpha"
         self.isActive=1
-        #self.commands=
-        # FIXME 
+        self.unregisteredList=[]
 
     def componentConnected(self, xmlstream):
         """
@@ -156,10 +162,11 @@ class pyvk_t(component.Service,vkonClient):
     def onMessage(self, msg):
         """
         Act on the message stanza that has just been received.
+
         """
         v_id=pyvkt.jidToId(msg["to"])
         if (msg.hasAttribute("type")) and msg["type"]=="error":
-            print "XMPP ERROR:"
+           print "XMPP ERROR:"
             print msg.toXml()
             return None
         if (v_id==-1):
@@ -207,6 +214,17 @@ class pyvk_t(component.Service,vkonClient):
                             count+=1
                     ret=u"%s user(s) online"%count + ret
                     self.sendMessage(self.jid,msg["from"],ret)
+                elif(cmd=="reload"):
+                    # for development only!!!
+                    try:
+                        reload(pubsub)
+                        reload(pyvkt)
+                        reload(pyvkt_user)
+                    except:
+                        print_exc()
+                        self.sendMessage(self.jid,msg["from"],"sigfart")
+                    else:
+                        self.sendMessage(self.jid,msg["from"],"OK")
                 elif (cmd[:4]=="wall"):
                     for i in self.users:
                         self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
@@ -302,6 +320,8 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
                             q.addElement("feature")["var"]="urn:xmpp:receipts"
                             q.addElement("feature")["var"]="jabber:iq:version"
+                            #if(self.cachePath):
+                                #q.addElement("feature")["var"]="jabber:iq:avatar"
                     else:
                         err=ans.addElement("error")
                         err["type"]="cancel"
@@ -357,7 +377,37 @@ class pyvk_t(component.Service,vkonClient):
                     text['var']='text'
                     ans.send()
                     return
-                    
+                elif (query.uri=="jabber:iq:avatar"):
+                    #FIXME deferred XEP-0008, need to implement avatars via PEP
+                    print "avatar request"
+                    v_id=pyvkt.jidToId(iq["to"])
+                    if (self.cachePath):
+                        if (self.hasUser(bjid)):
+                            fn="avatar-u%s"%v_id
+                            l=len(fn)
+                            fname=None
+                            for i in os.listdir(self.cachePath):
+                                if (i[:l]==fn):
+                                    fname=i
+                            if(fname):
+                                f=open("%s/%s"%(self.cachePath,fname))
+                                d=q.addElement("data")
+                                d["mimetype"]="image/jpeg"
+                                d.addContent(f.read())
+                                f.close()
+                                ans.send()
+                                return
+                            else:
+                                #FIXME another way to get avatars
+                                pass
+                                #self.users[bjid].pool.call(elf.users[bjid].thread.getVcard(v_id))
+                        else:
+                            #TODO error stranza
+                            print "not logged in"
+                    else:
+                        print "no cache"
+                        pass
+                        #TODO return default avatar
             vcard=iq.vCard
             if (vcard):
                 dogpos=iq["to"].find("@")
@@ -703,13 +753,12 @@ class pyvk_t(component.Service,vkonClient):
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
 
-    def delResource(self,jid,to=None):
+    def delResource(self,jid):
         #print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
-        if (not self.users[bjid].resources) or to==self.jid:
             self.users[bjid].logout()
 
     def onPresence(self, prs):
@@ -719,7 +768,7 @@ class pyvk_t(component.Service,vkonClient):
         bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable" and self.hasUser(bjid) and (prs["to"]==self.jid or self.users[bjid].subscribed(prs["to"]) or not self.roster_management):
-                self.delResource(prs["from"],prs["to"])
+                self.delResource(prs["from"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
                 pr["to"]=bjid
@@ -818,6 +867,13 @@ class pyvk_t(component.Service,vkonClient):
         except:
             pass
         self.sendPresence(self.jid,jid,"unavailable")
+    def avatarChanged(self,v_id,user):
+        print "avatar changed for id%s"%v_id
+        if (self.pubsub):
+            try:
+                self.pubsub.updateAvatar(v_id,user)
+            except:
+                print_exc()
     def stopService(self):
         #FIXME call this from different thread??
         print "stopping transport..."
@@ -851,11 +907,6 @@ class pyvk_t(component.Service,vkonClient):
         print "done\ndeleting user objects"
         for i in self.users.keys():
             del self.users[i]
-        #TODO parallel logout via threadPool
-        #for u in self.users.keys():
-            #if (self.hasUser(u)):
-                #self.users[u].logout()
-                #self.hasUser(u)
         print "done"
         return None
 
@@ -896,7 +947,7 @@ class pyvk_t(component.Service,vkonClient):
             except:
                 pass
             pass
-    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None, nick=None):
+    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None, nick=None,avatar=None):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
@@ -914,6 +965,29 @@ class pyvk_t(component.Service,vkonClient):
         pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
         if (nick):
             pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
+        #FIXME!!!
+        if(0 and t==None and src!=self.jid):
+            try:
+                bjid=pyvkt.bareJid(dest)
+                v_id=pyvkt.jidToId(src)
+                if (bjid==self.admin and self.cachePath):
+                    fn="img-avatar-u%s"%v_id
+                    l=len(fn)
+                    fname=None
+                    for i in os.listdir(self.cachePath):
+                        if (i[:l]==fn):
+                            fname=i
+                    if(fname):
+                        f=open("%s/%s"%(self.cachePath,fname))
+                        hsh=sha.new(f.read()).hexdigest()
+                        f.close()
+                        pr.addElement("x",'jabber:x:avatar').addElement("hash").addContent(hsh)
+                        print "hash added"
+                    else:
+                        print "requesting avatar..."
+                        self.users[bjid].pool.call(self.users[bjid].thread.getVcard,v_id=v_id,show_avatars=1)
+            except:
+                print_exc()
         try:
             self.xmlstream.send(pr)
         except UnicodeDecodeError:

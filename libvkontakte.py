@@ -17,7 +17,8 @@ import ConfigParser,os
 from BaseHTTPServer import BaseHTTPRequestHandler as http
 import xml.dom.minidom
 import twisted.web.microdom
-
+#import simplejson
+from traceback import print_stack, print_exc
 #from lxml import etree
 #user-agent used to request web pages
 USERAGENT="Opera/10.00 (X11; Linux; U; ru) Presto/2.2.1"
@@ -31,6 +32,9 @@ class vkonClient:
         print "online",users
     def threadError(self,jid,message=""):
         print "error: %s"%message
+    def avatarChanged(self,v_id):
+        print "avatar changed for id%s"%v_id
+
 class tooFastError(Exception):
     def __init__(self):
         pass
@@ -46,9 +50,10 @@ class vkonThread(threading.Thread):
     onlineList={}
     alive=1
     error=0
+    daemon=1
     def __init__(self,cli,jid,email,passw,user):
         threading.Thread.__init__(self,target=self.loop)
-        self.daemon=True
+        #self.daemon=True
         self.alive=0
         self.user=user
         config = ConfigParser.ConfigParser()
@@ -95,8 +100,9 @@ class vkonThread(threading.Thread):
         self.cookie=cjar.make_cookies(res,req)
         self.client=cli
         self.feedOnly=1
-        f=self.getFeed()
-        if (f["user"]["id"]==-1):
+        #f=self.getFeed()
+        #if (f["user"]["id"]==-1):
+        if (self.checkLoginError()!=0):
             self.error=1
             self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
             self.alive=0
@@ -141,17 +147,17 @@ class vkonThread(threading.Thread):
         self.client.usersOffline(self.jid,self.onlineList)
         self.onlineList={}
         self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
-        print "%s: logout"%self.bjid
-
+        #print "%s: logout"%self.bjid
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251")
         if not s:
             return {"messages":{"count":0}}
+        s=res.read().decode("cp1251").replace(':"',':u"')
         try:
-            return demjson.decode(s)
+            return eval(s,{"null":"null"},{})
         except:
             print("JSON decode error")
-            self.dumpString(s,"feed")
+            print_exc()
         return {"messages":{"count":0}}
 
     def flParse(self,page):
@@ -173,14 +179,25 @@ class vkonThread(threading.Thread):
             return {}
         json=tag[res.start()+6:res.end()-3]
         #print json
-        json=json.decode("cp1251")
+        json=json
+        #.decode("cp1251")
+        #.encode("utf-8")
+        gl={}
+        for i in ["f","l","p","uy","uf","to","r","f","u","ds","fg"]:
+            gl[i]=i
         try:
-            flist=demjson.decode(json)
+            flist=eval(json,gl,{})
+            #print flist
+            #flist=demjson.decode(json)
         except:
+
+            print_exc()
             print "json decode error"
+            return {}
         ret={}
         for i in flist:
-            ret[i[0]]={"last":i[1]['l'],"first":i[1]['f']}
+            ret[i[0]]={"last":i[1]['l'].decode("cp1251"),"first":i[1]['f'].decode("cp1251")}
+            #print type(i[1]['l'])
         return ret
 
     def getOnlineList(self):
@@ -299,7 +316,7 @@ class vkonThread(threading.Thread):
             #bs=BeautifulSoup(page)
         except:
             #FIXME exception type
-            print "parse error\ntrying to filter bad entities..."
+            #print "parse error\ntrying to filter bad entities..."
             page2=re.sub("&#x.{1,5}?;","",page)
             m1=page2.find("<!-- End pageBody -->") 
             m2=page2.find("<!-- End bFooter -->") 
@@ -378,9 +395,11 @@ class vkonThread(threading.Thread):
                 photo=None
                 if (self.cachePath):
                     pos=photourl.find(".ru/u")
+                    #TODO don't save avatars from "search"
                     if (pos!=-1):
                         fname=photourl[pos+4:].replace("/","_")
                         fpath="%s/avatar-%s"%(self.cachePath,fname)
+                        ifpath="%s/img-avatar-%s"%(self.cachePath,fname)
                         try:
                             cfile=open(fpath,"r")
                             photo=cfile.read()
@@ -389,11 +408,23 @@ class vkonThread(threading.Thread):
                             print "can't read cache: %s"%fname
                 if not photo:
                     photo = base64.encodestring(self.getHttpPage(photourl))
-                    if photo and self.cachePath:
+                    if photo and self.cachePath and rc!=None:
                         #FIXME check for old avatars
+                        fn="avatar-u%s"%v_id
+                        fn2="img-avatar-u%s"%v_id
+                        l=len(fn)
+                        l2=len(fn)
+                        fname=None
+                        for i in os.listdir(self.cachePath):
+                            if (i[:l]==fn or i[:l2]==fn2):
+                                os.unlink("%s/%s"%(self.cachePath,i))
                         cfile=open(fpath,'w')
                         cfile.write(photo)
                         cfile.close()
+                        ifile=open(ifpath,'w')
+                        ifile.write(imgdata)
+                        ifile.close()
+                        self.client.avatarChanged(v_id=v_id,user=self.bjid)
                 if photo:
                     result["PHOTO"]=photo
         return result
@@ -640,9 +671,31 @@ class vkonThread(threading.Thread):
                 return 0
             return -1
         else:
+            #print "%s: del friend %s"%(self.bjid,v_id)
             page = self.getHttpPage("http://wap.vkontakte.ru/deletefriend%s"%v_id)
             if page:
                 return 0
+            return -1
+    def checkLoginError(self):
+        req=urllib2.Request("http://vkontakte.ru/feed2.php")
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return -1
+        if (page=='"{"user": {"id": -1}}'):
+            return 1
+        return 0
+
+    def dummyRequest(self):
+        """ request that means nothing"""
+        req=urllib2.Request("http://wap.vkontakte.ru/")
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return -1
             
     def loop(self):
@@ -651,6 +704,7 @@ class vkonThread(threading.Thread):
         while(self.alive):
             j=j+1
             tfeed=self.getFeed()
+            #print "getfeed done"
             self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
                 tonline={}
@@ -680,7 +734,6 @@ class vkonThread(threading.Thread):
             for i in range(1,10):
                 if not self.alive: return
                 time.sleep(1)
-
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList.keys())
         self.logout()
@@ -689,6 +742,28 @@ class vkonThread(threading.Thread):
     def __del__(self):
         self.logout()
         threading.Thread.exit(self)
+    def getSmallAvatar(self,v_id):
+        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
+        try:
+            res=self.opener.open(req)
+            page=res.read()
+        except urllib2.HTTPError, err:
+            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            return -1
+        dom = xml.dom.minidom.parseString(page)
+        imgs=filter(lambda x: x.getAttribute("class")=='pphoto',dom.getElementsByTagName('img'))
+        if (len(imgs)):
+            url=imgs[0].getAttribute("src")
+            req=urllib2.Request(url)
+            try:
+                res=self.opener.open(req)
+                return res.read()
+            except urllib2.HTTPError, err:
+                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+                return -1
+
+            print url
+        return 0
 #    def getPage(self,url,fn=None):
 #        req=urllib2.Request(url)
 #        try:
@@ -719,7 +794,6 @@ class vkonThread(threading.Thread):
 #                #for j in mt[0].getchildren():
 #                    #print j
 #            #print etree.tostring(tree.getroot())
-
     def getVcard2(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard

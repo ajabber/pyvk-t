@@ -30,7 +30,10 @@ class user:
         #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
-        self.roster={}      
+        self.roster={}
+        self.pool=reqQueue()
+        self.pool.start()
+        
 
     def addResource(self,jid,prs=None):
         """
@@ -42,6 +45,7 @@ class user:
         if not (self.resources or self.lock):
             self.lock=1
             firstTime = 1
+            #self.pool.call(self.login)
             self.login()
         #new status of a resource
         if jid in self.resources:
@@ -203,14 +207,9 @@ class user:
 
 
     def createThread(self,jid,email,pw):
-        print "createThread %s"%self.bjid
+        #print "createThread %s"%self.bjid
         jid=pyvkt.bareJid(jid)
         # TODO self.jid
-        try:
-            self.pool.stop()
-            del self.pool
-        except:
-            pass
         try:
             del self.thread
         except:
@@ -218,23 +217,17 @@ class user:
 
         self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
         self.lock=0
-        #self.pool=ThreadPool(1,1)
-        self.pool=reqQueue()
-        self.pool.start()
         self.thread.start()
         self.thread.feedOnly=0
         self.trans.sendPresence(self.trans.jid,jid,status=self.status)
         self.trans.updateStatus(self.bjid,self.VkStatus)
-
+        
     def login(self):
         # TODO bare jid?
         self.active=1
         #print "self.bjid:%s"%self.bjid
         if (self.trans.isActive==0 and self.bjid!=self.trans.admin):
             #print ("isActive==0, login attempt aborted")
-            if (self.FUsent!=0):
-                #self.trans.sendMessage(self.trans.jid,self.bjid,u"В настоящий момент транспорт неактивен, попробуйте подключиться позже")
-                self.FUsent=1
             self.lock=0
             self.active=0
             #WARN bjid?
@@ -246,7 +239,7 @@ class user:
             self.lock=0
             self.active=0
             return
-        print mq
+        #print mq
         #print_stack()
         q=self.trans.dbpool.runQuery(mq)
         q.addCallback(self.login1)
@@ -255,7 +248,11 @@ class user:
         try:
             t=data[0]
         except IndexError:
-            print "FIXME unregistered user: %s ?"%self.bjid
+            #print "FIXME unregistered user: %s ?"%self.bjid
+            if not self.bjid in self.trans.unregisteredList:
+                reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
+                self.trans.unregisteredList.append(self.bjid)
+                print "unregistered warning sent"
             self.lock=0
             self.active=0
             return
@@ -289,7 +286,7 @@ class user:
         #del self.thread
 
     def logout(self):
-        print "logout %s"%self.bjid
+        #print "logout %s"%self.bjid
         self.lock=1
         #saving data
         try:
@@ -328,7 +325,7 @@ class user:
         self.lock=0
 
     def delThread(self,void=0):
-        print "delThread %s"%self.bjid
+        #print "delThread %s"%self.bjid
         self.active=0
         try:
             self.thread.stop()
