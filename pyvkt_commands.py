@@ -78,6 +78,20 @@ class cmdManager:
         cmdList=self.makeCmdList(iq["from"],v_id)
         #cmdList=self.transportCmdList
         if (cmdList.has_key(node)):
+            #FIXME different actions
+            if iq.command.hasAttribute("action"):
+                act = iq.command["action"]
+                if act=="cancel":
+                    ans=xmlstream.toResponse(iq)
+                    ans["type"]="result"
+                    ans["type"]="result"
+                    q=ans.addElement("command",iq.command.uri)
+                    if iq.command.hasAttribute("sessionid"):
+                        q["sessionid"]=iq.command["sessionid"]
+                    q["status"]="canceled"
+                    q["node"]=node
+                    return ans
+
             if (iq.command.x!=None):
                 args=self.getXdata(iq.command.x)
             else:
