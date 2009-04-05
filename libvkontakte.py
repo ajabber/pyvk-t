@@ -124,13 +124,14 @@ class vkonThread(threading.Thread):
             page=res.read()
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return u''
+            return ''
         except IOError, e:
+            print "IO Error"
             if hasattr(e, 'reason'):
-                print "IO error. Reason: %s.\nURL:%s"%(e.reason,req.get_full_url())
+                print "Reason: %s.\nURL:%s"%(e.reason,req.get_full_url())
             elif hasattr(e, 'code'):
-                print "IO error. Code: %s.\nURL:%s"%(e.code,req.get_full_url())
-            return u''
+                print "Code: %s.\nURL:%s"%(e.code,req.get_full_url())
+            return ''
         return page
 
     def checkPage(self,page):
@@ -152,7 +153,7 @@ class vkonThread(threading.Thread):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251")
         if not s:
             return {"messages":{"count":0}}
-        s=s.decode("cp1251").replace(':"',':u"')
+        s=s.replace(u':"',u':u"')
         try:
             return eval(s,{"null":"null"},{})
         except:
