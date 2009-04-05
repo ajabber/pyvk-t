@@ -38,11 +38,9 @@ class reqQueue(threading.Thread):
         self.alive=0
         self.call(self.dummy)
     def dummy(self):
-        print "dummy"
-        pass
+        return
     def loop(self):
         while(self.alive):
-            #print "waiting for task"
             elem=self.queue.get(block=True)
             f=elem["foo"]
             args=elem["args"]
