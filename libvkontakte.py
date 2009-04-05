@@ -152,7 +152,7 @@ class vkonThread(threading.Thread):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251")
         if not s:
             return {"messages":{"count":0}}
-        s=res.read().decode("cp1251").replace(':"',':u"')
+        s=s.decode("cp1251").replace(':"',':u"')
         try:
             return eval(s,{"null":"null"},{})
         except:

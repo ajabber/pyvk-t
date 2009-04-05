@@ -166,7 +166,7 @@ class pyvk_t(component.Service,vkonClient):
         """
         v_id=pyvkt.jidToId(msg["to"])
         if (msg.hasAttribute("type")) and msg["type"]=="error":
-           print "XMPP ERROR:"
+            print "XMPP ERROR:"
             print msg.toXml()
             return None
         if (v_id==-1):
