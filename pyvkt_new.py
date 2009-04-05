@@ -158,7 +158,7 @@ class pyvk_t(component.Service,vkonClient):
         Act on the message stanza that has just been received.
         """
         v_id=pyvkt.jidToId(msg["to"])
-        if ("type" in msg) and msg["type"]=="error":
+        if (msg.hasAttribute("type")) and msg["type"]=="error":
             print "XMPP ERROR:"
             print msg.toXml()
             return None
