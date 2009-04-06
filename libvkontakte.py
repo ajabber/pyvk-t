@@ -2,6 +2,7 @@
 
 import urllib2
 import urllib
+import httplib
 import cookielib
 import threading
 import time
@@ -14,9 +15,9 @@ import demjson
 import re
 import base64
 import ConfigParser,os
-from BaseHTTPServer import BaseHTTPRequestHandler as http
+#from BaseHTTPServer import BaseHTTPRequestHandler as http
 import xml.dom.minidom
-import twisted.web.microdom
+#import twisted.web.microdom
 #import simplejson
 from traceback import print_stack, print_exc
 #from lxml import etree
@@ -131,6 +132,9 @@ class vkonThread(threading.Thread):
                 print "Reason: %s.\nURL:%s"%(e.reason,req.get_full_url())
             elif hasattr(e, 'code'):
                 print "Code: %s.\nURL:%s"%(e.code,req.get_full_url())
+            return ''
+        except httplib.BadStatusLine, err:
+            print "HTTP bad status line error %s.\nURL:%s"%(err.code,req.get_full_url())
             return ''
         return page
 
@@ -422,9 +426,9 @@ class vkonThread(threading.Thread):
                         cfile=open(fpath,'w')
                         cfile.write(photo)
                         cfile.close()
-                        ifile=open(ifpath,'w')
-                        ifile.write(imgdata)
-                        ifile.close()
+                        #ifile=open(ifpath,'w')
+                        #ifile.write(imgdata)
+                        #ifile.close()
                         self.client.avatarChanged(v_id=v_id,user=self.bjid)
                 if photo:
                     result["PHOTO"]=photo
