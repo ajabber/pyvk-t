@@ -106,6 +106,14 @@ class cmdManager:
             c["node"]=node
             c["status"]=res["status"]
             c["sessionid"]='0'
+            #when command completed we do not have form usually
+            #it does not work in psi correctly
+            #if res["status"]=="completed":
+            #    note = c.addElement("note")
+            #    note["type"]="info"
+            #    note.addContent(res["message"])
+            #    return resp
+            #if not completed we prepare form for sending
             x=c.addElement("x",'jabber:x:data')
             
             if (res.has_key("form")):
@@ -397,6 +405,7 @@ class setConfigCmd(basicCommand):
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
 
         if (len(args)):
+            show_onlines_old = user.getConfig("show_onlines")
             #try:
             if (type(user.config)==bool):
                 print "someone fucked our config"
@@ -408,7 +417,12 @@ class setConfigCmd(basicCommand):
                     else:
                         user.config[i]=args[i]
             nc=str(user.config)
-            #print nc
+            show_onlines = user.getConfig("show_onlines")
+            #if show_onlines flag changed hide or show online contacts
+            if show_onlines_old and not show_onlines:
+                self.trans.usersOffline(jid,user.thread.onlineList,force=1)
+            if not show_onlines_old and show_onlines:
+                self.trans.usersOnline(jid,user.thread.onlineList)
             self.trans.saveConfig(bjid)
             #except KeyError:
                 #print "keyError"
@@ -423,6 +437,7 @@ class setConfigCmd(basicCommand):
                 fl[i]=(cf[i]["type"],cf[i]["desc"],val)
             #print "fieldList: ",fl
             return {"status":"executing","title":self.name,"form":{"fields":fl},'message':u''}
+
 class addDelFriendCmd(basicCommand):
     name=u"Добавить/удалить друга"
     args={0:"confirm"}

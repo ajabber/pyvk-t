@@ -240,33 +240,33 @@ class pyvk_t(component.Service,vkonClient):
                     log.msg("bad JID: %s"%msg["to"])
                     return
                 req=msg.request
-                #if hasAttribute(msg,"title"):
-                    #title = msg.title
-                #else:
-                #FIXME
-                title = "xmpp:%s"%bjid
-                if(req==None):
-                    #print "legacy message"
-                    self.users[bjid].pool.call(self.submitMessage,jid=bjid,v_id=v_id,body=body,title=title)
+                if self.users[bjid].getConfig("jid_in_subject"):
+                    title = "xmpp:%s"%bjid
                 else:
-                    if (req.uri=='urn:xmpp:receipts'):
-
-                        #old versions of twisted does not have deferToThreadPool function
-                        # FIXED
-                        d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
-                        d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
+                    title = '...'
+                for x in msg.elements():
+                    if x.name=="subject":
+                        title=x.__str__()
+                        break
+                d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
+                if (req and req.uri=='urn:xmpp:receipts'):
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id,receipt=1)
+                else:
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
                 
-            #TODO delivery notification
-    def msgDeliveryNotify(self,res,msg_id,jid,v_id):
+    def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0):
         """
         Send delivery notification if message successfully sent
+        use receipt flag if needed to send receipt
         """
         msg=domish.Element((None,"message"))
         msg["to"]=jid
         msg["from"]="%s@%s"%(v_id,self.jid)
         msg["id"]=msg_id
-        if res == 0:
+        if res == 0 and receipt:
             msg.addElement("received",'urn:xmpp:receipts')
+        elif res == 0:
+            return #no reciepts needed and no errors
         elif res == 2:
             err = msg.addElement("error")
             err.attributes["type"]="wait"
@@ -278,6 +278,7 @@ class pyvk_t(component.Service,vkonClient):
             err.attributes["type"]="cancel"
             err.attributes["code"]="500"
             err.addElement("undefined-condition","urn:ietf:params:xml:ns:xmpp-stanzas")
+
         self.xmlstream.send(msg)
 
     def onIq(self, iq):
@@ -753,12 +754,13 @@ class pyvk_t(component.Service,vkonClient):
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
 
-    def delResource(self,jid):
+    def delResource(self,jid,to=None):
         #print "delResource %s"%jid
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
+        if (not self.users[bjid].resources) or to==self.jid:
             self.users[bjid].logout()
 
     def onPresence(self, prs):
@@ -768,7 +770,7 @@ class pyvk_t(component.Service,vkonClient):
         bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable" and self.hasUser(bjid) and (prs["to"]==self.jid or self.users[bjid].subscribed(prs["to"]) or not self.roster_management):
-                self.delResource(prs["from"])
+                self.delResource(prs["from"],prs["to"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
                 pr["to"]=bjid
@@ -802,10 +804,13 @@ class pyvk_t(component.Service,vkonClient):
             self.users[jid].status = ret
             self.sendPresence(self.jid,jid,status=ret)
         ret=""
-        if (feed["messages"]["count"]):
-            for i in feed ["messages"]["items"].keys():
-                #print "requesting message"
-                self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
+        try:
+            if (feed["messages"]["count"]):
+                for i in feed ["messages"]["items"].keys():
+                    #print "requesting message"
+                    self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
+        except KeyError:
+            pass
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
@@ -813,7 +818,7 @@ class pyvk_t(component.Service,vkonClient):
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
-                        if not (oldfeed and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
+                        if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
                                 gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
                                 #FIXME
@@ -841,18 +846,18 @@ class pyvk_t(component.Service,vkonClient):
                     print_exc()
                     nick=None
                 self.users[bjid].setName("%s@%s"%(i,self.jid),nick)
-                if not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid)):
+                if self.users[bjid].getConfig("show_onlines") and (not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid))):
                     self.sendPresence("%s@%s"%(i,self.jid),jid,nick=nick)
         else:
             print "usersOnline: no such user: %s"%jid
 
-    def usersOffline(self,jid,users):
+    def usersOffline(self,jid,users,force=0):
         #FIXME not thread-safe!!
         bjid=pyvkt.bareJid(jid)
         
         if (self.hasUser(bjid)):
             for i in users:
-                if not self.roster_management or self.users[pyvkt.bareJid(jid)].subscribed("%s@%s"%(i,self.jid)):
+                if (force or self.users[bjid].getConfig("show_onlines")) and (not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid))):
                     self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
         else:
             print "usersOffline: no such user: %s"%jid
@@ -920,6 +925,7 @@ class pyvk_t(component.Service,vkonClient):
         print q
         qq=self.dbpool.runQuery(q)
         return 0
+
     def sendMessage(self,src,dest,body,title=None):
         msg=domish.Element((None,"message"))
         #try:

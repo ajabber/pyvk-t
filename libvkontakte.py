@@ -86,7 +86,6 @@ class vkonThread(threading.Thread):
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "features/keep_online isn't set."
             self.keep_online=None
-        
         authData={'op':'a_login_attempt','email':email, 'pass':passw}
         params=urllib.urlencode(authData)
         req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
@@ -97,7 +96,7 @@ class vkonThread(threading.Thread):
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             self.error=1
             self.alive=0
-            return
+            return 
         self.cookie=cjar.make_cookies(res,req)
         self.client=cli
         self.feedOnly=1
@@ -134,7 +133,7 @@ class vkonThread(threading.Thread):
                 print "Code: %s.\nURL:%s"%(e.code,req.get_full_url())
             return ''
         except httplib.BadStatusLine, err:
-            print "HTTP bad status line error %s.\nURL:%s"%(err.code,req.get_full_url())
+            print "HTTP bad status line error.\nURL:%s"%(req.get_full_url())
             return ''
         return page
 
@@ -154,16 +153,16 @@ class vkonThread(threading.Thread):
         self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
         #print "%s: logout"%self.bjid
     def getFeed(self):
-        s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251")
-        if not s:
-            return {"messages":{"count":0}}
+        s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251").strip()
+        if not s or s[0]!=u'{':
+            return {}
         s=s.replace(u':"',u':u"')
         try:
             return eval(s,{"null":"null"},{})
         except:
             print("JSON decode error")
             print_exc()
-        return {"messages":{"count":0}}
+        return {}
 
     def flParse(self,page):
         res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
@@ -681,6 +680,7 @@ class vkonThread(threading.Thread):
             if page:
                 return 0
             return -1
+
     def checkLoginError(self):
         req=urllib2.Request("http://vkontakte.ru/feed2.php")
         try:
@@ -709,8 +709,9 @@ class vkonThread(threading.Thread):
         while(self.alive):
             j=j+1
             tfeed=self.getFeed()
-            #print "getfeed done"
-            self.client.updateFeed(self.jid,tfeed)
+            #tfeed is epty only on some error. Just ignore it
+            if tfeed:
+                self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
                 tonline={}
             else:

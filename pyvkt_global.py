@@ -52,6 +52,8 @@ userConfigFields={
     ,"vcard_avatar":{"type":"boolean", "default":False, "desc":u"Аватары в vCard"}
     ,"resolve_nick":{"type":"boolean", "default":False, "desc":u"Пытаться выделить ник"}
     ,"keep_online":{"type":"boolean", "default":False, "desc":u'Поддерживать статус "в сети" (экспериментально)'}
+    ,"show_onlines":{"type":"boolean", "default":True, "desc":u"Показывать кто в сети ('online' на сайте)"}
+    ,"jid_in_subject":{"type":"boolean","default":True, "desc":u"JID в теме сообещний, если не указана"}
     ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
 #TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
