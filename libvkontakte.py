@@ -46,14 +46,15 @@ class authFormError(Exception):
         pass
     def __str__(self):
         return 'unexpected auth form'
-class vkonThread(threading.Thread):
+class vkonThread():
     oldFeed=""
     onlineList={}
     alive=1
     error=0
     daemon=1
+    tonline={}
     def __init__(self,cli,jid,email,passw,user):
-        threading.Thread.__init__(self,target=self.loop)
+        #threading.Thread.__init__(self,target=self.loop)
         #self.daemon=True
         self.alive=0
         self.user=user
@@ -63,7 +64,6 @@ class vkonThread(threading.Thread):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
         self.config=config
-        
         global opener
         self.jid=jid
         #deprecated self.jid
@@ -141,7 +141,7 @@ class vkonThread(threading.Thread):
         if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
             print ("%s: banned"%self.jid)
             raise tooFastError
-        if (page.find('<form method="post" name="login" id="login" action="login.php">')!=-1):
+        if (page.find('<form method="post" name="login" id="login" action="/login.php"')!=-1):
             print ("%s: logged out"%self.jid)
             raise authFormError
         return 
@@ -704,7 +704,8 @@ class vkonThread(threading.Thread):
             return -1
             
     def loop(self):
-        tonline={}
+        return
+        self.tonline={}
         j=80
         while(self.alive):
             j=j+1
@@ -713,7 +714,7 @@ class vkonThread(threading.Thread):
             if tfeed:
                 self.client.updateFeed(self.jid,tfeed)
             if (self.feedOnly):
-                tonline={}
+                self.tonline={}
             else:
                 try:
                     self.onlineList=self.getOnlineList()
@@ -726,10 +727,10 @@ class vkonThread(threading.Thread):
                         self.client.threadError(self.jid,"auth")
                     self.client.usersOffline(self.jid,self.onlineList)
                     return
-            if (tonline.keys()!=self.onlineList.keys()):
-                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,tonline.keys()))
-                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:tonline.keys().count(x)-1,self.onlineList.keys()))
-                if self.alive: tonline=self.onlineList
+            if (self.tonline.keys()!=self.onlineList.keys()):
+                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
+                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
+                if self.alive: self.tonline=self.onlineList
             time.sleep(1)
             if self.alive and j>80 and self.keep_online and self.user.getConfig("keep_online"):
                 #FIXME online status
@@ -740,6 +741,31 @@ class vkonThread(threading.Thread):
             for i in range(1,10):
                 if not self.alive: return
                 time.sleep(1)
+    def loopIntern(self):
+        tfeed=self.getFeed()
+        #tfeed is epty only on some error. Just ignore it
+        if tfeed:
+            self.client.updateFeed(self.jid,tfeed)
+        if (self.feedOnly):
+            self.tonline={}
+        else:
+            try:
+                self.onlineList=self.getOnlineList()
+            except tooFastError:
+                self.client.threadError(self.jid,"banned")
+                #FIXME
+                time.sleep(100)
+            #except authFormError:
+                #if (self.alive):
+                    #self.client.threadError(self.jid,"auth")
+                #self.client.usersOffline(self.jid,self.onlineList)
+                #return
+        if (self.tonline.keys()!=self.onlineList.keys()):
+            if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
+            if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
+            if self.alive: self.tonline=self.onlineList
+        return
+
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList.keys())
         self.logout()

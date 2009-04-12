@@ -31,7 +31,7 @@ class user:
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
-        self.pool=reqQueue()
+        self.pool=reqQueue(name="pool(%u)")
         self.pool.start()
         
 
@@ -217,7 +217,7 @@ class user:
 
         self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
         self.lock=0
-        self.thread.start()
+        #self.thread.start()
         self.thread.feedOnly=0
         self.trans.sendPresence(self.trans.jid,jid,status=self.status)
         self.trans.updateStatus(self.bjid,self.VkStatus)
@@ -301,34 +301,19 @@ class user:
         #now it's blocking ;)
         try:
             self.thread.logout()
+            self.pool.stop()
             self.delThread()
         except AttributeError:
-            print "thread doesn't exists (%s)"%self.bjid
-        #try:
-            #self.pool.stop()
-        #except AttributeError:
-            #print "%s: user without pool??"%self.bjid
-        # now pool is necessary
-        self.isActive=0
+            print "logout: thread doesn't exists (%s)"%self.bjid
+        self.active=0
         self.lock=0
         self.trans.hasUser(self.bjid)
         return 0
-
-        try:
-            defer.execute(self.thread.logout).addCallback(self.delThread)
-        except AttributeError:
-            print "thread doesn't exists (%s)"%self.bjid
-        try:
-            self.pool.stop()
-        except AttributeError:
-            print "%s: user without pool??"%self.bjid
-        self.lock=0
-
     def delThread(self,void=0):
         #print "delThread %s"%self.bjid
         self.active=0
         try:
-            self.thread.stop()
+            #self.thread.stop()
             del self.thread
         except:
             pass

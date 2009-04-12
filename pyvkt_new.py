@@ -31,6 +31,7 @@ import pyvkt_global as pyvkt
 #import pyvkt_pubsub as pubsub
 import pyvkt_user
 from traceback import print_stack, print_exc
+from pyvkt_spikes import pollManager
 #try:
     #from twisted.internet.threads import deferToThreadPool
 #except:
@@ -141,6 +142,8 @@ class pyvk_t(component.Service,vkonClient):
             self.revision="svn-rev.%s"%ver
         self.commands=pyvkt_commands.cmdManager(self)
         self.isActive=1
+        self.pollMgr=pollManager(self)
+        self.pollMgr.start()
         self.unregisteredList=[]
 
     def componentConnected(self, xmlstream):
@@ -884,6 +887,7 @@ class pyvk_t(component.Service,vkonClient):
         print "stopping transport..."
         if (len(self.users)==0):
             return
+        #self.poolMgr.alive=0
         print "stage 1: stopping users' loops, sending messages and presences..."
         for u in self.users.keys():
             if (self.hasUser(u)):
@@ -1007,6 +1011,7 @@ class pyvk_t(component.Service,vkonClient):
     def __del__(self):
         print "stopping service..."
         self.stopService()
+        self.pollMgr.alive=0
         print "done"
     def errorback(self,err):
         print "error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
