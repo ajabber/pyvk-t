@@ -143,7 +143,7 @@ class pyvk_t(component.Service,vkonClient):
         self.commands=pyvkt_commands.cmdManager(self)
         self.isActive=1
         self.pollMgr=pollManager(self)
-        self.pollMgr.start()
+        
         self.unregisteredList=[]
 
     def componentConnected(self, xmlstream):
@@ -160,6 +160,7 @@ class pyvk_t(component.Service,vkonClient):
         xmlstream.addObserver('/iq', self.onIq, 1)
         #xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
+        self.pollMgr.start()
         print "component ready!"
 
     def onMessage(self, msg):
