@@ -66,9 +66,9 @@ class pollManager(threading.Thread):
         self.trans=trans
     def loop(self):
         while (self.alive):
-            #print "poll cycle..."
+            print "poll cycle..."
             for u in self.trans.users.keys():
-                #print "poll for %s"%u
+                print "poll for %s"%u
                 if (self.trans.hasUser(u)):
                     try:
                         self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
