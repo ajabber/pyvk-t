@@ -67,7 +67,7 @@ class pollManager(threading.Thread):
     def loop(self):
         while (self.alive):
             #print "poll cycle..."
-            for u in self.trans.users:
+            for u in self.trans.users.keys():
                 #print "poll for %s"%u
                 if (self.trans.hasUser(u)):
                     try:
@@ -82,8 +82,12 @@ class pollManager(threading.Thread):
                             reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=u,body=u"Ошибка: возможно, неверный логин/пароль")
                         except:
                             print_exc()
+                    except:
+                        print "GREPME: unhandled exception"
+                        print_exc()
             time.sleep(10)
-        
+    def __del__(self):
+        threading.Thread.exit(self)
         
 
 

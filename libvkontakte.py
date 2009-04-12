@@ -773,7 +773,7 @@ class vkonThread():
         #threading.Thread.exit(self)
     def __del__(self):
         self.logout()
-        threading.Thread.exit(self)
+        #threading.Thread.exit(self)
     def getSmallAvatar(self,v_id):
         req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
         try:
