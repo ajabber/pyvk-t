@@ -31,7 +31,7 @@ class user:
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
-        self.pool=reqQueue(name="pool(%u)")
+        self.pool=reqQueue(user=self,name="pool(%u)"%self.bjid)
         self.pool.start()
         
 

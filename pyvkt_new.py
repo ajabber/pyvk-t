@@ -252,12 +252,15 @@ class pyvk_t(component.Service,vkonClient):
                     if x.name=="subject":
                         title=x.__str__()
                         break
+                try:
+                    msgid=msg["id"]
+                except KeyError:
+                    msgid=""
                 d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
                 if (req and req.uri=='urn:xmpp:receipts'):
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id,receipt=1)
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1)
                 else:
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msg["id"],jid=msg["from"],v_id=v_id)
-                
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id)
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0):
         """
         Send delivery notification if message successfully sent
