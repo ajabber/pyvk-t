@@ -17,8 +17,9 @@ def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     threadpool.callInThread(threadpool._runWithCallback,d.callback,d.errback,f,args,kwargs)
     return d
 class reqQueue(threading.Thread):
-    def __init__(self,name=None):
+    def __init__(self,user,name=None):
         threading.Thread.__init__(self,target=self.loop,name=name)
+        self.user=user
         self.daemon=True
         self.queue=Queue.Queue(200)
         self.alive=1
@@ -48,6 +49,14 @@ class reqQueue(threading.Thread):
             args=elem["args"]
             try:
                 res=f(**args)
+            except authFormError:
+                print "%s: got login form"
+                try:
+                    self.alive=0
+                    self.user.logout()
+                    reactor.callFromThread(self.user.trans.sendMessage,src=self.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
+                except:
+                    print_exc()
             except Exception, exc:
                 print "Caught exception"
                 print_exc()
@@ -56,6 +65,9 @@ class reqQueue(threading.Thread):
                 elem["deferred"].callback(res)
             except KeyError:
                 pass
+            except:
+                print "GREPME unhandled exception in callback"
+                print_exc()
             self.queue.task_done()
         return 0
 class pollManager(threading.Thread):
@@ -66,21 +78,14 @@ class pollManager(threading.Thread):
         self.trans=trans
     def loop(self):
         while (self.alive):
-            print "poll cycle..."
+            print "poll"
             for u in self.trans.users.keys():
-                print "poll for %s"%u
+                #print "poll for %s"%u
                 if (self.trans.hasUser(u)):
                     try:
                         self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
-                    except AttributeError:
-                        print_exc()
-                        print "this can be caused by incompleted login()"
-                    except authFormError:
-                        print "%s: got login form"
-                        try:
-                            self.trans.users[u].pool.call(self.trans.users[u].logout())
-                            reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=u,body=u"Ошибка: возможно, неверный логин/пароль")
-                        except:
+                    except AttributeError,err:
+                        if (err.message!="user instance has no attribute 'thread'"):
                             print_exc()
                     except:
                         print "GREPME: unhandled exception"
