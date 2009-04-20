@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""
- Example component service.
- 
-"""
+#TODO clean up this import hell!!
 import platform
 import time
 import twisted
@@ -32,10 +29,11 @@ import pyvkt_global as pyvkt
 import pyvkt_user
 from traceback import print_stack, print_exc
 from pyvkt_spikes import pollManager
+import threading
 #try:
     #from twisted.internet.threads import deferToThreadPool
-#except:
-from pyvkt_spikes import deferToThreadPool
+##except:
+#from pyvkt_spikes import deferToThreadPool
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -160,7 +158,10 @@ class pyvk_t(component.Service,vkonClient):
         xmlstream.addObserver('/iq', self.onIq, 1)
         #xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
-        self.pollMgr.start()
+        try:
+            self.pollMgr.start()
+        except:
+            print_exc()
         print "component ready!"
 
     def onMessage(self, msg):
@@ -182,9 +183,7 @@ class pyvk_t(component.Service,vkonClient):
                 cmd=body[1:]
                 #if (self.users.has_key(bjid) and self.users[bjid].thread and cmd=="get roster"):
                 if (self.hasUser(bjid) and cmd=="get roster"):
-                    d=defer.execute(self.users[bjid].thread.getFriendList)
-                    d.addCallback(self.sendFriendlist,jid=bjid)
-                    d.addErrback(self.errorback)
+                    self.users[bjid].pool.defer(self.users[bjid].thread.getFriendList)
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
@@ -205,7 +204,7 @@ class pyvk_t(component.Service,vkonClient):
                 log.msg("admin command: '%s'"%cmd)
                 if (cmd=="stop"):
                     self.isActive=0
-                    self.stopService()
+                    self.stopService(suspend=True)
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
@@ -218,6 +217,13 @@ class pyvk_t(component.Service,vkonClient):
                             count+=1
                     ret=u"%s user(s) online"%count + ret
                     self.sendMessage(self.jid,msg["from"],ret)
+                elif(cmd=="stats2"):
+                    for i in self.users.keys():
+                        try:
+                            print i
+                            print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
+                        except:
+                            pass
                 elif(cmd=="reload"):
                     # for development only!!!
                     try:
@@ -261,6 +267,7 @@ class pyvk_t(component.Service,vkonClient):
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1)
                 else:
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id)
+                d.addErrback(self.errorback)
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0):
         """
         Send delivery notification if message successfully sent
@@ -432,7 +439,17 @@ class pyvk_t(component.Service,vkonClient):
                             self.users[bjid].pool.call(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
-                            print("thread not found: %s"%bjid)
+                            err = msg.addElement("error")
+                            err.attributes["type"]="auth"
+                            #err.attributes["code"]="400"
+                            err.addElement("not-authorized","urn:ietf:params:xml:ns:xmpp-stanzas")
+                            t=err.addElement("text",'urn:ietf:params:xml:ns:xmpp-stanzas')
+                            t["xml:lang"]="ru"
+                            t.addContent(u"Для запроса vCard необходимо подключиться.\nДля подключения отправьте /login или используйте ad-hoc.")
+                            self.xmlstream.send(err)
+                            #err.addElement("too-many-stanzas","urn:xmpp:errors")
+                            print("TODO: error stranza")
+                            print_stack(limit=1)
                 else:
                     ans=xmlstream.IQ(self.xmlstream,"result")
                     ans["to"]=iq["from"]
@@ -500,6 +517,7 @@ class pyvk_t(component.Service,vkonClient):
                 else:
                     d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 d.addCallback(self.xmlstream.send)
+                addErrback(self.errorback)
                 return
         iq = create_reply(iq)
         iq["type"]="error"
@@ -727,7 +745,7 @@ class pyvk_t(component.Service,vkonClient):
         else:
             return
         if self.hasUser(bjid) and self.sync_status and user.active and not user.status_lock and not user.lock and user.getConfig("sync_status"):
-            print "updating status for",bjid,":",text.encode("ascii","replace")
+            #print "updating status for",bjid,":",text.encode("ascii","replace")
             self.users[bjid].status_lock = 1
             self.users[bjid].thread.setStatus(text)
             self.users[bjid].status_lock = 0
@@ -751,12 +769,17 @@ class pyvk_t(component.Service,vkonClient):
                 return 1
             else:
                 if (not self.users[bjid].lock):
+                    try:
+                        self.users[bjid].pool.stop()
+                    except:
+                        pass
                     del self.users[bjid]
         return 0
     def addResource(self,jid,prs=None):
         #print "addRes"
         bjid=pyvkt.bareJid(jid)
-        if (self.hasUser(bjid)==0):
+        #if (self.hasUser(bjid)==0):
+        if (not self.users.has_key(bjid)):
             #print "creating user %s"
             self.users[bjid]=user(self,jid)
         self.users[bjid].addResource(jid,prs)
@@ -886,13 +909,17 @@ class pyvk_t(component.Service,vkonClient):
                 self.pubsub.updateAvatar(v_id,user)
             except:
                 print_exc()
-    def stopService(self):
+    def stopService(self, suspend=0):
         #FIXME call this from different thread??
         print "stopping transport..."
+        if (not suspend):
+            print "stopping poolMgr..."
+            self.pollMgr.alive=0
         if (len(self.users)==0):
             return
         #self.poolMgr.alive=0
         print "stage 1: stopping users' loops, sending messages and presences..."
+
         for u in self.users.keys():
             if (self.hasUser(u)):
                 try:
@@ -905,8 +932,8 @@ class pyvk_t(component.Service,vkonClient):
                     self.usersOffline(u,self.users[u].thread.onlineList)
                 except:
                     pass
-        print "done\nwaiting 15 seconds..."
-        time.sleep(15)
+        print "done"
+        #time.sleep(15)
         dl=[]
         for i in self.users:
             try:
@@ -920,7 +947,11 @@ class pyvk_t(component.Service,vkonClient):
         print "done\ndeleting user objects"
         for i in self.users.keys():
             del self.users[i]
-        print "done"
+        if (len(threading.enumerate())):
+            print "warning: some threads are still alive"
+            print threading.enumerate()
+        else:
+            print "done"
         return None
 
     def saveConfig(self,bjid):
@@ -1015,7 +1046,8 @@ class pyvk_t(component.Service,vkonClient):
     def __del__(self):
         print "stopping service..."
         self.stopService()
-        self.pollMgr.alive=0
+        self.pollMgr.stop()
+        del self.pollMgr
         print "done"
     def errorback(self,err):
         print "error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
