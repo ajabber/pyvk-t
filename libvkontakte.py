@@ -25,7 +25,7 @@ from traceback import print_stack, print_exc
 USERAGENT="Opera/10.00 (X11; Linux; U; ru) Presto/2.2.1"
 
 class vkonClient:
-    def feedChanged(self,jid,feed):
+    def updateFeed(self,jid,feed):
         print feed
     def usersOffline(self,jid,users):
         print "offline",users
@@ -35,6 +35,7 @@ class vkonClient:
         print "error: %s"%message
     def avatarChanged(self,v_id):
         print "avatar changed for id%s"%v_id
+
 
 class tooFastError(Exception):
     def __init__(self):
@@ -51,7 +52,8 @@ class vkonThread():
     onlineList={}
     alive=1
     error=0
-    daemon=1
+    loopDone=True
+    # true if there is no loopInternal's in user queue
     tonline={}
     def __init__(self,cli,jid,email,passw,user):
         #threading.Thread.__init__(self,target=self.loop)
@@ -345,6 +347,7 @@ class vkonThread():
             result['FN']=cont.find(name='div',style="overflow: hidden;").string
             #FIXME 
             lc=cont
+            rc=None
         else:
             rc=prof.find(name="div", id="rightColumn")
             if (rc!=None):
@@ -509,30 +512,11 @@ class vkonThread():
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return 1
-
-    def getMessage_old(self,msgid):
-        page = self.getHttpPage("http://pda.vkontakte.ru/letter%s"%msgid)
-        if not page:
-            return {"text":"error: html exception","from":"error","title":""}
-        req=urllib2.Request("http://pda.vkontakte.ru/letter%s"%msgid)
-        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
-        trgForm=bs.find(name="form", action="/mailsent?pda=1")
-        fromField=trgForm.find(name="input",attrs={"name":"to_id"})
-        from_id=fromField["value"]
-        #print "from",repr(fromField)
-        strings=trgForm.findAll(text=lambda (x):x!=u'\n'and x!=' ',recursive=False)
-        title=strings[1]
-        body=""
-        for i in range(2,len(strings)):
-            body=body+"\n"+strings[i]
-        body=body[5:]
-        #print body
-        return {"text":body,"from":from_id,"title":title}
-
     def getMessage(self,msgid):
         """
         retrieves message from the server
         """
+        #print "getmessage %s started"%msgid
         page =self.getHttpPage("http://wap.vkontakte.ru/letter%s"%msgid)
         if not page:
             return {"text":"error: html exception","from":"error","title":""}
@@ -545,6 +529,7 @@ class vkonThread():
         from_id=anchors[1].getElementsByTagName('go')[0].getAttribute("href")[2:]
         i_s=p.getElementsByTagName("i")
         date=i_s[2].nextSibling.data
+        #ERR ^^^ index out of range
         title=i_s[3].nextSibling.data
         msg=""
         t=i_s[3].nextSibling
@@ -559,6 +544,7 @@ class vkonThread():
             msg="%s%s"%(msg,t.toxml())
         msg=msg.replace("<br/>","\n")[4:-4]
         #print msg
+        #print "getmessage %s finished"%msgid
         return {"from":from_id,"date":date,"title":title,"text":msg}
     def sendMessage_legacy(self,to_id,body,title="[null]"):
         """
@@ -600,19 +586,6 @@ class vkonThread():
             return 2
         print "unknown error"
         return -1
-        #try:
-            #if (res.info()["Location"]=='/inbox?sent=1'):
-                #print "message delivered"
-                #return 1
-            #else:
-                #print "not delivered: '%s'"%res.info()["Location"]
-                #return 0
-        #except KeyError:
-            #print "can't find 'Location' header", res.info()
-            #self.dumpString(res.read(),"msg_sent")
-            
-            #return 0
-        #print res.read()
 
     def sendMessage(self,to_id,body,title="[null]"):
         """
@@ -742,29 +715,20 @@ class vkonThread():
                 if not self.alive: return
                 time.sleep(1)
     def loopIntern(self):
+        #print "start loop"
         tfeed=self.getFeed()
         #tfeed is epty only on some error. Just ignore it
         if tfeed:
             self.client.updateFeed(self.jid,tfeed)
-        if (self.feedOnly):
-            self.tonline={}
-        else:
-            try:
-                self.onlineList=self.getOnlineList()
-            except tooFastError:
-                self.client.threadError(self.jid,"banned")
-                #FIXME
-                time.sleep(100)
-            #except authFormError:
-                #if (self.alive):
-                    #self.client.threadError(self.jid,"auth")
-                #self.client.usersOffline(self.jid,self.onlineList)
-                #return
+        self.onlineList=self.getOnlineList()
         if (self.tonline.keys()!=self.onlineList.keys()):
             if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
             if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
             if self.alive: self.tonline=self.onlineList
-        return
+        #print "end loop"
+        self.loopDone=True
+        return 1
+            
 
     def exit(self):
         self.client.usersOffline(self.jid,self.onlineList.keys())
@@ -796,7 +760,7 @@ class vkonThread():
 
             print url
         return 0
-#    def getPage(self,url,fn=None):
+
 #        req=urllib2.Request(url)
 #        try:
 #            res=self.opener.open(req)

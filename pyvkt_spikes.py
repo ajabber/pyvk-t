@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from twisted.python import failure
-from twisted.internet import defer
+from twisted.internet import defer,reactor
 from twisted.python import log, runtime, context, failure
 import Queue
 import threading,time
@@ -17,10 +17,11 @@ def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     threadpool.callInThread(threadpool._runWithCallback,d.callback,d.errback,f,args,kwargs)
     return d
 class reqQueue(threading.Thread):
+    daemon=True
     def __init__(self,user,name=None):
+        self.daemon=True
         threading.Thread.__init__(self,target=self.loop,name=name)
         self.user=user
-        self.daemon=True
         self.queue=Queue.Queue(200)
         self.alive=1
         self.ptasks={}
@@ -54,21 +55,23 @@ class reqQueue(threading.Thread):
                 try:
                     self.alive=0
                     self.user.logout()
-                    reactor.callFromThread(self.user.trans.sendMessage,src=self.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
+                    reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
                 except:
                     print_exc()
             except Exception, exc:
                 print "Caught exception"
                 print_exc()
                 print "thread is alive!"
-            try:
-                elem["deferred"].callback(res)
-            except KeyError:
-                pass
-            except:
-                print "GREPME unhandled exception in callback"
-                print_exc()
+            else:
+                try:
+                    elem["deferred"].callback(res)
+                except KeyError:
+                    pass
+                except:
+                    print "GREPME unhandled exception in callback"
+                    print_exc()
             self.queue.task_done()
+        print "queue (%s) stopped"%self.user.bjid
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
@@ -78,20 +81,27 @@ class pollManager(threading.Thread):
         self.trans=trans
     def loop(self):
         while (self.alive):
-            print "poll"
+            print "poll", len(self.trans.users.keys()), 'user(s)'
             for u in self.trans.users.keys():
                 #print "poll for %s"%u
                 if (self.trans.hasUser(u)):
                     try:
-                        self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
+                        if(self.trans.users[u].thread.loopDone):
+                            self.trans.users[u].thread.loopDone=False
+                            self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
                     except AttributeError,err:
                         if (err.message!="user instance has no attribute 'thread'"):
-                            print_exc()
+                            print "%s: user w/o thread. it's normal just after log in"
+                            #print_exc()
                     except:
                         print "GREPME: unhandled exception"
                         print_exc()
-            time.sleep(10)
+            time.sleep(15)
+        print "pollManager stopped"
+    def stop(self):
+        self.alive=0
     def __del__(self):
+        self.alive=0
         threading.Thread.exit(self)
         
 

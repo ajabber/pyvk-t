@@ -4,7 +4,7 @@ from twisted.internet.defer import waitForDeferred
 #try:
     #from twisted.internet.threads import deferToThreadPool
 #except:
-from pyvkt_spikes import deferToThreadPool
+
 from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
 
@@ -174,7 +174,11 @@ class cmdManager:
         #TODO check namespace
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
-                ret[f['var']]=f.value.children[0]
+                try:
+                    ret[f['var']]=f.value.children[0]
+                except:
+                    ret[f['var']]=""
+                    print_exc()
         #print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
