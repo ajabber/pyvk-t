@@ -182,12 +182,15 @@ class pyvk_t(component.Service,vkonClient):
             if (body[0:1]=="/") and body[:4]!="/me ":
                 cmd=body[1:]
                 #if (self.users.has_key(bjid) and self.users[bjid].thread and cmd=="get roster"):
-                if (self.hasUser(bjid) and cmd=="get roster"):
-                    self.users[bjid].pool.defer(self.users[bjid].thread.getFriendList)
+                if (cmd=="get roster"):
+                    if (self.hasUser(bjid)):
+                        d=self.users[bjid].pool.defer(self.users[bjid].thread.getFriendList)
+                        d.addCallback(self.sendFriendlist,jid=bjid)
+                    else:
+                        self.sendMessage(self.jid,msg["from"],u"Сначала необходимо подключиться")
                 elif (cmd=="help"):
                     self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
                 else:
-                    
                     if (self.hasUser(bjid)):
                         d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
                     else:
@@ -517,7 +520,7 @@ class pyvk_t(component.Service,vkonClient):
                 else:
                     d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 d.addCallback(self.xmlstream.send)
-                addErrback(self.errorback)
+                d.addErrback(self.errorback)
                 return
         iq = create_reply(iq)
         iq["type"]="error"
@@ -553,7 +556,7 @@ class pyvk_t(component.Service,vkonClient):
         for f in fl:
             src="%s@%s"%(f,self.jid)
             if self.hasUser(bjid):
-                self.users[bjid].askSubscibtion(src,nick=fl[f]["last"]+u" "+fl[f]["first"])
+                self.users[bjid].askSubscibtion(src,nick=u"%s %s"%(fl[f]["first"],fl[f]["last"]))
             #self.sendPresence(src,jid,"subscribed")
             #self.sendPresence(src,jid,"subscribe")
             #return
@@ -803,7 +806,7 @@ class pyvk_t(component.Service,vkonClient):
                 self.delResource(prs["from"],prs["to"])
                 pr=domish.Element(('',"presence"))
                 pr["type"]="unavailable"
-                pr["to"]=bjid
+                pr["to"]=prs["from"]
                 pr["from"]=self.jid
                 self.xmlstream.send(pr)
             elif(prs["type"]=="subscribe"):
