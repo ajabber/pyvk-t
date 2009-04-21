@@ -28,7 +28,7 @@ class user:
         # 0 - new, 1 - lock, 2 - ready, 3 - inactive
         self.FUsent=0
         self.VkStatus=u""   #status which is set on web
-        self.status=u""     #status which is show in jabber
+        self.status=u"Подождите..."     #status which is show in jabber
         self.feed = None    #feed
         
         #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
@@ -213,13 +213,13 @@ class user:
         except:
             pass
 
+        self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
         self.lock=0
         self.active=1
         self.state=2
         #self.thread.start()
         self.thread.feedOnly=0
-        self.trans.sendPresence(self.trans.jid,jid,status=self.status)
         self.trans.updateStatus(self.bjid,self.VkStatus)
         
     def login(self):

@@ -11,7 +11,6 @@ from cookielib import Cookie
 from urllib import urlencode
 from BeautifulSoup import BeautifulSoup,SoupStrainer
 from os import environ
-import demjson
 import re
 import base64
 import ConfigParser,os
@@ -22,7 +21,7 @@ import xml.dom.minidom
 from traceback import print_stack, print_exc
 #from lxml import etree
 #user-agent used to request web pages
-USERAGENT="Opera/10.00 (X11; Linux; U; ru) Presto/2.2.1"
+USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 
 class vkonClient:
     def updateFeed(self,jid,feed):
@@ -136,6 +135,9 @@ class vkonThread():
             return ''
         except httplib.BadStatusLine, err:
             print "HTTP bad status line error.\nURL:%s"%(req.get_full_url())
+            return ''
+        except httplib.HTTPException, err:
+            print "HTTP exception.\n URL: %s"%(req.get_full_url())
             return ''
         return page
 
