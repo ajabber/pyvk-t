@@ -61,7 +61,7 @@ userConfigFields={
 feedInfo = {
     "groups":{"message":u"групп","url":u"http://vkontakte.ru/club%s"}
     ,"events":{"message":u"встреч","url":u"http://vkontakte.ru/event%s"}
-    ,"friends":{"message":u"друзей","url":u"http://vkontakte.ru/id%s","jid":"%s@%s"}
+    ,"friends":{"message":u"друзей","url":u"http://vkontakte.ru/id%s"}
     ,"photos":{"message":u"фотографий","url":u"http://vkontakte.ru/photos.php?act=show&id=%s&added=1"}
     ,"videos":{"message":u"видеозаписей","url":u"http://vkontakte.ru/video%s?added=1"}
     ,"gifts":{"message":u"подарков","url":u""}

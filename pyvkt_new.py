@@ -844,16 +844,13 @@ class pyvk_t(component.Service,vkonClient):
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
             for j in pyvkt.feedInfo:
-                if j in feed and "items" in feed[j]:
+                if j!="friends" and j in feed and "items" in feed[j]:
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
                         if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
                                 gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
-                                #FIXME
-                                if (pyvkt.feedInfo[j].has_key("jid")):
-                                    gr+="\n  "+pyvkt.feedInfo[j]["jid"]%(i,self.jid)
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:
@@ -862,6 +859,13 @@ class pyvk_t(component.Service,vkonClient):
                             ret+=u"Новых %s - %s\n"%(pyvkt.feedInfo[j]["message"],gc)
             if ret:
                 self.sendMessage(self.jid,jid,ret.strip())
+            try:
+                for i in feed["friends"]["items"]:
+                    if not (oldfeed and ("friends" in oldfeed) and ("items" in oldfeed["friends"]) and i in oldfeed["friends"]["items"]):
+                        text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
+                        self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
+            except KeyError:
+                pass
         self.users[jid].feed = feed
 
     def usersOnline(self,jid,users):

@@ -390,6 +390,7 @@ class sendWallMessageCmd(basicCommand):
         else:
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
+
 class setConfigCmd(basicCommand):
     name=u"Настройки транспорта"
     args={0:"test"}
@@ -431,7 +432,7 @@ class setConfigCmd(basicCommand):
             #except KeyError:
                 #print "keyError"
                 #nc="[void]"
-            return {"status":"completed","title":self.name,'message':u'вот тут настройки должны были бы сохраниться\n%s'%nc}
+            return {"status":"completed","title":self.name,'message':u'Видимо, настройки сохранились'}
             
         else:
             fl={}

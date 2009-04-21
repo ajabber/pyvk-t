@@ -81,7 +81,7 @@ class pollManager(threading.Thread):
         self.trans=trans
     def loop(self):
         while (self.alive):
-            print "poll", len(self.trans.users.keys()), 'user(s)'
+            #print "poll", len(self.trans.users.keys()), 'user(s)'
             for u in self.trans.users.keys():
                 #print "poll for %s"%u
                 if (self.trans.hasUser(u)):
