@@ -52,6 +52,8 @@ class vkonThread():
     alive=1
     error=0
     loopDone=True
+    #just counter for loops. use some big number in the beginning
+    iterationsNumber = 999999
     # true if there is no loopInternal's in user queue
     tonline={}
     def __init__(self,cli,jid,email,passw,user):
@@ -727,6 +729,11 @@ class vkonThread():
             if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
             if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
             if self.alive: self.tonline=self.onlineList
+        #FIXME online status
+        self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
+        if self.alive and self.iterationsNumber>13*60 and self.keep_online and self.user.getConfig("keep_online"):
+            self.getHttpPage("http://wap.vkontakte.ru/id1")
+            self.iterationsNumber = 0
         #print "end loop"
         self.loopDone=True
         return 1

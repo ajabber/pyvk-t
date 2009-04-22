@@ -149,7 +149,6 @@ class pyvk_t(component.Service,vkonClient):
         This method is called when the componentConnected event gets called.
         That event gets called when we have connected and authenticated with the XMPP server.
         """
-        
         self.jabberId = xmlstream.authenticator.otherHost
         self.jid= xmlstream.authenticator.otherHost
         self.xmlstream = xmlstream # set the xmlstream so we can reuse it
@@ -167,7 +166,6 @@ class pyvk_t(component.Service,vkonClient):
     def onMessage(self, msg):
         """
         Act on the message stanza that has just been received.
-
         """
         v_id=pyvkt.jidToId(msg["to"])
         if (msg.hasAttribute("type")) and msg["type"]=="error":
@@ -189,7 +187,11 @@ class pyvk_t(component.Service,vkonClient):
                     else:
                         self.sendMessage(self.jid,msg["from"],u"Сначала необходимо подключиться")
                 elif (cmd=="help"):
-                    self.sendMessage(self.jid,msg["from"],u"/get roster для получения списка\n/login для подключения")
+                    self.sendMessage(self.jid,msg["from"],u"""/get roster для получения списка
+/login для подключения
+/logout для отключения
+/config для изменения настроек
+/setstatus для изменения статуса на сайте""")
                 else:
                     if (self.hasUser(bjid)):
                         d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=msg["from"],text=cmd,v_id=v_id)
@@ -271,6 +273,7 @@ class pyvk_t(component.Service,vkonClient):
                 else:
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id)
                 d.addErrback(self.errorback)
+
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0):
         """
         Send delivery notification if message successfully sent
@@ -492,8 +495,9 @@ class pyvk_t(component.Service,vkonClient):
                             email=i.children[0]
                         if (i.name=="password"):
                             pw=i.children[0]
-                    qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
-                        (safe(pyvkt.bareJid(iq["from"])),safe(pyvkt.bareJid(iq["from"])),safe(email),safe(pw)))
+                    #qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
+                    qq=self.dbpool.runQuery("INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s') ON DUPLICATE KEY UPDATE email='%s', pass='%s';"%
+                        (safe(pyvkt.bareJid(iq["from"])),safe(email),safe(pw),safe(email),safe(pw)))
                     qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
                     qq.addErrback(self.errorback)
                     return
