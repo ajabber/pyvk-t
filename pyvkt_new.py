@@ -445,7 +445,11 @@ class pyvk_t(component.Service,vkonClient):
                             self.users[bjid].pool.call(self.getsendVcard,jid=iq["from"],v_id=v_id,iq_id=iq["id"])
                             return
                         else:
-                            err = msg.addElement("error")
+                            ans=xmlstream.IQ(self.xmlstream,"result")
+                            ans["to"]=iq["from"]
+                            ans["from"]=iq["to"]
+                            ans["id"]=iq["id"]
+                            err = ans.addElement("error")
                             err.attributes["type"]="auth"
                             #err.attributes["code"]="400"
                             err.addElement("not-authorized","urn:ietf:params:xml:ns:xmpp-stanzas")
@@ -453,9 +457,8 @@ class pyvk_t(component.Service,vkonClient):
                             t["xml:lang"]="ru"
                             t.addContent(u"Для запроса vCard необходимо подключиться.\nДля подключения отправьте /login или используйте ad-hoc.")
                             self.xmlstream.send(err)
+                            return
                             #err.addElement("too-many-stanzas","urn:xmpp:errors")
-                            print("TODO: error stranza")
-                            print_stack(limit=1)
                 else:
                     ans=xmlstream.IQ(self.xmlstream,"result")
                     ans["to"]=iq["from"]
