@@ -309,6 +309,7 @@ class user:
             q=self.trans.dbpool.runQuery(mq)
             defer.waitForDeferred(q)
         #now it's blocking ;)
+        self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
         try:
             self.thread.logout()
         except:

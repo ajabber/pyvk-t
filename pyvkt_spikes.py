@@ -20,7 +20,10 @@ class reqQueue(threading.Thread):
     daemon=True
     def __init__(self,user,name=None):
         self.daemon=True
-        threading.Thread.__init__(self,target=self.loop,name=name)
+        try:
+            threading.Thread.__init__(self,target=self.loop,name=name)
+        except UnicodeEncodeError:
+            threading.Thread.__init__(self,target=self.loop,name="user_with_bad_jid")
         self.user=user
         self.queue=Queue.Queue(200)
         self.alive=1
