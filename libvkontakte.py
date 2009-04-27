@@ -521,35 +521,57 @@ class vkonThread():
         retrieves message from the server
         """
         #print "getmessage %s started"%msgid
-        page =self.getHttpPage("http://wap.vkontakte.ru/letter%s"%msgid)
+        page =self.getHttpPage("http://pda.vkontakte.ru/letter%s"%msgid)
         if not page:
             return {"text":"error: html exception","from":"error","title":""}
-        
+        #print page
         dom = xml.dom.minidom.parseString(page)
-        p=dom.getElementsByTagName("p")[0]
-        p.normalize()
-        anchors=p.getElementsByTagName("anchor")
-        
-        from_id=anchors[1].getElementsByTagName('go')[0].getAttribute("href")[2:]
-        i_s=p.getElementsByTagName("i")
-        date=i_s[2].nextSibling.data
-        #ERR ^^^ index out of range
-        title=i_s[3].nextSibling.data
+        form=dom.getElementsByTagName("form")[0]
+        ret={}
+        #print form.toxml()
+        links=form.getElementsByTagName("span")
+        ret["from"]=form.getElementsByTagName("a")[0].getAttribute("href")[2:]
+        tspan=form.getElementsByTagName("span")[3]
+        k=tspan.nextSibling
+        ret["title"]=k.data
         msg=""
-        t=i_s[3].nextSibling
-        while(1):
-            t=t.nextSibling
-            try:
-                if (t.nodeName=="i"):
-                    break
-            except AttributeError:
-                pass
-            #print t.toxml()
-            msg="%s%s"%(msg,t.toxml())
-        msg=msg.replace("<br/>","\n")[4:-4]
-        #print msg
-        #print "getmessage %s finished"%msgid
-        return {"from":from_id,"date":date,"title":title,"text":msg}
+        k=k.nextSibling
+
+        while(k.nodeName!="span"):
+            if (k.nodeType==xml.dom.Node.TEXT_NODE):
+                msg="%s%s"%(msg,k.data.encode("utf-8"))
+            else:
+                print k
+                msg="%s%s"%(msg,k.toxml())
+            k=k.nextSibling
+        msg=msg.replace("<br/>","\n")[6:-6]
+        ret["text"]=msg
+        return ret
+        #p=dom.getElementsByTagName("p")[0]
+        #p.normalize()
+
+        #anchors=p.getElementsByTagName("anchor")
+        
+        #from_id=anchors[1].getElementsByTagName('go')[0].getAttribute("href")[2:]
+        #i_s=p.getElementsByTagName("i")
+        #date=i_s[2].nextSibling.data
+        ##ERR ^^^ index out of range
+        #title=i_s[3].nextSibling.data
+        #msg=""
+        #t=i_s[3].nextSibling
+        #while(1):
+            #t=t.nextSibling
+            #try:
+                #if (t.nodeName=="i"):
+                    #break
+            #except AttributeError:
+                #pass
+            ##print t.toxml()
+            #msg="%s%s"%(msg,t.toxml())
+        #msg=msg.replace("<br/>","\n")[4:-4]
+        ##print msg
+        ##print "getmessage %s finished"%msgid
+        #return {"from":from_id,"date":date,"title":title,"text":msg}
     def sendMessage_legacy(self,to_id,body,title="[null]"):
         """
         Sends message through website
@@ -601,13 +623,18 @@ class vkonThread():
         2   - too fast sending
         -1  - unknown error
         """
-        page = self.getHttpPage("http://wap.vkontakte.ru/?act=write&to=%s"%to_id)
+        page = self.getHttpPage("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
         if not page:
             return 1
         dom = xml.dom.minidom.parseString(page)
-        inputs=dom.getElementsByTagName("postfield")
+        #print dom.toxml()
+        inputs=dom.getElementsByTagName("input")
         c_input=filter(lambda x:x.getAttribute("name")=='chas',inputs)[0]
         chas=c_input.getAttribute("value")
+        
+        #inputs=dom.getElementsByTagName("postfield")
+        #c_input=filter(lambda x:x.getAttribute("name")=='chas',inputs)[0]
+        #chas=c_input.getAttribute("value")
         if (type(body)==unicode):
             tbody=body.encode("utf-8")
         else:
@@ -618,18 +645,30 @@ class vkonThread():
             ttitle=title
 
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        page=self.getHttpPage("http://wap.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        print data
+        page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
         if not page:
             return 1
-        if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
-            #print "message delivered"
+        if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
             return 0
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
-            #FIXME adapt to wap version
             print "too fast sending messages"
             return 2
         print "unknown error"
         return -1
+        #return
+        #if not page:
+            #return 1
+        #if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
+            ##print "message delivered"
+            #return 0
+        #elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
+            ##FIXME adapt to wap version
+            #print "too fast sending messages"
+            #return 2
+        #print "unknown error"
+        #print page
+        #return -1
 
     def getFriendList(self):
         page = self.getHttpPage("http://vkontakte.ru/friend.php?nr=1")
@@ -732,7 +771,7 @@ class vkonThread():
         #FIXME online status
         self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
         if self.alive and self.iterationsNumber>13*60 and self.keep_online and self.user.getConfig("keep_online"):
-            self.getHttpPage("http://wap.vkontakte.ru/id1")
+            self.getHttpPage("http://pda.vkontakte.ru/id1")
             self.iterationsNumber = 0
         #print "end loop"
         self.loopDone=True
@@ -748,6 +787,7 @@ class vkonThread():
         self.logout()
         #threading.Thread.exit(self)
     def getSmallAvatar(self,v_id):
+        #FIXME
         req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
         try:
             res=self.opener.open(req)
