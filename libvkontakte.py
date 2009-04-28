@@ -145,6 +145,8 @@ class vkonThread():
                 self.alive=1
         else:
             print "cookie accepted!"
+            self.alive=1
+            self.error=0
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
 
@@ -223,9 +225,11 @@ class vkonThread():
             self.dumpString(page,"script")
             self.dumpString(tag,"script_list")        
             return {}
+        #print 
         json=tag[res.start()+6:res.end()-3]
         #print json
-        json=json
+        
+        #json=json
         #.decode("cp1251")
         #.encode("utf-8")
         gl={}
@@ -244,6 +248,7 @@ class vkonThread():
         for i in flist:
             ret[i[0]]={"last":i[1]['l'].decode("cp1251"),"first":i[1]['f'].decode("cp1251")}
             #print type(i[1]['l'])
+        #print "--",ret
         return ret
 
     def getOnlineList(self):
@@ -789,7 +794,7 @@ class vkonThread():
                 if not self.alive: return
                 time.sleep(1)
     def loopIntern(self):
-        #print "start loop"
+        print "start loop"
         tfeed=self.getFeed()
         #tfeed is epty only on some error. Just ignore it
         if tfeed:
