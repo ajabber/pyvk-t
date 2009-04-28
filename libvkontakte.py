@@ -521,10 +521,10 @@ class vkonThread():
         retrieves message from the server
         """
         #print "getmessage %s started"%msgid
-        page =self.getHttpPage("http://pda.vkontakte.ru/letter%s"%msgid)
+        page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
         if not page:
             return {"text":"error: html exception","from":"error","title":""}
-        #print page
+        print page
         dom = xml.dom.minidom.parseString(page)
         form=dom.getElementsByTagName("form")[0]
         ret={}
@@ -539,7 +539,7 @@ class vkonThread():
 
         while(k.nodeName!="span"):
             if (k.nodeType==xml.dom.Node.TEXT_NODE):
-                msg="%s%s"%(msg,k.data.encode("utf-8"))
+                msg="%s%s"%(msg,k.data)
             else:
                 print k
                 msg="%s%s"%(msg,k.toxml())
@@ -809,6 +809,16 @@ class vkonThread():
 
             print url
         return 0
+    def test(self):
+        page=self.getHttpPage("http://vkontakte.ru/")
+        page2=re.sub("&#x.{1,5}?;","",page)
+        m1=page2.find("<!-- End pageBody -->") 
+        m2=page2.find("<!-- End bFooter -->") 
+        if (m1 and m2):
+            page2=page2[:m1]+page2[m2:] 
+        print page2
+        dom = xml.dom.minidom.parseString(page2)
+        print dom.toxml()
 
 #        req=urllib2.Request(url)
 #        try:
