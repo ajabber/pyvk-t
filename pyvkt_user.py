@@ -371,12 +371,12 @@ class user:
             return pyvkt.userConfigFields[fieldName]["default"]
     def __getattr__(self,name):
         if (name=="lock"):
-            print "deprecated user.lock!"
-            print_stack(limit=2)
+            #print "deprecated user.lock!"
+            #print_stack(limit=2)
             return self._lock
         if (name=="active"):
-            print "deprecated user.active!"
-            print_stack(limit=2)
+            #print "deprecated user.active!"
+            #print_stack(limit=2)
             return self._active
         raise AttributeError
     def __setattr__(self,name,val):

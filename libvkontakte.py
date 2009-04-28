@@ -102,9 +102,8 @@ class vkonThread():
             print "cant read cookie"
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         #cjar.clear()
-        print self.checkLoginError()
         if (self.checkLoginError()!=0):
-            print "bad cookie..."
+            #print "bad cookie..."
             cjar.clear()
             authData={'op':'a_login_attempt','email':email, 'pass':passw}
             params=urllib.urlencode(authData)
@@ -118,9 +117,9 @@ class vkonThread():
                 self.alive=0
                 return 
             tpage=res.read()
-            print tpage
+            #print tpage
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
-                print "ERR: got capthca request"
+                print "ERR: got captcha request"
                 self.error=1
                 self.client.threadError(self.jid,"auth error: got captha request")
                 self.alive=0
@@ -133,18 +132,17 @@ class vkonThread():
                 self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
                 self.alive=0
             else:
-                print "login successful."
+                #print "login successful."
                 if self.user.getConfig("save_cookies"):
                     try:
-                        print "saving cookie.."
+                        #print "saving cookie.."
                         cjar.save()
-                        print "done"
+                        #print "done"
                     except:
                         print "ERR: can't save cookie"
                         print_exc()
                 self.error=0
                 self.alive=1
-                
         else:
             print "cookie accepted!"
         #f=self.getFeed()
@@ -562,7 +560,6 @@ class vkonThread():
         page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
         if not page:
             return {"text":"error: html exception","from":"error","title":""}
-        print page
         dom = xml.dom.minidom.parseString(page)
         form=dom.getElementsByTagName("form")[0]
         ret={}
