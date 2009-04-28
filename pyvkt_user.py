@@ -44,37 +44,30 @@ class user:
         adds resource to jid's reources list
         stores it's presence and does some work of resending presences
         """
-        #print "addres", self.resources
-        firstTime = 0
         #if had no resources before and not trying to login now
         if not (self.resources or self.lock):
             self.state=1
             self.lock=1
-            firstTime = 1
+            self.trans.sendPresence(self.trans.jid,self.bjid,t="probe")
             #self.pool.call(self.login)
             self.login()
         #new status of a resource
         if jid in self.resources:
             pass
         elif self.resources and not self.lock:
-            print "presence"
             self.trans.sendPresence(self.trans.jid,jid,status=self.status)
             self.trans.usersOnline(self.bjid,self.thread.onlineList)
-            #TODO resend presence
-            pass
         #if VkStatus has to be changed and should be done now
         if (prs!=None):
             status=self.prsToVkStatus(self.storePresence(prs))
+            #if not locked we update status now
             if status!=self.VkStatus and not self.lock:
                 self.trans.updateStatus(self.bjid,status)
-                self.VkStatus = status
-                #TODO send status to a site
-                pass
-            if firstTime:
-                self.VkStatus = status
+            #save status. If locked we'll update it automatically when possible
+            self.VkStatus = status
         else:
             self.resources[jid]=None
-        #print "addres", self.resources
+
     def getName(self,bjid):
         """ returns name of roster item if set """
         if bjid in self.roster and "name" in self.roster[bjid]:
