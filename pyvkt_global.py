@@ -56,6 +56,7 @@ userConfigFields={
     ,"jid_in_subject":{"type":"boolean","default":True, "desc":u"JID в теме сообещний, если не указана"}
     ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
+    ,"save_cookies":{"type":"boolean", "default":True, "desc":u"Сохранять cookies на серверею Поможет уберечься от капчи"}
 #TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
 }
 feedInfo = {

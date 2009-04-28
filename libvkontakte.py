@@ -61,6 +61,8 @@ class vkonThread():
         #self.daemon=True
         self.alive=0
         self.user=user
+        self.client=cli
+        self.feedOnly=1
         config = ConfigParser.ConfigParser()
         confName="pyvk-t_new.cfg"
         if(os.environ.has_key("PYVKT_CONFIG")):
@@ -71,9 +73,6 @@ class vkonThread():
         self.jid=jid
         #deprecated self.jid
         self.bjid=jid
-        cjar=cookielib.FileCookieJar()
-        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
-        cjar.clear()
         try:
             self.dumpPath=config.get("debug","dump_path")
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
@@ -89,29 +88,67 @@ class vkonThread():
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "features/keep_online isn't set."
             self.keep_online=None
-        authData={'op':'a_login_attempt','email':email, 'pass':passw}
-        params=urllib.urlencode(authData)
-        req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
-        req.addheaders = [('User-agent', USERAGENT)]
         try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            self.error=1
-            self.alive=0
-            return 
-        self.cookie=cjar.make_cookies(res,req)
-        self.client=cli
-        self.feedOnly=1
+            cookdir=config.get("features","cookies_path")
+            cjar=cookielib.MozillaCookieJar("%s/%s"%(cookdir,self.bjid))
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "features/cookies_path isn't set. disabling cookie cache"
+            cjar=cookielib.MozillaCookieJar()
+            cookdir=None
+        try:
+            cjar.clear()
+            cjar.load()
+        except IOError:
+            print "cant read cookie"
+        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
+        #cjar.clear()
+        print self.checkLoginError()
+        if (self.checkLoginError()!=0):
+            print "bad cookie..."
+            cjar.clear()
+            authData={'op':'a_login_attempt','email':email, 'pass':passw}
+            params=urllib.urlencode(authData)
+            req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
+            req.addheaders = [('User-agent', USERAGENT)]
+            try:
+                res=self.opener.open(req)
+            except urllib2.HTTPError, err:
+                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+                self.error=1
+                self.alive=0
+                return 
+            tpage=res.read()
+            print tpage
+            if (tpage[:20]=='{"ok":-2,"captcha_si'):
+                print "ERR: got capthca request"
+                self.error=1
+                self.client.threadError(self.jid,"auth error: got captha request")
+                self.alive=0
+                return
+            # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
+            # good<your_id> - success
+            self.cookie=cjar.make_cookies(res,req)
+            if (self.checkLoginError()!=0):
+                self.error=1
+                self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
+                self.alive=0
+            else:
+                print "login successful."
+                if self.user.getConfig("save_cookies"):
+                    try:
+                        print "saving cookie.."
+                        cjar.save()
+                        print "done"
+                    except:
+                        print "ERR: can't save cookie"
+                        print_exc()
+                self.error=0
+                self.alive=1
+                
+        else:
+            print "cookie accepted!"
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
-        if (self.checkLoginError()!=0):
-            self.error=1
-            self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
-            self.alive=0
-        else:
-            self.error=0
-            self.alive=1
 
     def getHttpPage(self,url,params=None):
         """ get contents of web page
@@ -156,7 +193,8 @@ class vkonThread():
         self.alive=0
         self.client.usersOffline(self.jid,self.onlineList)
         self.onlineList={}
-        self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
+        if not self.user.getConfig("save_cookies"):
+            self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
         #print "%s: logout"%self.bjid
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251").strip()
@@ -698,14 +736,10 @@ class vkonThread():
             return -1
 
     def checkLoginError(self):
-        req=urllib2.Request("http://vkontakte.ru/feed2.php")
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return -1
-        if (page=='"{"user": {"id": -1}}'):
+        page=self.getHttpPage("http://vkontakte.ru/feed2.php")
+        if (not page):
+            return 1
+        if (page=='"{"user": {"id": -1}}' or page[0]!='{'):
             return 1
         return 0
 
