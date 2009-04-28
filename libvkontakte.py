@@ -21,7 +21,8 @@ import xml.dom.minidom
 from traceback import print_stack, print_exc
 #from lxml import etree
 #user-agent used to request web pages
-USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
+#USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
+USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
 
 class vkonClient:
     def updateFeed(self,jid,feed):
@@ -533,11 +534,12 @@ class vkonThread():
         return result
 
     def setStatus(self,text):
-        page = self.getHttpPage("http://wap.vkontakte.ru/status")
+        """ Sets status (aka activity) on vkontakte.ru site"""
+        page = self.getHttpPage("http://pda.vkontakte.ru/status")
         if not page:
             return None
         dom=xml.dom.minidom.parseString(page)
-        fields=dom.getElementsByTagName("postfield")
+        fields=dom.getElementsByTagName("input")
         fields=filter(lambda x:x.getAttribute("name")=='activityhash',fields)
         if (len(fields)==0):
             print "setstatus: cant find fields\nFIXME need page check"
@@ -548,15 +550,13 @@ class vkonThread():
             #return
         if text:
             dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
-            req=urllib2.Request("http://wap.vkontakte.ru/setstatus?pda=1",urlencode(dat))
+            res=self.getHttpPage("http://pda.vkontakte.ru/setstatus?pda=1",urlencode(dat))
         else:
             dat={'activityhash':ahash,'clearactivity':"1"}
-            req=urllib2.Request("http://vkontakte.ru/profile.php?",urlencode(dat))
-        try:
-            res=self.opener.open(req)
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
+            res=self.getHttpPage("http://vkontakte.ru/profile.php?",urlencode(dat))
+        if not res:
             return 1
+
     def getMessage(self,msgid):
         """
         retrieves message from the server
@@ -741,7 +741,7 @@ class vkonThread():
         page=self.getHttpPage("http://vkontakte.ru/feed2.php")
         if (not page):
             return 1
-        if (page=='"{"user": {"id": -1}}' or page[0]!='{'):
+        if (page=='{"user": {"id": -1}}' or page[0]!='{'):
             return 1
         return 0
 
@@ -794,7 +794,7 @@ class vkonThread():
                 if not self.alive: return
                 time.sleep(1)
     def loopIntern(self):
-        print "start loop"
+        #print "start loop"
         tfeed=self.getFeed()
         #tfeed is epty only on some error. Just ignore it
         if tfeed:

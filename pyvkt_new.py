@@ -218,9 +218,22 @@ class pyvk_t(component.Service,vkonClient):
                     ret = u''
                     for i in self.users.keys():
                         if (self.hasUser(i)):
-                            ret=ret+u"\nxmpp:%s"%i
+                            ret=ret+u"\nxmpp:%s %s"%(i,self.users[i].VkStatus)
                             count+=1
                     ret=u"%s user(s) online"%count + ret
+                    self.sendMessage(self.jid,msg["from"],ret)
+                elif (cmd=="resources"):
+                    count = 0
+                    rcount = 0
+                    ret = u''
+                    for i in self.users.keys():
+                        if (self.hasUser(i)):
+                            for j in self.users[i].resources.keys():
+                                ret=ret+u"\nxmpp:%s %s(%s)[%s]"%(j,self.users[i].resources[j]["show"],self.users[i].resources[j]["status"],self.users[i].resources[j]["priority"])
+                                rcount +=1
+                            ret=ret+u"\n"
+                            count+=1
+                    ret=u"%s(%s) user(s) online"%(count,rcount) + ret
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif(cmd=="stats2"):
                     for i in self.users.keys():
@@ -949,7 +962,7 @@ class pyvk_t(component.Service,vkonClient):
         print "done"
         #time.sleep(15)
         dl=[]
-        for i in self.users.keys:
+        for i in self.users.keys():
             try:
                 d=self.users[i].pool.defer(self.users[i].logout)
                 dl.append(d)
