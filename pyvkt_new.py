@@ -949,7 +949,7 @@ class pyvk_t(component.Service,vkonClient):
         print "done"
         #time.sleep(15)
         dl=[]
-        for i in self.users:
+        for i in self.users.keys:
             try:
                 d=self.users[i].pool.defer(self.users[i].logout)
                 dl.append(d)
