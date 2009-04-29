@@ -89,7 +89,7 @@ class user:
             nick = self.getName(bjid)
         else:
             self.roster[bjid]["name"]=nick
-        if not self.subscribed(bjid):
+        if 1 or not self.subscribed(bjid):
             self.trans.sendPresence(bjid,self.bjid,"subscribe",nick=nick)
 
     def subscribe(self,bjid):

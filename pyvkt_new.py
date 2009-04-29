@@ -573,9 +573,9 @@ class pyvk_t(component.Service,vkonClient):
         #log.msg("fiendlist ",jid)
         #log.msg(fl)
         bjid=pyvkt.bareJid(jid)
-        for f in fl:
-            src="%s@%s"%(f,self.jid)
-            if self.hasUser(bjid):
+        if self.hasUser(bjid):
+            for f in fl:
+                src="%s@%s"%(f,self.jid)
                 self.users[bjid].askSubscibtion(src,nick=u"%s %s"%(fl[f]["first"],fl[f]["last"]))
             #self.sendPresence(src,jid,"subscribed")
             #self.sendPresence(src,jid,"subscribe")
