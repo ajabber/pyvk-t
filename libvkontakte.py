@@ -90,12 +90,12 @@ class vkonThread():
             print "features/keep_online isn't set."
             self.keep_online=None
         try:
-            cookdir=config.get("features","cookies_path")
-            cjar=cookielib.MozillaCookieJar("%s/%s"%(cookdir,self.bjid))
+            self.cookPath=config.get("features","cookies_path")
+            cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "features/cookies_path isn't set. disabling cookie cache"
             cjar=cookielib.MozillaCookieJar()
-            cookdir=None
+            self.cookPath=None
         try:
             cjar.clear()
             cjar.load()
@@ -196,6 +196,10 @@ class vkonThread():
         self.onlineList={}
         if not self.user.getConfig("save_cookies"):
             self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
+            try:
+                os.unlink("%s/%s"%(self.cookPath,self.bjid))
+            except:
+                pass
         #print "%s: logout"%self.bjid
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251").strip()
@@ -846,14 +850,14 @@ class vkonThread():
             print url
         return 0
     def test(self):
-        page=self.getHttpPage("http://vkontakte.ru/")
-        page2=re.sub("&#x.{1,5}?;","",page)
-        m1=page2.find("<!-- End pageBody -->") 
-        m2=page2.find("<!-- End bFooter -->") 
-        if (m1 and m2):
-            page2=page2[:m1]+page2[m2:] 
-        print page2
-        dom = xml.dom.minidom.parseString(page2)
+        page=self.getHttpPage("http://vkontakte.ru/news.php")
+        #page2=re.sub("&#x.{1,5}?;","",page)
+        #m1=page2.find("<!-- End pageBody -->") 
+        #m2=page2.find("<!-- End bFooter -->") 
+        #if (m1 and m2):
+            #page2=page2[:m1]+page2[m2:] 
+        #print page2
+        dom = xml.dom.minidom.parseString(page)
         print dom.toxml()
 
 #        req=urllib2.Request(url)
