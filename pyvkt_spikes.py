@@ -74,7 +74,7 @@ class reqQueue(threading.Thread):
                     print "GREPME unhandled exception in callback"
                     print_exc()
             self.queue.task_done()
-        print "queue (%s) stopped"%self.user.bjid
+        #print "queue (%s) stopped"%self.user.bjid
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
@@ -94,7 +94,7 @@ class pollManager(threading.Thread):
                             self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
                     except AttributeError,err:
                         if (err.message!="user instance has no attribute 'thread'"):
-                            print "%s: user w/o thread. it's normal just after log in"
+                            print "%s: user w/o thread. it's normal just after log in"%u
                             #print_exc()
                     except:
                         print "GREPME: unhandled exception"

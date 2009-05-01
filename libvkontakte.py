@@ -145,7 +145,7 @@ class vkonThread():
                 self.error=0
                 self.alive=1
         else:
-            print "cookie accepted!"
+            #print "cookie accepted!"
             self.alive=1
             self.error=0
         #f=self.getFeed()
@@ -585,7 +585,7 @@ class vkonThread():
             if (k.nodeType==xml.dom.Node.TEXT_NODE):
                 msg="%s%s"%(msg,k.data)
             else:
-                print k
+                #print k
                 msg="%s%s"%(msg,k.toxml())
             k=k.nextSibling
         msg=msg.replace("<br/>","\n")[6:-6]
@@ -689,7 +689,7 @@ class vkonThread():
             ttitle=title
 
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        print data
+        #print data
         page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
         if not page:
             return 1
@@ -849,16 +849,27 @@ class vkonThread():
 
             print url
         return 0
-    def test(self):
-        page=self.getHttpPage("http://vkontakte.ru/news.php")
-        #page2=re.sub("&#x.{1,5}?;","",page)
-        #m1=page2.find("<!-- End pageBody -->") 
-        #m2=page2.find("<!-- End bFooter -->") 
-        #if (m1 and m2):
-            #page2=page2[:m1]+page2[m2:] 
-        #print page2
-        dom = xml.dom.minidom.parseString(page)
-        print dom.toxml()
+    def getCalendar(self,month,year):
+        #import string
+        page=self.getHttpPage("http://vkontakte.ru/calendar_ajax.php?month=%s&year=%sp"%(month,year))
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+        #print bs.prettify()
+        ret={}
+        days=bs.findAll("td",attrs={'class':"dayCell"})
+        for i in days:
+            d=i.div
+            if (d and d.nextSibling):
+                
+                n=int(i.div.string)
+                #print n
+                ret[n]=[]
+                #print i.prettify()
+                evs=i.findAll("div",attrs={"class":"calPic"})
+                for k in evs:
+                    #print k.a["href"]
+                    ret[n].append(k.a["href"][1:])
+        return ret
+
 
 #        req=urllib2.Request(url)
 #        try:
