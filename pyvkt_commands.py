@@ -7,6 +7,7 @@ from twisted.internet.defer import waitForDeferred
 
 from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
+import time
 
 
 class cmdManager:
@@ -17,7 +18,8 @@ class cmdManager:
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
                 "logout":logoutCmd(trans),
-                "config":setConfigCmd(trans)}
+                "config":setConfigCmd(trans),
+                "bdays":checkBdays(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans),"friend":addDelFriendCmd(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
@@ -476,4 +478,34 @@ class addDelFriendCmd(basicCommand):
             pass
         else:
             return {"status":"completed","title":self.name,'message':u'Операция отменена'}
-
+class checkBdays(basicCommand):
+    name=u"Проверить дни рождения"
+    args={}
+    #args={0:"confirm"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        y=time.gmtime().tm_year
+        m=time.gmtime().tm_mon
+        d=time.gmtime().tm_mday
+        delta=5
+        
+        bjid=pyvkt.bareJid(jid)
+        if self.trans.hasUser(bjid):
+            user=self.trans.users[bjid]
+            cal=user.thread.getCalendar(month=m,year=y)
+            for i in cal:
+                if (i>d and i<d+delta):
+                    for j in cal[i]:
+                        if (j[:2]=="id"):
+                            t=time.strptime("%s.%s.%s"%(i,m,y),"%d.%m.%Y")
+                            self.trans.sendMessage(
+                                src="%s@%s"%(j[2:],self.trans.jid),
+                                dest=jid,
+                                body=u"Скоро день рождения пользователя: %s"%time.strftime("%a, %d %b",t),
+                                title=u"pyvk-t")
+            #FIXME работа в конце месяца!!
+            return {"status":"completed","title":self.name,'message':u'Уведомления высланы от имени соответствующих пользоватенлей'}
+        else:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+            
