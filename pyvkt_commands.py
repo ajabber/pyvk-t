@@ -470,7 +470,7 @@ class setConfigCmd(basicCommand):
 
 class addDelFriendCmd(basicCommand):
     name=u"Добавить/удалить друга"
-    args={0:"confirm"}
+    args={0:"operation"}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
@@ -479,26 +479,35 @@ class addDelFriendCmd(basicCommand):
             user=self.trans.users[bjid]
         except KeyError:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
-        isFriend=self.trans.users[bjid].thread.isFriend(to_id)
-        #TODO run in pool?
-        if (isFriend==-1):
-            return {"status":"completed","title":self.name,'message':u'Внутренняя ошибка транспорта'}
-            #TODO exceptions?
-            #FIXME not 'completed'
+        
         if (len(args)!=1):
-            fl={"confirm":("boolean",u'Подтверждение',"0")}
-            if(isFriend):
-                return {"status":"executing","title":u'Удаление из списка друзей',"form":{"fields":fl},
-                    'message':u'Пользователь будет УДАЛЕН из списка друзей на сайте, не в транспорте, а именно на сайте!'}
+            isFriend=self.trans.users[bjid].thread.isFriend(to_id)
+            fl={"operation":("text-single",u'Операция',"")}
+            if (isFriend==0):
+                st=u"друг"
+                opt=u"del - удалить"
+            elif (isFriend==1):
+                st=u"не друг"
+                opt=u"add - отправить заявку"
+            elif (isFriend==2):
+                st=u"не друг (сделал заявку)"
+                opt=u"add - принять заявку, del - отклонить"
+            elif (isFriend==-1):
+                st=u"<внутренняя ошибка транспорта>"
+                opt=u"<внутренняя ошибка транспорта>"
+            return {"status":"executing","title":self.name,"form":{"fields":fl},
+                    'message':u'Сейчас пользователь - %s\nДоступные операции: %s'%(st,opt)}
+        #TODO run in pool?
+        if (args.has_key("operation")):
+            if args["operation"]=='add':
+                user.thread.addDeleteFriend(to_id,1)
+            elif args["operation"]=='del':
+                user.thread.addDeleteFriend(to_id,0)
             else:
-                return {"status":"executing","title":u'Добавление в список друзей',"form":{"fields":fl},
-                    'message':u'Будет отправлено приглашене стать другом или подтверждено полученное приглашение'}
-        if (args.has_key("confirm") and args["confirm"]=='1'):
-            user.thread.addDeleteFriend(to_id,not isFriend)
-            return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}
-            pass
-        else:
-            return {"status":"completed","title":self.name,'message':u'Операция отменена'}
+                return {"status":"completed","title":self.name,'message':u'Неизвестная операция: %s'%args["operation"]}
+            return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}    
+        print args
+        return {"status":"completed","title":self.name,'message':u'Ошибка'}
 class checkBdays(basicCommand):
     name=u"Проверить дни рождения"
     args={}

@@ -742,22 +742,34 @@ class vkonThread():
         return self.flParse(page)
 
     def isFriend(self,v_id):
-        page = self.getHttpPage("http://wap.vkontakte.ru/id%s"%v_id)
+        """ check friendship status
+        0 - friend
+        1 - not friend
+        2 - friendship requested
+        -1 - error
+        """
+        page = self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
+        #print page
         if not page: 
             return -1
-        if (page.find('<go href="/addfriend%s"'%v_id)==-1):
+        if (page.find('<div id="error">')!=-1):
+            #hidden page
             return 1
-        return 0
+        if (page.find('<a href="/addfriend%s"'%v_id)==-1):
+            return 0
+        if (page.find('<a href="/deletefriend%s"'%v_id)==-1):
+            return 1
+        return 2
 
     def addDeleteFriend(self,v_id,isAdd):
         if (isAdd):
-            page = self.getHttpPage("http://wap.vkontakte.ru/addfriend%s"%v_id)
+            page = self.getHttpPage("http://pda.vkontakte.ru/addfriend%s"%v_id)
             if page:
                 return 0
             return -1
         else:
             #print "%s: del friend %s"%(self.bjid,v_id)
-            page = self.getHttpPage("http://wap.vkontakte.ru/deletefriend%s"%v_id)
+            page = self.getHttpPage("http://pda.vkontakte.ru/deletefriend%s"%v_id)
             if page:
                 return 0
             return -1
