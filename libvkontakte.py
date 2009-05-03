@@ -1,5 +1,25 @@
 # -*- coding: utf-8 -*-
-
+"""
+/***************************************************************************
+ *   Copyright (C) 2009 by pyvk-t dev team                                 *
+ *   pyvk-t.googlecode.com                                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+ """
 import urllib2
 import urllib
 import httplib
@@ -49,7 +69,7 @@ class authFormError(Exception):
         return 'unexpected auth form'
 class vkonThread():
     oldFeed=""
-    onlineList={}
+    #onlineList={}
     alive=1
     error=0
     loopDone=True
@@ -192,7 +212,7 @@ class vkonThread():
 
     def logout(self):
         self.alive=0
-        self.client.usersOffline(self.jid,self.onlineList)
+        #self.client.usersOffline(self.jid,self.onlineList)
         self.onlineList={}
         if not self.user.getConfig("save_cookies"):
             self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
@@ -224,6 +244,7 @@ class vkonThread():
         res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
         if (res==None):
             if (tag.find("list:[],")!=-1):
+                #print "empty list"
                 return {}
             print "wrong page format: can't fing 'list:''"
             self.checkPage(page)
@@ -758,68 +779,8 @@ class vkonThread():
         except urllib2.HTTPError, err:
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return -1
-            
-    def loop(self):
-        return
-        self.tonline={}
-        j=80
-        while(self.alive):
-            j=j+1
-            tfeed=self.getFeed()
-            #tfeed is epty only on some error. Just ignore it
-            if tfeed:
-                self.client.updateFeed(self.jid,tfeed)
-            if (self.feedOnly):
-                self.tonline={}
-            else:
-                try:
-                    self.onlineList=self.getOnlineList()
-                except tooFastError:
-                    self.client.threadError(self.jid,"banned")
-                    #FIXME
-                    time.sleep(100)
-                except authFormError:
-                    if (self.alive):
-                        self.client.threadError(self.jid,"auth")
-                    self.client.usersOffline(self.jid,self.onlineList)
-                    return
-            if (self.tonline.keys()!=self.onlineList.keys()):
-                if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
-                if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
-                if self.alive: self.tonline=self.onlineList
-            time.sleep(1)
-            if self.alive and j>80 and self.keep_online and self.user.getConfig("keep_online"):
-                #FIXME online status
-                self.getHttpPage("http://wap.vkontakte.ru/id1")
-                j=0
-            elif j>81:
-                j=75
-            for i in range(1,10):
-                if not self.alive: return
-                time.sleep(1)
-    def loopIntern(self):
-        #print "start loop"
-        tfeed=self.getFeed()
-        #tfeed is epty only on some error. Just ignore it
-        if tfeed:
-            self.client.updateFeed(self.jid,tfeed)
-        self.onlineList=self.getOnlineList()
-        if (self.tonline.keys()!=self.onlineList.keys()):
-            if self.alive: self.client.usersOffline(self.jid,filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
-            if self.alive: self.client.usersOnline(self.jid,filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
-            if self.alive: self.tonline=self.onlineList
-        #FIXME online status
-        self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
-        if self.alive and self.iterationsNumber>13*60 and self.keep_online and self.user.getConfig("keep_online"):
-            self.getHttpPage("http://pda.vkontakte.ru/id1")
-            self.iterationsNumber = 0
-        #print "end loop"
-        self.loopDone=True
-        return 1
-            
-
     def exit(self):
-        self.client.usersOffline(self.jid,self.onlineList.keys())
+        #self.client.usersOffline(self.jid,self.onlineList.keys())
         self.logout()
         self.alive=0
         #threading.Thread.exit(self)
@@ -869,8 +830,68 @@ class vkonThread():
                     #print k.a["href"]
                     ret[n].append(k.a["href"][1:])
         return ret
+    def getNews(self):
+        types={"http://vkontakte.ru/images/icons/person_icon.gif":"status"}
+        page=self.getHttpPage("http://vkontakte.ru/news.php")
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+        #print bs
+        mf=bs.find("div",attrs={'id':"mainFeed"})
+        days=mf.findAll("div",attrs={'style':"padding:10px 10px 20px 10px;"})
+        #print days[0]
+        print bs.find("div",attrs={"id":'checkboxFeed'})
+        for i in [days[0]]:
+            events=i.findAll("table")
+            #print i
+            #print len(events)
+            for j in events:
+                ev={}
+                tds=j.findAll("td")
+                #print tds
+                pic=tds[0].img["src"]
+                #print pic
+                try:
+                    ev["type"]=types[pic]
+                    print ev["type"]
+                except:
+                    pass
+                else:
+                    ev["id"]=tds[1].a["href"][3:]
+                    if (ev["type"]=="status"):
+                        print td[1]
+                        return
+    def getStatusList(self):
+        ret={}
+        #print "start"
+        for n in [0,1,2]:
+            page = self.getHttpPage("http://pda.vkontakte.ru/news?from=%s"%n)
+            if not page:
+                return {}
+            dom = xml.dom.minidom.parseString(page)
+            for i in dom.getElementsByTagName("small"):
+                i.parentNode.removeChild(i)
+            dom.normalize()
+            cont=None
+            for i in dom.getElementsByTagName("div"):
+                #print
+                if i.getAttribute("class")=="stRows":
+                    cont=i
+                    break
+            if (not cont):
+                print "cant parse news"
+                return {}
+            for i in cont.getElementsByTagName("div"):
+                links=i.getElementsByTagName("a")
+                v_id=links[0].getAttribute("href")[3:]
+                fe=links[0].nextSibling
+                del links[0]
+                if (not len(links)):
+                    if (not ret.has_key(v_id)):
+                        ret[v_id]=fe.data.encode("utf-8")
+        #print "end"
 
-
+        return ret
+        
+        #print cont.toxml()
 #        req=urllib2.Request(url)
 #        try:
 #            res=self.opener.open(req)

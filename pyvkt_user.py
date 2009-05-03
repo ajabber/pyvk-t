@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ *   Copyright (C) 2009 by pyvk-t dev team                                 *
+ *   pyvk-t.googlecode.com                                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+ """
 import libvkontakte
 #from twisted.python.threadpool import ThreadPool
 from pyvkt_spikes import reqQueue
@@ -30,6 +51,13 @@ class user:
         self.VkStatus=u""   #status which is set on web
         self.status=u"Подождите..."     #status which is show in jabber
         self.feed = None    #feed
+
+        self.refreshDone=True
+        self.rosterStatusTimer=0
+        #deprecated?
+        self.iterationsNumber=0
+        self.tonline={}
+        self.onlineList={}
         
         #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
         #subscribed means transported contact recieves status
@@ -56,7 +84,7 @@ class user:
             pass
         elif self.resources and not self.lock:
             self.trans.sendPresence(self.trans.jid,jid,status=self.status)
-            self.trans.usersOnline(self.bjid,self.thread.onlineList)
+            self.contactsOnline(self.onlineList)
         #if VkStatus has to be changed and should be done now
         if (prs!=None):
             status=self.prsToVkStatus(self.storePresence(prs))
@@ -97,7 +125,7 @@ class user:
         if not bjid in self.roster:
             self.roster[bjid]={"subscribe":0,"subscribed":0}
         self.trans.sendPresence(bjid, self.bjid, "subscribed",nick=self.getName(bjid))
-        if not self.roster[bjid]["subscribe"] and pyvkt.jidToId(bjid) in self.thread.onlineList:
+        if not self.roster[bjid]["subscribe"] and pyvkt.jidToId(bjid) in self.onlineList:
             self.trans.sendPresence(bjid,self.bjid,nick=self.getName(bjid))
         self.roster[bjid]["subscribe"] = 1
         self.askSubscibtion(bjid)
@@ -231,7 +259,10 @@ class user:
         try:
             mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
         except UnicodeEncodeError:
-            print "unicode error, possible bad JID: %s"%self.bjid
+            try:
+                print "unicode error, possible bad JID: %s"%self.bjid
+            except:
+                print "unicode error. can't print jid"
             self.lock=0
             self.active=0
             self.state=3
@@ -295,7 +326,10 @@ class user:
         try:
             mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster)),b64encode(cPickle.dumps(self.config)),safe(self.bjid))
         except UnicodeEncodeError:
-            print "unicode error, possible bad JID: %s"%self.bjid
+            try:
+                print "unicode error, possible bad JID: %s"%self.bjid
+            except:
+                pass
         except AttributeError:
             print_exc()
         else:
@@ -303,6 +337,7 @@ class user:
             defer.waitForDeferred(q)
         #now it's blocking ;)
         self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
+        self.contactsOffline(self.onlineList)
         try:
             self.thread.logout()
         except:
@@ -347,7 +382,62 @@ class user:
             return 1
         #nothing
         return 0
-
+    def refreshData(self):
+        """
+        refresh online list and statuses
+        """
+        #self.loopDone=0
+        #print self.roster
+        #print "r"
+        if (1 and self.rosterStatusTimer):
+            self.rosterStatusTimer=self.rosterStatusTimer-1
+        else:
+            slist=self.thread.getStatusList()
+            self.rosterStatusTimer=15
+            # it's about 5 munutes
+            for i in slist:
+                
+                self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
+        #self.thread.loopIntern()
+        self.thread
+        tfeed=self.thread.getFeed()
+        #tfeed is epty only on some error. Just ignore it
+        if tfeed:
+            self.trans.updateFeed(self.bjid,tfeed)
+        self.onlineList=self.thread.getOnlineList()
+        #TODO remove this
+        if (self.tonline.keys()!=self.onlineList.keys()):
+            self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
+            self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
+            self.tonline=self.onlineList
+        #FIXME online status
+        self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
+        if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
+            self.thread.getHttpPage("http://pda.vkontakte.ru/id1")
+            self.iterationsNumber = 0
+        #self.loopDone=True        
+        self.refreshDone=True
+    def contactsOnline(self,contacts):
+        """ send 'online' presence"""
+        for i in contacts:
+            try:
+                nick=u'%s %s'%(self.onlineList[i]["first"],self.onlineList[i]["last"])
+            except:
+                print_exc()
+                nick=None
+            try:
+                status=self.roster["%s@%s"%(i,self.trans.jid)]["status"].decode("utf-8")
+            except:
+                status=None
+            self.setName("%s@%s"%(i,self.trans.jid),nick)
+            if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
+                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,nick=nick,status=status)       
+    def contactsOffline(self,contacts,force=0):
+        """ send 'offline' presence"""
+        # wtf force??
+        for i in contacts:
+            if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
+                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
     def __del__(self):
         self.delThread()
 
@@ -360,9 +450,10 @@ class user:
         except KeyError:
             return pyvkt.userConfigFields[fieldName]["default"]
         except AttributeError:
-            print "%s: user without config\ncative=%s\nlock=%s"%(self.bjid,self.active,self.lock)
+            print "user without config\ncative=%s\nlock=%s"%(self.active,self.lock)
             return pyvkt.userConfigFields[fieldName]["default"]
     def __getattr__(self,name):
+        #print "getattr",name
         if (name=="lock"):
             #print "deprecated user.lock!"
             #print_stack(limit=2)
@@ -371,7 +462,9 @@ class user:
             #print "deprecated user.active!"
             #print_stack(limit=2)
             return self._active
-        raise AttributeError
+        #if (name=='thread'):
+        raise AttributeError("user instance without '%s'"%name)
+        #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
     def __setattr__(self,name,val):
         if (name=="lock"):
             #print "deprecated user.lock!"

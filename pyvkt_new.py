@@ -1,5 +1,25 @@
 # -*- coding: utf-8 -*-
-
+"""
+/***************************************************************************
+ *   Copyright (C) 2009 by pyvk-t dev team                                 *
+ *   pyvk-t.googlecode.com                                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+ """
 #TODO clean up this import hell!!
 import platform
 import time
@@ -370,8 +390,8 @@ class pyvk_t(component.Service,vkonClient):
                             return
                         elif(query["node"]=="friendsonline"):
                             if (self.hasUser(bjid)):
-                                for i in self.users[bjid].thread.onlineList:
-                                    cname=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
+                                for i in self.users[bjid].onlineList:
+                                    cname=u'%s %s'%(self.users[bjid].onlineList[i]["first"],self.users[bjid].onlineList[i]["last"])
                                     q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)}
                     else:
                         q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'Pyvk-t commands','jid':self.jid}
@@ -893,29 +913,24 @@ class pyvk_t(component.Service,vkonClient):
 
     def usersOnline(self,jid,users):
         #FIXME not thread-safe!!
+        print "deprecated pyvkt.uonline"
+        print_stack(limit=2)
         # need to call sendPresence from reactor thread!
         bjid=pyvkt.bareJid(jid)
         if (self.hasUser(bjid)):
-            for i in users:
-                try:
-                    nick=u'%s %s'%(self.users[bjid].thread.onlineList[i]["first"],self.users[bjid].thread.onlineList[i]["last"])
-                except:
-                    print_exc()
-                    nick=None
-                self.users[bjid].setName("%s@%s"%(i,self.jid),nick)
-                if self.users[bjid].getConfig("show_onlines") and (not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid))):
-                    self.sendPresence("%s@%s"%(i,self.jid),jid,nick=nick)
+            self.users[bjid].contactsOnline(jid,users)
         else:
             print "usersOnline: no such user: %s"%jid
 
     def usersOffline(self,jid,users,force=0):
+        print "deprecated pyvkt.uoffline"
+        print_stack(limit=2)
+
         #FIXME not thread-safe!!
         bjid=pyvkt.bareJid(jid)
         
         if (self.hasUser(bjid)):
-            for i in users:
-                if (force or self.users[bjid].getConfig("show_onlines")) and (not self.roster_management or self.users[bjid].subscribed("%s@%s"%(i,self.jid))):
-                    self.sendPresence("%s@%s"%(i,self.jid),jid,t="unavailable")
+            self.users[bjid].contactsOffline(jid,users)
         else:
             print "usersOffline: no such user: %s"%jid
 
@@ -925,7 +940,7 @@ class pyvk_t(component.Service,vkonClient):
         elif(err=="auth"):
             self.sendMessage(self.jid,jid,u"Ошибка входа. Возможно, неправильный логин/пароль.")
         try:
-            self.users[i].logout()
+            self.users[pyvkt.bareJid(jid)].logout()
         except:
             pass
         self.sendPresence(self.jid,jid,"unavailable")
@@ -945,21 +960,21 @@ class pyvk_t(component.Service,vkonClient):
         if (len(self.users)==0):
             return
         #self.poolMgr.alive=0
-        print "stage 1: stopping users' loops, sending messages and presences..."
+        #print "stage 1: stopping users' loops, sending messages and presences..."
 
         for u in self.users.keys():
             if (self.hasUser(u)):
-                try:
-                    self.users[bjid].thread.alive=0
-                except:
-                    pass
+                #try:
+                    #self.users[bjid].thread.alive=0
+                #except:
+                    #pass
                 self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
                 self.sendPresence(self.jid,u,"unavailable")
-                try:
-                    self.usersOffline(u,self.users[u].thread.onlineList)
-                except:
-                    pass
-        print "done"
+                #try:
+                    #self.usersOffline(u,self.users[u].thread.onlineList)
+                #except:
+                    #pass
+        #print "done"
         #time.sleep(15)
         dl=[]
         for i in self.users.keys():
@@ -1077,7 +1092,7 @@ class pyvk_t(component.Service,vkonClient):
         del self.pollMgr
         print "done"
     def errorback(self,err):
-        print "error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
+        print "ERR: error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
         err.printTraceback()
 
 
