@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ *   Copyright (C) 2009 by pyvk-t dev team                                 *
+ *   pyvk-t.googlecode.com                                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+ """
 from twisted.python import failure
 from twisted.internet import defer,reactor
 from twisted.python import log, runtime, context, failure
@@ -89,13 +110,16 @@ class pollManager(threading.Thread):
                 #print "poll for %s"%u
                 if (self.trans.hasUser(u)):
                     try:
-                        if(self.trans.users[u].thread.loopDone):
-                            self.trans.users[u].thread.loopDone=False
-                            self.trans.users[u].pool.call(self.trans.users[u].thread.loopIntern)
+                        if(self.trans.users[u].refreshDone):
+                            self.trans.users[u].thread
+                            self.trans.users[u].refreshDone=False
+                            self.trans.users[u].pool.call(self.trans.users[u].refreshData)
                     except AttributeError,err:
+                        print_exc()
                         if (err.message!="user instance has no attribute 'thread'"):
-                            print "%s: user w/o thread. it's normal just after log in"%u
+                            #print "%s: user w/o thread. it's normal just after log in"%u
                             #print_exc()
+                            pass
                     except:
                         print "GREPME: unhandled exception"
                         print_exc()

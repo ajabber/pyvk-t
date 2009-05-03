@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ *   Copyright (C) 2009 by pyvk-t dev team                                 *
+ *   pyvk-t.googlecode.com                                                 *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ ***************************************************************************/
+ """
 from twisted.words.protocols.jabber import jid, xmlstream
 from twisted.internet.defer import waitForDeferred
 #try:
@@ -429,9 +450,9 @@ class setConfigCmd(basicCommand):
             show_onlines = user.getConfig("show_onlines")
             #if show_onlines flag changed hide or show online contacts
             if show_onlines_old and not show_onlines:
-                self.trans.usersOffline(jid,user.thread.onlineList,force=1)
+                user.contactsOffline(user.onlineList,force=1)
             if not show_onlines_old and show_onlines:
-                self.trans.usersOnline(jid,user.thread.onlineList)
+                user.contactsOnline(user.onlineList)
             self.trans.saveConfig(bjid)
             #except KeyError:
                 #print "keyError"
