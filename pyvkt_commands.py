@@ -434,7 +434,7 @@ class addNoteCmd(basicCommand):
             else:
                 return {"status":"completed","title":u"Отправка заметки",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
         else:
-            return {"status":"executing","title":u"Отправка заметки","form":{"fields":{"title":('text-single',u'Заголовок',''),"text":('text',u'Текст','')}},'message':u'Введите текст заметки и название'}
+            return {"status":"executing","title":u"Отправка заметки","form":{"fields":{"title":('text-single',u'Заголовок',''),"text":('text-multi',u'Текст','')}},'message':u'Введите текст заметки и название'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, заметка отправлена'}
 
 class setConfigCmd(basicCommand):

@@ -644,7 +644,7 @@ class pyvk_t(component.Service,vkonClient):
                     hidden.addElement('value').addContent(u'jabber:iq:search')
                     item=x.addElement("reported")
                     field=item.addElement("field")
-                    field['type']='text-single'
+                    field['type']='jid-single'
                     field['label']=u'Jabber ID'
                     field['var']='jid'
                     field=item.addElement("field")

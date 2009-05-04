@@ -59,7 +59,7 @@ class user:
         self.tonline={}
         self.onlineList={}
         
-        #roster. {jid:{subscripbed:1/0, subscribe: 1/0...}}
+        #roster. {jid:{subscripbed:1/0, subscribe: 1/0, status: sometext, name: sometext}}
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
@@ -96,6 +96,19 @@ class user:
         else:
             self.resources[jid]=None
 
+    def getStatus(self,bjid):
+        """ returns status of roster item if set """
+        if bjid in self.roster and "status" in self.roster[bjid]:
+            return self.roster[bjid]["status"]
+        return ""
+
+    def setStatus(self,bjid,name):
+        """ sets status of roster item """
+        if bjid in self.roster:
+            self.roster[bjid]["status"]=name
+        else:
+            self.roster[bjid]={"subscribe":0,"subscribed":0,"name":name,'status':''}
+
     def getName(self,bjid):
         """ returns name of roster item if set """
         if bjid in self.roster and "name" in self.roster[bjid]:
@@ -107,7 +120,7 @@ class user:
         if bjid in self.roster:
             self.roster[bjid]["name"]=name
         else:
-            self.roster[bjid]={"subscribe":0,"subscribed":0,"name":name}
+            self.roster[bjid]={"subscribe":0,"subscribed":0,"name":name,'status':''}
 
     def askSubscibtion(self, bjid,nick=None):
         """just ask for subscribtion if needed"""
@@ -396,8 +409,8 @@ class user:
             self.rosterStatusTimer=15
             # it's about 5 munutes
             for i in slist:
-                
-                self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
+                self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
+                #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
         #self.thread.loopIntern()
         self.thread
         tfeed=self.thread.getFeed()
@@ -425,16 +438,15 @@ class user:
             except:
                 print_exc()
                 nick=None
-            try:
-                status=self.roster["%s@%s"%(i,self.trans.jid)]["status"].decode("utf-8")
-            except:
-                status=None
+            status = self.getStatus("%s@%s"%(i,self.trans.jid)).decode("utf-8")
             self.setName("%s@%s"%(i,self.trans.jid),nick)
             if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,nick=nick,status=status)       
     def contactsOffline(self,contacts,force=0):
-        """ send 'offline' presence"""
-        # wtf force??
+        """ 
+        send 'offline' presence
+        set 'force' paramenter to send presence even if disabled in user config
+        """
         for i in contacts:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        

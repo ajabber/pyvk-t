@@ -566,7 +566,7 @@ class vkonThread():
         dom=xml.dom.minidom.parseString(page)
         fields=dom.getElementsByTagName("form")
         url="http://pda.vkontakte.ru"+fields[0].attributes["action"].value.replace("&amp;","&")
-        dat={'title':title,'post':text}
+        dat={'title':title.encode("utf-8"),'post':text.encode("utf-8")}
         res=unicode(self.getHttpPage(url,urlencode(dat)),"utf-8")
         if not res or not res.find(u"аметка добавлена"):
             return 1
