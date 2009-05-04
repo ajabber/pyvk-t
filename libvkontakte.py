@@ -558,6 +558,20 @@ class vkonThread():
             return None
         return result
 
+    def addNote(self,text,title=u""):
+        """ Posts a public note on vkontakte.ru site"""
+        page = self.getHttpPage("http://pda.vkontakte.ru/newnote")
+        if not page:
+            return None
+        dom=xml.dom.minidom.parseString(page)
+        fields=dom.getElementsByTagName("form")
+        url="http://pda.vkontakte.ru"+fields[0].attributes["action"].value.replace("&amp;","&")
+        dat={'title':title,'post':text}
+        res=unicode(self.getHttpPage(url,urlencode(dat)),"utf-8")
+        if not res or not res.find(u"аметка добавлена"):
+            return 1
+        return 0
+
     def setStatus(self,text):
         """ Sets status (aka activity) on vkontakte.ru site"""
         page = self.getHttpPage("http://pda.vkontakte.ru/status")
