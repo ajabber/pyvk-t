@@ -40,6 +40,7 @@ class cmdManager:
                 "login":loginCmd(trans),
                 "logout":logoutCmd(trans),
                 "config":setConfigCmd(trans),
+                "addnote":addNoteCmd(trans),
                 "bdays":checkBdays(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans),"friend":addDelFriendCmd(trans)}
         self.adminCmdList={}
@@ -416,6 +417,26 @@ class sendWallMessageCmd(basicCommand):
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
 
+class addNoteCmd(basicCommand):
+    name=u"Оставить новую заметку"
+    args={0:"text",1:"title"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=pyvkt.bareJid(jid)
+        print(args)
+        if (args.has_key("text")):
+            #FIXME "too fast" safe!!!
+            if (self.trans.hasUser(bjid)):
+                res=self.trans.users[bjid].thread.addNote(args["text"],args["title"])
+                if res!=0:
+                    return {"status":"completed","title":u"Отправка заметки",'message':u'Ошибка.'}
+            else:
+                return {"status":"completed","title":u"Отправка заметки",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+        else:
+            return {"status":"executing","title":u"Отправка заметки","form":{"fields":{"title":('text-single',u'Заголовок',''),"text":('text',u'Текст','')}},'message':u'Введите текст заметки и название'}
+        return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, заметка отправлена'}
+
 class setConfigCmd(basicCommand):
     name=u"Настройки транспорта"
     args={0:"test"}
@@ -508,6 +529,7 @@ class addDelFriendCmd(basicCommand):
             return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}    
         print args
         return {"status":"completed","title":self.name,'message':u'Ошибка'}
+
 class checkBdays(basicCommand):
     name=u"Проверить дни рождения"
     args={}
