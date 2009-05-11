@@ -114,12 +114,6 @@ class pollManager(threading.Thread):
                             self.trans.users[u].thread
                             self.trans.users[u].refreshDone=False
                             self.trans.users[u].pool.call(self.trans.users[u].refreshData)
-                    except AttributeError,err:
-                        print_exc()
-                        if (err.message!="user instance has no attribute 'thread'"):
-                            #print "%s: user w/o thread. it's normal just after log in"%u
-                            #print_exc()
-                            pass
                     except:
                         print "GREPME: unhandled exception"
                         print_exc()

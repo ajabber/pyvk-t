@@ -46,7 +46,12 @@ class user:
         self.status_lock = 0
         self._active=1
         self.state=0
-        # 0 - new, 1 - lock, 2 - ready, 3 - inactive
+        # login - 1
+        # active - 2
+        # logout - 3
+        # new - 0
+        # inactive - 4
+
         self.FUsent=0
         self.VkStatus=u""   #status which is set on web
         self.status=u"Подождите..."     #status which is show in jabber
@@ -73,23 +78,24 @@ class user:
         stores it's presence and does some work of resending presences
         """
         #if had no resources before and not trying to login now
-        if not (self.resources or self.lock):
+        if (not self.resources) and self.state==0:
+            #self.state=1
+            #self.lock=1
             self.state=1
-            self.lock=1
             self.trans.sendPresence(self.trans.jid,self.bjid,t="probe")
             #self.pool.call(self.login)
             self.login()
         #new status of a resource
         if jid in self.resources:
             pass
-        elif self.resources and not self.lock:
+        elif self.resources and self.state==2:
             self.trans.sendPresence(self.trans.jid,jid,status=self.status)
             self.contactsOnline(self.onlineList)
         #if VkStatus has to be changed and should be done now
         if (prs!=None):
             status=self.prsToVkStatus(self.storePresence(prs))
             #if not locked we update status now
-            if status!=self.VkStatus and not self.lock:
+            if status!=self.VkStatus and self.state==2:
                 self.trans.updateStatus(self.bjid,status)
             #save status. If locked we'll update it automatically when possible
             self.VkStatus = status
@@ -233,7 +239,7 @@ class user:
         p = self.getHighestPresence()
         if p:
             status=self.prsToVkStatus(p)
-            if status!=self.VkStatus and not self.lock:
+            if status!=self.VkStatus and self.state==2:
                 self.trans.updateStatus(self.bjid,status)
                 self.VkStatus = status
         #print "delres", self.resources
@@ -248,9 +254,16 @@ class user:
             pass
 
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
-        self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
-        self.lock=0
-        self.active=1
+        try:
+            self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
+        except libvkontakte.captchaError:
+            print "ERR: got captcha request"
+            self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,msg="ERROR: captcha request.\nPlease, contact transport administrator")
+            self.state=4
+            return
+        #self.lock=0
+        #self.active=1
         self.state=2
         #self.thread.start()
         self.thread.feedOnly=0
@@ -259,14 +272,14 @@ class user:
     def login(self):
         # TODO bare jid?
         #self.active=1
-        self.lock=1
+        #self.lock=1
         self.state=1
         #print "self.bjid:%s"%self.bjid
         if (self.trans.isActive==0 and self.bjid!=self.trans.admin):
             #print ("isActive==0, login attempt aborted")
-            self.lock=0
-            self.active=0
-            self.state=3
+            #self.lock=0
+            #self.active=0
+            self.state=4
             #WARN bjid?
             return
         try:
@@ -276,9 +289,9 @@ class user:
                 print "unicode error, possible bad JID: %s"%self.bjid
             except:
                 print "unicode error. can't print jid"
-            self.lock=0
-            self.active=0
-            self.state=3
+            #self.lock=0
+            #self.active=0
+            self.state=4
             return
         #print mq
         #print_stack()
@@ -295,9 +308,9 @@ class user:
                 reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
                 self.trans.unregisteredList.append(self.bjid)
                 print "unregistered warning sent"
-            self.lock=0
-            self.active=0
-            self.state=3
+            #self.lock=0
+            #self.active=0
+            self.state=4
             return
         bjid=data[0][0].lower()
         if (bjid!=self.bjid):
@@ -332,9 +345,12 @@ class user:
 
     def logout(self):
         #print "logout %s"%self.bjid
-        self.lock=1
-        self.active=0
-        self.state=1
+        #self.lock=1
+        #self.active=0
+        if (self.state==3):
+            print "logout(): state=3, logout canceled"
+            return
+        self.state=3
         #saving data
         try:
             mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster)),b64encode(cPickle.dumps(self.config)),safe(self.bjid))
@@ -367,9 +383,9 @@ class user:
         return 0
     def delThread(self,void=0):
         #print "delThread %s"%self.bjid
-        self.active=0
-        self.lock=0
-        self.state=3
+        #self.active=0
+        #self.lock=0
+        self.state=4
         try:
             #self.thread.stop()
             del self.thread
@@ -462,30 +478,51 @@ class user:
         except KeyError:
             return pyvkt.userConfigFields[fieldName]["default"]
         except AttributeError:
-            print "user without config\ncative=%s\nlock=%s"%(self.active,self.lock)
+            print "user without config\nstate=%s"%(self.state)
             return pyvkt.userConfigFields[fieldName]["default"]
     def __getattr__(self,name):
         #print "getattr",name
+        #print "state = ",self.state
         if (name=="lock"):
-            #print "deprecated user.lock!"
-            #print_stack(limit=2)
-            return self._lock
+            print "deprecated user.lock!"
+            print_stack(limit=2)
+            if (self.state in (1,3)):
+                return 1
+            return 0
+            #return self._lock
         if (name=="active"):
-            #print "deprecated user.active!"
-            #print_stack(limit=2)
-            return self._active
+            print "deprecated user.active!"
+            print_stack(limit=2)
+            if (self.state in (1,2)):
+                return 1
+            return 0
+
+            #return self._active
         #if (name=='thread'):
         raise AttributeError("user instance without '%s'"%name)
         #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
     def __setattr__(self,name,val):
         if (name=="lock"):
-            #print "deprecated user.lock!"
-            #print_stack(limit=2)
-            self._lock=val
+            print "deprecated user.lock!"
+            print_stack(limit=2)
+            if (val):
+                if self._active: self.state==1
+                else: self.state==3
+            else:
+                if self._active: self.state==2
+                else: self.state==0
+            #self._lock=val
         if (name=="active"):
-            #print "deprecated user.active!"
-            #print_stack(limit=2)
-            self._active=val
+            print "deprecated user.active!"
+            print_stack(limit=2)
+            if (val):
+                if self._lock: self.state==1
+                else: self.state==2
+            else:
+                if self._lock: self.state==3
+                else: self.state==0
+            
+            #self._active=val
         self.__dict__[name]=val
 
 #TODO destructor
