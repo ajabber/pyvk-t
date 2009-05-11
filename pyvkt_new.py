@@ -259,7 +259,7 @@ class pyvk_t(component.Service,vkonClient):
                     for i in self.users.keys():
                         try:
                             print i
-                            print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
+                            #print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
                         except:
                             pass
                 elif(cmd=="reload"):
@@ -787,7 +787,7 @@ class pyvk_t(component.Service,vkonClient):
             user=self.users[bjid]
         else:
             return
-        if self.hasUser(bjid) and self.sync_status and user.active and not user.status_lock and not user.lock and user.getConfig("sync_status"):
+        if self.hasUser(bjid) and self.sync_status and not user.status_lock and user.getConfig("sync_status"):
             #print "updating status for",bjid,":",text.encode("ascii","replace")
             self.users[bjid].status_lock = 1
             self.users[bjid].thread.setStatus(text)
@@ -796,27 +796,15 @@ class pyvk_t(component.Service,vkonClient):
     def hasUser(self,bjid):
         #print "hasUser (%s)"%bjid
         if (self.users.has_key(bjid)):
-            if (self.users[bjid].active):
-                try:
-                    a=self.users[bjid].pool
-                except AttributeError:
-                    pass
-                    #print "WARN: '%s' - active user without pool!",bjid
-                    #return 0
-                try:
-                    a=self.users[bjid].thread
-                except AttributeError:
-                    pass
-                    #print "WARN: '%s' - active user without thread!",bjid
-                    #return 0
+            if self.users[bjid].state==2:
                 return 1
-            else:
-                if (not self.users[bjid].lock):
-                    try:
-                        self.users[bjid].pool.stop()
-                    except:
-                        pass
-                    del self.users[bjid]
+            if self.users[bjid].state==4:
+                try:
+                    self.users[bjid].pool.stop()
+                except:
+                    pass
+                del self.users[bjid]
+            return 0
         return 0
     def addResource(self,jid,prs=None):
         #print "addRes"

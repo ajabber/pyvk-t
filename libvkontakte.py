@@ -67,6 +67,12 @@ class authFormError(Exception):
         pass
     def __str__(self):
         return 'unexpected auth form'
+class captchaError(Exception):
+    def __init__(self):
+        pass
+    def __str__(self):
+        return 'got captcha request'
+
 class vkonThread():
     oldFeed=""
     #onlineList={}
@@ -144,6 +150,7 @@ class vkonThread():
                 self.error=1
                 self.client.threadError(self.jid,"auth error: got captha request")
                 self.alive=0
+                raise captchaError
                 return
             # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
             # good<your_id> - success
@@ -892,27 +899,33 @@ class vkonThread():
             page = self.getHttpPage("http://pda.vkontakte.ru/news?from=%s"%n)
             if not page:
                 return {}
-            dom = xml.dom.minidom.parseString(page)
-            for i in dom.getElementsByTagName("small"):
-                i.parentNode.removeChild(i)
-            dom.normalize()
-            cont=None
-            for i in dom.getElementsByTagName("div"):
-                #print
-                if i.getAttribute("class")=="stRows":
-                    cont=i
-                    break
-            if (not cont):
-                print "cant parse news"
-                return {}
-            for i in cont.getElementsByTagName("div"):
-                links=i.getElementsByTagName("a")
-                v_id=links[0].getAttribute("href")[3:]
-                fe=links[0].nextSibling
-                del links[0]
-                if (not len(links)):
-                    if (not ret.has_key(v_id)):
-                        ret[v_id]=fe.data.encode("utf-8")
+            try:
+                dom = xml.dom.minidom.parseString(page)
+            except Exception ,exc:
+                print "cant parse news page (%s)"%exc.message
+                self.dumpString(page,"expat_err")
+                
+            else:
+                for i in dom.getElementsByTagName("small"):
+                    i.parentNode.removeChild(i)
+                dom.normalize()
+                cont=None
+                for i in dom.getElementsByTagName("div"):
+                    #print
+                    if i.getAttribute("class")=="stRows":
+                        cont=i
+                        break
+                if (not cont):
+                    print "cant parse news"
+                    return {}
+                for i in cont.getElementsByTagName("div"):
+                    links=i.getElementsByTagName("a")
+                    v_id=links[0].getAttribute("href")[3:]
+                    fe=links[0].nextSibling
+                    del links[0]
+                    if (not len(links)):
+                        if (not ret.has_key(v_id)):
+                            ret[v_id]=fe.data.encode("utf-8")
         #print "end"
 
         return ret
