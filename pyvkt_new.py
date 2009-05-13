@@ -35,6 +35,7 @@ from twisted.enterprise.adbapi import safe
 
 from twisted.words.protocols.jabber.ijabber import IService
 from twisted.words.protocols.jabber import component,xmlstream
+from base64 import b64encode,b64decode
 from libvkontakte import *
 from zope.interface import Interface, implements
 import ConfigParser
@@ -50,10 +51,7 @@ import pyvkt_user
 from traceback import print_stack, print_exc
 from pyvkt_spikes import pollManager
 import threading
-#try:
-    #from twisted.internet.threads import deferToThreadPool
-##except:
-#from pyvkt_spikes import deferToThreadPool
+
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -190,7 +188,7 @@ class pyvk_t(component.Service,vkonClient):
         v_id=pyvkt.jidToId(msg["to"])
         if (msg.hasAttribute("type")) and msg["type"]=="error":
             print "XMPP ERROR:"
-            print msg.toXml()
+            print msg.toXml().encode('ascii', 'replace')
             return None
         if (v_id==-1):
             return None
@@ -254,6 +252,18 @@ class pyvk_t(component.Service,vkonClient):
                             ret=ret+u"\n"
                             count+=1
                     ret=u"%s(%s) user(s) online"%(count,rcount) + ret
+                    self.sendMessage(self.jid,msg["from"],ret)
+                elif (cmd[:6]=="roster"):#Получение информации о ростере человека
+                    j=cmd[7:]
+                    if not j:
+                            j=msg['from']
+                    j=pyvkt.bareJid(j)
+                    ret=u'Ростер %s:\n'%j
+                    if self.hasUser(j):
+                        ret = ret + u'\tКоличество контактов: %s\n'%len(self.users[j].roster)
+                        ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster)))
+                    else:
+                        ret = u'Пользователь %s не в сети, можете посмотреть его ростер в базе'%j
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif(cmd=="stats2"):
                     for i in self.users.keys():
@@ -881,7 +891,7 @@ class pyvk_t(component.Service,vkonClient):
                     for i in feed[j]["items"]:
                         if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
-                                gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" ["+pyvkt.feedInfo[j]["url"]%i + "]"
+                                gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" [ "+pyvkt.feedInfo[j]["url"]%i + " ]"
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:

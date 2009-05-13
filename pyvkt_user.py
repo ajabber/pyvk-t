@@ -259,7 +259,7 @@ class user:
         except libvkontakte.captchaError:
             print "ERR: got captcha request"
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
-            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,msg="ERROR: captcha request.\nPlease, contact transport administrator")
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body="ERROR: captcha request.\nPlease, contact transport administrator")
             self.state=4
             return
         #self.lock=0
@@ -322,6 +322,8 @@ class user:
                 self.config=cPickle.loads(b64decode(data[0][3]))
         except EOFError:
             print "error while parsing config"
+        except TypeError:
+            print "Error decoding config"
         except IndexError:
             print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
         #getting roster
@@ -331,6 +333,8 @@ class user:
                 self.roster=cPickle.loads(b64decode(data[0][4]))
         except EOFError:
             print "error while parsing roster"
+        except TypeError:
+            print "Error decoding roster"
         except IndexError:
             print ("roster field not found! please add it to your database (see pyvk-t_new.sql for details)")
 

@@ -917,6 +917,7 @@ class vkonThread():
                         break
                 if (not cont):
                     print "cant parse news"
+                    self.dumpString(page,"parse_news_err")
                     return {}
                 for i in cont.getElementsByTagName("div"):
                     links=i.getElementsByTagName("a")
