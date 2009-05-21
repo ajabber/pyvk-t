@@ -1003,15 +1003,40 @@ class vkonThread():
                 else:
                     pinfo["type"]='unknown'
                     pinfo["text"]=ptype
+                    print ptype
             except:
                 #print "simple message"
-                pinfo["type"]='text'
-                pinfo["text"]=string.join(cd[1].findAll(text=True),'\n')
-                #print pinfo
+                try:
+                    cl=cd[1].a["class"]
+                    if (cl=="Graffiti"):
+                        pinfo["type"]='graffity'
+                        pinfo["link"]=cd[1].a.img["src"]
+                    elif (cl=='iLink'):
+                        icon=cd[1].img["src"]
+                        links=cd[1].findAll("a")
+                        pinfo['desc']=links[0].string
+                        #print links
+                        if (icon=='/images/icons/movie_icon.gif'):
+                            pinfo["type"]='video'
+                        elif(icon=='/images/icons/pic_icon.gif'):
+                            pinfo["type"]='photo'
+                        else:
+                            pinfo["type"]='unknown'
+                        try:
+                            pinfo["link"]="http://vkontakte.ru%s"%links[1]["href"]
+                            pinfo["thumb"]=links[1].img["src"]
+                        except:
+                            print_exc()
+                except:
+                    #if (cd[1].div):
+                        #links=sd[1].div.findAll("a")
+                        #print links
+                    pinfo["type"]='text'
+                    pinfo["text"]=string.join(cd[1].findAll(text=True),'\n')
             
             #print pinfo
-            ret.append((i["id"][14:],pinfo))
-        #print ret[0]
+            ret.append((int(i["id"][14:]),pinfo))
+        #print ret
         return ret
             #print ptype
             #print cd[2].a['href']

@@ -582,16 +582,18 @@ class getWall(basicCommand):
         bjid=pyvkt.bareJid(jid)
         if self.trans.hasUser(bjid):
             user=self.trans.users[bjid]
-            print to_id
             wm=user.thread.getWallMessages(to_id)
             msg=u'Стена:'
             temp={}
             temp['text']=string.Template("$from ($v_id@$tjid) $date:\n$text")
             temp['audio']=string.Template("$from ($v_id@$tjid) $date:\n$desc\n($link)")
+            temp['graffity']=string.Template(u"$from ($v_id@$tjid) $date:\nГраффити ($link)")
+            temp['video']=string.Template(u"$from ($v_id@$tjid) $date:\nВидео:'$desc'\n($link)\nМиниатюра: $thumb")
+            temp['photo']=string.Template(u"$from ($v_id@$tjid) $date:\nФотография:'$desc'\n($link)\nМиниатюра: $thumb")
             temp['unknown']=string.Template("$from ($v_id@$tjid) $date:\n[error: cant parse]")
             for i,m in wm:
                 try:
-                    msg="%s\n%s"%(msg,temp[m['type']].substitute(m,tjid='pyvk-t.eqx.su'))
+                    msg="%s\n%s"%(msg,temp[m['type']].safe_substitute(m,tjid='pyvk-t.eqx.su'))
                 except KeyError:
                     msg="%s\n%s"%(msg,temp['unknown'].substitute(m,tjid='pyvk-t.eqx.su'))
             return {"status":"completed","title":self.name,'message':msg}
