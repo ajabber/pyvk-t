@@ -78,6 +78,7 @@ userConfigFields={
     ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
     ,"save_cookies":{"type":"boolean", "default":True, "desc":u"Сохранять cookies на сервере. Поможет уберечься от капчи"}
+    ,"signature":{"type":"text-single", "default":"", "desc":u"Подпись в сообщении"}
 #TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
 }
 feedInfo = {

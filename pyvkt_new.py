@@ -75,12 +75,12 @@ class LogService(component.Service):
 
     def rawDataIn(self, buf):
         self.packetsIn += 1
-        #log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+#        log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
     def rawDataOut(self, buf):
         self.packetsOut += 1
-        #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+#        log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
 class pyvkt_stats:
@@ -337,6 +337,9 @@ class pyvk_t(component.Service,vkonClient):
                         title=x.__str__()
                         break
 
+                s=self.users[bjid].getConfig("signature")
+                if s:
+                    body = body + u"\n--------\n" + s
                 d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
                 if (req and req.uri=='urn:xmpp:receipts'):
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1)
@@ -448,14 +451,15 @@ class pyvk_t(component.Service,vkonClient):
                     ans.send()
                     return
                 elif (query.uri=="http://jabber.org/protocol/stats") and (iq["to"]==self.jid): #statistic gathering
+                    usersTotal = None
                     if not query.children:
-                        q.addElement("time/uptime")
-                        q.addElement("users/online")
+                        q.addElement("stat")["name"] = "time/uptime"
+                        q.addElement("stat")["name"] = "users/online"
+                        q.addElement("stat")["name"] = "users/total"
                         if self.logger:
-                            q.addElement("bandwidth/packets-in")
-                            q.addElement("bandwidth/packets-out")
+                            q.addElement("stat")["name"] = "bandwidth/packets-in"
+                            q.addElement("stat")["name"] = "bandwidth/packets-out"
                     else:
-                        usersTotal = None
                         for i in query.children:
                             t=q.addElement("stat")
                             t['name']=i["name"]
@@ -471,10 +475,10 @@ class pyvk_t(component.Service,vkonClient):
                                 usersTotal = t
                             elif i["name"]=="bandwidth/packets-in" and self.logger:
                                 t['units']='packets'
-                                t['value']=self.logger.packetsIn
+                                t['value']= str(self.logger.packetsIn)
                             elif i["name"]=="bandwidth/packets-out" and self.logger:
                                 t['units']='packets'
-                                t['value']=self.logger.packetsOut
+                                t['value']=str(self.logger.packetsOut)
                             else:
                                 e=t.addElement("error","Service Unavailable")
                                 e["code"]="503"

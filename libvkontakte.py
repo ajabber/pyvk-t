@@ -433,7 +433,11 @@ class vkonThread():
             if(cont==None):
                 self.checkPage(page)
                 self.dumpString(page, "vcard_no_cont")
-            result['FN']=cont.find(name='div',style="overflow: hidden;").string
+            div=cont.find(name='div',style="overflow: hidden;")
+            if div:
+                result['FN']=div.string
+            else:
+                result['FN']=u""
             #FIXME 
             lc=cont
             rc=None
@@ -970,10 +974,9 @@ class vkonThread():
                         if (not ret.has_key(v_id)):
                             ret[v_id]=fe.data.encode("utf-8")
         #print "end"
-
         return ret
+
     def getWallMessages(self,v_id=0):
-        from lxml import etree
         page = self.getHttpPage("http://vkontakte.ru/wall.php?id=%s"%v_id)
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         wall=bs.find("div",id='wallpage')
