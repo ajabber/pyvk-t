@@ -262,6 +262,12 @@ class user:
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body="ERROR: captcha request.\nPlease, contact transport administrator")
             self.state=4
             return
+        except libvkontakte.authError:
+            print "ERR: wrong login/pass"
+            self.trans.sendPresence(self.trans.jid,jid,status="ERROR: login/password mismatch.",show="unavailable")
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body="ERROR: auth error.\nCheck your auth data")
+            self.state=4
+            return
         #self.lock=0
         #self.active=1
         self.state=2
@@ -438,7 +444,6 @@ class user:
         if tfeed:
             self.trans.updateFeed(self.bjid,tfeed)
         self.onlineList=self.thread.getOnlineList()
-        #TODO remove this
         if (self.tonline.keys()!=self.onlineList.keys()):
             self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
             self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))

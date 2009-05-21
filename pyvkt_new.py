@@ -79,7 +79,8 @@ class LogService(component.Service):
         #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
-
+class pyvkt_stats:
+    pass
 class pyvk_t(component.Service,vkonClient):
 
     implements(IService)
@@ -193,9 +194,25 @@ class pyvk_t(component.Service,vkonClient):
         if (v_id==-1):
             return None
         if (msg.body):
-            body=msg.body.children[0]
+            req=msg.request
+            try:
+                msgid=msg["id"]
+            except KeyError:
+                msgid=""
+            try:
+                body=msg.body.children[0]
+            except:
+                print "strange message"
+                try:
+                    print msg
+                except:
+                    print msg.encode("utf-8")
+                return
+            
             bjid=pyvkt.bareJid(msg["from"])
             if (body[0:1]=="/") and body[:4]!="/me ":
+                if (req and req.uri=='urn:xmpp:receipts'):
+                    self.msgDeliveryNotify(0,msg_id=msgid,jid=msg["from"],v_id=0,receipt=1)
                 cmd=body[1:]
                 #if (self.users.has_key(bjid) and self.users[bjid].thread and cmd=="get roster"):
                 if (cmd=="get roster"):
@@ -221,13 +238,18 @@ class pyvk_t(component.Service,vkonClient):
                 return
 
             if (body[0:1]=="#" and bjid==self.admin and msg["to"]==self.jid):
+                if (req and req.uri=='urn:xmpp:receipts'):
+                    self.msgDeliveryNotify(0,msg_id=msgid,jid=msg["from"],v_id=0,receipt=1)                
                 # admin commands
                 cmd=body[1:]
                 
                 log.msg("admin command: '%s'"%cmd)
-                if (cmd=="stop"):
+                if (cmd[:4]=="stop"):
                     self.isActive=0
-                    self.stopService(suspend=True)
+                    if (cmd=="stop"):
+                        self.stopService(suspend=True)
+                    else:
+                        self.stopService(suspend=True,msg=cmd[5:])
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
@@ -297,7 +319,6 @@ class pyvk_t(component.Service,vkonClient):
                 except:
                     log.msg("bad JID: %s"%msg["to"])
                     return
-                req=msg.request
                 if self.users[bjid].getConfig("jid_in_subject"):
                     title = "xmpp:%s"%bjid
                 else:
@@ -306,10 +327,7 @@ class pyvk_t(component.Service,vkonClient):
                     if x.name=="subject":
                         title=x.__str__()
                         break
-                try:
-                    msgid=msg["id"]
-                except KeyError:
-                    msgid=""
+
                 d=self.users[bjid].pool.defer(f=self.users[bjid].thread.sendMessage,to_id=v_id,body=body,title=title)
                 if (req and req.uri=='urn:xmpp:receipts'):
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1)
@@ -324,7 +342,10 @@ class pyvk_t(component.Service,vkonClient):
         """
         msg=domish.Element((None,"message"))
         msg["to"]=jid
-        msg["from"]="%s@%s"%(v_id,self.jid)
+        if (v_id):
+            msg["from"]="%s@%s"%(v_id,self.jid)
+        else:
+            msg["from"]=self.jid
         msg["id"]=msg_id
         if res == 0 and receipt:
             msg.addElement("received",'urn:xmpp:receipts')
@@ -531,12 +552,10 @@ class pyvk_t(component.Service,vkonClient):
                     if (query.remove):
                         qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';"%safe(pyvkt.bareJid(iq["from"])))
                         return
-                    log.msg("from %s"%pyvkt.bareJid(iq["from"]))
-                    log.msg(query.toXml())
+                    print "new user: %s"%pyvkt.bareJid(iq["from"])
                     email=""
                     pw=""
                     for i in filter(lambda x:type(x)==twisted.words.xish.domish.Element,query.children):
-                        log.msg(i)
                         if (i.name=="email"):
                             email=i.children[0]
                         if (i.name=="password"):
@@ -933,6 +952,7 @@ class pyvk_t(component.Service,vkonClient):
             print "usersOffline: no such user: %s"%jid
 
     def threadError(self,jid,err):
+        return
         if (err=="banned"):
             self.sendMessage(self.jid,jid,u"Слишком много запросов однотипных страниц.\nКонтакт частично заблокировал доступ на 10-15 минут. На всякий случай, транспорт отключается")
         elif(err=="auth"):
@@ -949,7 +969,7 @@ class pyvk_t(component.Service,vkonClient):
                 self.pubsub.updateAvatar(v_id,user)
             except:
                 print_exc()
-    def stopService(self, suspend=0):
+    def stopService(self, suspend=0,msg=None):
         #FIXME call this from different thread??
         print "stopping transport..."
         if (not suspend):
@@ -966,7 +986,10 @@ class pyvk_t(component.Service,vkonClient):
                     #self.users[bjid].thread.alive=0
                 #except:
                     #pass
-                self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+                if (msg):
+                    self.sendMessage(self.jid,u,u"Транспорт отключается.\n[%s]"%msg)
+                else:
+                    self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
                 self.sendPresence(self.jid,u,"unavailable")
                 #try:
                     #self.usersOffline(u,self.users[u].thread.onlineList)

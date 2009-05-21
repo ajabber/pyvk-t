@@ -28,7 +28,7 @@ from twisted.internet.defer import waitForDeferred
 
 from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
-import time
+import time,string
 
 
 class cmdManager:
@@ -41,8 +41,12 @@ class cmdManager:
                 "logout":logoutCmd(trans),
                 "config":setConfigCmd(trans),
                 "addnote":addNoteCmd(trans),
-                "bdays":checkBdays(trans)}
-        self.contactCmdList={"history":getHistioryCmd(trans),"wall":sendWallMessageCmd(trans),"friend":addDelFriendCmd(trans)}
+                "bdays":checkBdays(trans),
+                "getwall":getWall(trans)}
+        self.contactCmdList={"history":getHistioryCmd(trans),
+                "wall":sendWallMessageCmd(trans),
+                "friend":addDelFriendCmd(trans),
+                "getwall":getWall(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
     def makeCmdList(self,s_jid,v_id):
@@ -560,4 +564,40 @@ class checkBdays(basicCommand):
             return {"status":"completed","title":self.name,'message':u'Уведомления высланы от имени соответствующих пользоватенлей'}
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+class listCommands(basicCommand):
+    name=u"Список команд"
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)            
+    def run(self,jid,args,sessid="0",to_id=0):
+        return {"status":"completed","title":self.name,'message':u'Тут когда-нибудь будет список команд...'}
+
+class getWall(basicCommand):
+    name=u"Посмотреть стену (не рекомендуется использовать через ad-hoc)"
+    args={}
+    #args={0:"v_id"}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans)            
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=pyvkt.bareJid(jid)
+        if self.trans.hasUser(bjid):
+            user=self.trans.users[bjid]
+            print to_id
+            wm=user.thread.getWallMessages(to_id)
+            msg=u'Стена:'
+            temp={}
+            temp['text']=string.Template("$from ($v_id@$tjid) $date:\n$text")
+            temp['audio']=string.Template("$from ($v_id@$tjid) $date:\n$desc\n($link)")
+            temp['unknown']=string.Template("$from ($v_id@$tjid) $date:\n[error: cant parse]")
+            for i,m in wm:
+                try:
+                    msg="%s\n%s"%(msg,temp[m['type']].substitute(m,tjid='pyvk-t.eqx.su'))
+                except KeyError:
+                    msg="%s\n%s"%(msg,temp['unknown'].substitute(m,tjid='pyvk-t.eqx.su'))
+            return {"status":"completed","title":self.name,'message':msg}
+                    
             
+        else:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
+
+        
