@@ -960,7 +960,6 @@ class vkonThread():
                     # empty page?
                     #print "cant parse news"
                     #self.dumpString(page,"news_notfound")
-                    self.dumpString(page,"parse_news_err")
                     return {}
                 for i in cont.getElementsByTagName("div"):
                     links=i.getElementsByTagName("a")
