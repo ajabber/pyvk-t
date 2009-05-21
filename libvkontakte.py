@@ -33,13 +33,15 @@ from BeautifulSoup import BeautifulSoup,SoupStrainer
 from os import environ
 import re
 import base64
-import ConfigParser,os
+import ConfigParser,os,string
 #from BaseHTTPServer import BaseHTTPRequestHandler as http
 import xml.dom.minidom
 #import twisted.web.microdom
 #import simplejson
 from traceback import print_stack, print_exc
 #from lxml import etree
+import StringIO
+
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
@@ -72,7 +74,11 @@ class captchaError(Exception):
         pass
     def __str__(self):
         return 'got captcha request'
-
+class authError(Exception):
+    def __init__(self):
+        pass
+    def __str__(self):
+        return 'unexpected auth form'
 class vkonThread():
     oldFeed=""
     #onlineList={}
@@ -116,6 +122,10 @@ class vkonThread():
             print "features/keep_online isn't set."
             self.keep_online=None
         try:
+            self.resolve_links=config.get("features","resolve_links")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            self.resolve_links=False
+        try:
             self.cookPath=config.get("features","cookies_path")
             cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
@@ -148,7 +158,7 @@ class vkonThread():
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
                 print "ERR: got captcha request"
                 self.error=1
-                self.client.threadError(self.jid,"auth error: got captha request")
+                #self.client.threadError(self.jid,"auth error: got captha request")
                 self.alive=0
                 raise captchaError
                 return
@@ -157,8 +167,9 @@ class vkonThread():
             self.cookie=cjar.make_cookies(res,req)
             if (self.checkLoginError()!=0):
                 self.error=1
-                self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
+                #self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
                 self.alive=0
+                raise authError
             else:
                 #print "login successful."
                 if self.user.getConfig("save_cookies"):
@@ -294,7 +305,7 @@ class vkonThread():
     def dumpString(self,string,fn=""):
         if (self.dumpPath==None or self.dumpPath==''):
             return
-        fname="%s/%s-%s"%(self.dumpPath,int(time.time()),fn)
+        fname="%s/%s-%s"%(self.dumpPath,fn,int(time.time()))
         fil=open(fname,"w")
         if (type(string)==unicode):
             string=strng.encode("utf-8")
@@ -490,7 +501,8 @@ class vkonThread():
                             photo=cfile.read()
                             cfile.close()
                         except:
-                            print "can't read cache: %s"%fname
+                            pass
+                            #print "can't read cache: %s"%fname
                 if not photo:
                     photo = base64.encodestring(self.getHttpPage(photourl))
                     if photo and self.cachePath and rc!=None:
@@ -509,11 +521,35 @@ class vkonThread():
                         #ifile=open(ifpath,'w')
                         #ifile.write(imgdata)
                         #ifile.close()
-                        self.client.avatarChanged(v_id=v_id,user=self.bjid)
+                        #self.client.avatarChanged(v_id=v_id,user=self.bjid)
                 if photo:
                     result["PHOTO"]=photo
         return result
-
+    def getVcard2(self,v_id, show_avatars=0):
+        '''
+        Parsing of profile page to get info suitable to show in vcard
+        '''
+        page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
+        if not page:
+            return {"FN":""}
+        nsd={'x': 'http://www.w3.org/1999/xhtml'}
+        parser = etree.XMLParser(recover=True)
+        tree   = etree.parse(StringIO.StringIO(page), parser)
+        prof=tree.xpath('//*/x:div[@id="userProfile"]',namespaces=nsd)
+        if (len(prof)==0):
+            print "FIXME search page"
+            return None
+        prof=prof[0]
+        rc=prof.xpath('x:div[@id="rigthColumn"]',namespaces=nsd)
+        if (len(rc)==0):
+            print "FIXME deleted pages"
+            return None
+        rc=rc[0]
+        pn=rc.xpath('//*/x:div[@class="profileName"]',namespaces=nsd)
+        #result["FN"]=pg.
+        if (self.user.getConfig("resolve_nick")):
+            print "FIXME nick resolve"
+        
     def searchUsers(self, text):
         '''
         Searches 10 users using simplesearch template
@@ -902,8 +938,13 @@ class vkonThread():
             try:
                 dom = xml.dom.minidom.parseString(page)
             except Exception ,exc:
-                print "cant parse news page (%s)"%exc.message
-                self.dumpString(page,"expat_err")
+                page=''.join([c for c in page if c in string.printable])
+                try:
+                    dom = xml.dom.minidom.parseString(page)
+                except Exception ,exc:
+                    print "cant parse news page (%s)"%exc.message
+                    self.dumpString(page,"expat_err")
+                print "page fixed by character filter"
                 
             else:
                 for i in dom.getElementsByTagName("small"):
@@ -916,7 +957,9 @@ class vkonThread():
                         cont=i
                         break
                 if (not cont):
-                    print "cant parse news"
+                    # empty page?
+                    #print "cant parse news"
+                    #self.dumpString(page,"news_notfound")
                     self.dumpString(page,"parse_news_err")
                     return {}
                 for i in cont.getElementsByTagName("div"):
@@ -930,7 +973,50 @@ class vkonThread():
         #print "end"
 
         return ret
+    def getWallMessages(self,v_id=0):
+        from lxml import etree
+        page = self.getHttpPage("http://vkontakte.ru/wall.php?id=%s"%v_id)
+        bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
+        wall=bs.find("div",id='wallpage')
+        #print wall
+        ret=[]
         
+        targ=wall.findAll("div",recursive=False)[1]
+        for i in targ.findAll("div",recursive=False,id=re.compile("wPost.*")):
+            cont= i.div.table.tr.findAll("td",recursive=False)[1]
+            cd=cont.findAll("div",recursive=False)
+            v_id=cd[0].a['href'][3:]
+            pinfo={"v_id":int(v_id),"from":cd[0].a.string,"date":cd[0].small.string}
+            #print v_id
+            try:
+                ptype=cd[1].div["class"]
+                if (ptype=="audioRowWall"):
+                    ttds=cd[1].div.table.tr.findAll("td")
+                    ld=eval(ttds[0].img["onclick"][18:-1],{},{})
+                    tdata=ttds[1].findAll(text=True)
+                    if (self.resolve_links):
+                        pinfo["link"]="http://cs%s.vkontakte.ru/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
+                    else:
+                        pinfo["link"]='direct links are disabled'
+                    pinfo["type"]='audio'
+                    pinfo["desc"]="%s - %s (%s)"%(tdata[1],tdata[3],tdata[5])
+                else:
+                    pinfo["type"]='unknown'
+                    pinfo["text"]=ptype
+            except:
+                #print "simple message"
+                pinfo["type"]='text'
+                pinfo["text"]=string.join(cd[1].findAll(text=True),'\n')
+                #print pinfo
+            
+            #print pinfo
+            ret.append((i["id"][14:],pinfo))
+        #print ret[0]
+        return ret
+            #print ptype
+            #print cd[2].a['href']
+            #return
+        #print targ
         #print cont.toxml()
 #        req=urllib2.Request(url)
 #        try:
@@ -961,29 +1047,6 @@ class vkonThread():
 #                #for j in mt[0].getchildren():
 #                    #print j
 #            #print etree.tostring(tree.getroot())
-    def getVcard2(self,v_id, show_avatars=0):
-        '''
-        Parsing of profile page to get info suitable to show in vcard
-        '''
-        page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
-        if not page:
-            return {"FN":""}
-        parser = etree.XMLParser(recover=True)
-        nsd={'x': 'http://www.w3.org/1999/xhtml'}
-        tree=etree.parse(res,parser)
-        prof=tree.xpath('//*/x:div[@id="userProfile"]',namespaces=nsd)
-        if (len(prof)==0):
-            print "FIXME search page"
-            return None
-        prof=prof[0]
-        rc=prof.xpath('x:div[@id="rigthColumn"]',namespaces=nsd)
-        if (len(rc)==0):
-            print "FIXME deleted pages"
-            return None
-        rc=rc[0]
-        pn=rc.xpath('//*/x:div[@class="profileName"]',namespaces=nsd)
-        #result["FN"]=pg.
-        if (self.user.getConfig("resolve_nick")):
-            print "FIXME nick resolve"
+
 
 
