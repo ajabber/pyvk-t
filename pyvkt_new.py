@@ -66,16 +66,20 @@ class LogService(component.Service):
     A service to log incoming and outgoing xml to and from our XMPP component.
 
     """
+    packetsIn = 0
+    packetsOut = 0
     
     def transportConnected(self, xmlstream):
         xmlstream.rawDataInFn = self.rawDataIn
         xmlstream.rawDataOutFn = self.rawDataOut
 
     def rawDataIn(self, buf):
+        self.packetsIn += 1
         #log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
     def rawDataOut(self, buf):
+        self.packetsOut += 1
         #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
@@ -84,6 +88,8 @@ class pyvkt_stats:
 class pyvk_t(component.Service,vkonClient):
 
     implements(IService)
+    startTime = time.time()
+    logger=None
 
     def __init__(self):
         config = ConfigParser.ConfigParser()
@@ -253,15 +259,18 @@ class pyvk_t(component.Service,vkonClient):
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
-                elif (cmd=="stats"):
+                elif (cmd=="users"):
                     count = 0
                     ret = u''
                     for i in self.users.keys():
                         if (self.hasUser(i)):
-                            ret=ret+u"\nxmpp:%s %s"%(i,self.users[i].VkStatus)
+                            ret=ret+u"\nxmpp:%s"%(i)
                             count+=1
                     ret=u"%s user(s) online"%count + ret
                     self.sendMessage(self.jid,msg["from"],ret)
+                elif (cmd=="stats"):
+                    qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
+                    qq.addCallback(self.sendStatsMessage,msg["from"])
                 elif (cmd=="resources"):
                     count = 0
                     rcount = 0
@@ -396,7 +405,9 @@ class pyvk_t(component.Service,vkonClient):
                             q.addElement("feature")["var"]="jabber:iq:version"
                             if (self.hasUser(bjid)):
                                 q.addElement("feature")["var"]="jabber:iq:search"
+                            q.addElement("feature")["var"]="jabber:iq:last"
                             q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
+                            q.addElement("feature")["var"]='http://jabber.org/protocol/stats'
                             #q.addElement("feature")["var"]="stringprep"
                             #q.addElement("feature")["var"]="urn:xmpp:receipts"
                         else:
@@ -436,6 +447,48 @@ class pyvk_t(component.Service,vkonClient):
                     q.addElement("password")
                     ans.send()
                     return
+                elif (query.uri=="http://jabber.org/protocol/stats") and (iq["to"]==self.jid): #statistic gathering
+                    if not query.children:
+                        q.addElement("time/uptime")
+                        q.addElement("users/online")
+                        if self.logger:
+                            q.addElement("bandwidth/packets-in")
+                            q.addElement("bandwidth/packets-out")
+                    else:
+                        usersTotal = None
+                        for i in query.children:
+                            t=q.addElement("stat")
+                            t['name']=i["name"]
+                            if i["name"]=='time/uptime':
+                                t['units']='seconds'
+                                t['value']=str(int(time.time()-self.startTime))
+                            elif i["name"]=='users/online':
+                                t['units']='users'
+                                t['value']=str(len(self.users))
+                            elif i["name"]=='users/total':
+                                t['units']='users'
+                                t['value']=len(self.users)
+                                usersTotal = t
+                            elif i["name"]=="bandwidth/packets-in" and self.logger:
+                                t['units']='packets'
+                                t['value']=self.logger.packetsIn
+                            elif i["name"]=="bandwidth/packets-out" and self.logger:
+                                t['units']='packets'
+                                t['value']=self.logger.packetsOut
+                            else:
+                                e=t.addElement("error","Service Unavailable")
+                                e["code"]="503"
+                    if usersTotal:
+                        qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
+                        qq.addCallback(self.sendTotalStats,ans,usersTotal)
+                    else:
+                        ans.send()
+                    return
+                elif query.uri=="jabber:iq:last" and (iq["to"]==self.jid):
+                    q["seconds"]=str(int(time.time()-self.startTime))
+                    ans.send()
+                    return
+
                 elif (query.uri=="jabber:iq:version"):
                     q.addElement("name").addContent("pyvk-t [twisted]")
                     q.addElement("version").addContent(self.revision)
@@ -599,6 +652,24 @@ class pyvk_t(component.Service,vkonClient):
         #print iq
         self.xmlstream.send(iq)
 
+    def sendTotalStats(self,data,ans,u):
+        try:
+            t=data[0][0]
+            u["value"]=str(int(t))
+        except IndexError:
+            pass
+        ans.send()
+
+    def sendStatsMessage(self,data,to):
+        try:
+            t=data[0][0]
+            total=int(t)
+        except IndexError:
+            total=0
+            pass
+        ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut)
+        self.sendMessage(self.jid,to,ret)
+
     def register2(self,qres,jid,iq_id,success):
         #FIXME failed registration
         ans=xmlstream.IQ(self.xmlstream,"result")
@@ -616,7 +687,7 @@ class pyvk_t(component.Service,vkonClient):
         pr["to"]=jid
         pr["from"]=self.jid
         self.xmlstream.send(pr)
-        self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login дла подключения")
+        self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
 
     def sendFriendlist(self,fl,jid):
         #log.msg("fiendlist ",jid)

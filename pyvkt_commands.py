@@ -561,7 +561,7 @@ class checkBdays(basicCommand):
                                 body=u"Скоро день рождения пользователя: %s"%time.strftime("%a, %d %b",t),
                                 title=u"pyvk-t")
             #FIXME работа в конце месяца!!
-            return {"status":"completed","title":self.name,'message':u'Уведомления высланы от имени соответствующих пользоватенлей'}
+            return {"status":"completed","title":self.name,'message':u'Уведомления высланы от имени соответствующих пользователей'}
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
 class listCommands(basicCommand):

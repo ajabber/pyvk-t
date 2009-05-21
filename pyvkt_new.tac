@@ -24,10 +24,12 @@ sm = component.buildServiceManager(
 
 
 # Turn on verbose mode
-pyvkt_new.LogService().setServiceParent(sm)
+logger = pyvkt_new.LogService()
+logger.setServiceParent(sm)
 
 # set up our example Service
 s = pyvkt_new.pyvk_t()
+s.logger = logger
 s.setServiceParent(sm)
 
 sm.setServiceParent(application)
