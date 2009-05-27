@@ -27,6 +27,7 @@ import Queue
 import threading,time
 from traceback import print_stack, print_exc
 from libvkontakte import authFormError
+import pyvkt_global as pyvkt
 def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     #WARN "too fast"?
     print "deprecated deferToThreadPool"
@@ -82,6 +83,8 @@ class reqQueue(threading.Thread):
                     reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
                 except:
                     print_exc()
+            except pyvkt.noVclientError:
+                print "err: no vClient (%s)"%repr(self.user.bjid)
             except Exception, exc:
                 print "Caught exception"
                 print_exc()
@@ -111,9 +114,11 @@ class pollManager(threading.Thread):
                 if (self.trans.hasUser(u)):
                     try:
                         if(self.trans.users[u].refreshDone):
-                            self.trans.users[u].thread
+                            self.trans.users[u].vclient
                             self.trans.users[u].refreshDone=False
                             self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                    except pyvkt.noVclientError:
+                        print "user w/o client. skipping"
                     except:
                         print "GREPME: unhandled exception"
                         print_exc()

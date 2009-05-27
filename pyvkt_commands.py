@@ -337,7 +337,7 @@ class setStatusCmd(basicCommand):
         if (args.has_key("text")):
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
-                self.trans.users[bjid].thread.setStatus(args["text"])
+                self.trans.users[bjid].vclient.setStatus(args["text"])
             else:
                 #print ("done")
                 return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
@@ -382,7 +382,7 @@ class getHistioryCmd(basicCommand):
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
-        hist=self.trans.users[bjid].thread.getHistory(to_id)
+        hist=self.trans.users[bjid].vclient.getHistory(to_id)
         msg=u''
         for t,m in hist:
             msg=u'%s\n%s: %s'%(msg,t,m)
@@ -404,7 +404,7 @@ class sendWallMessageCmd(basicCommand):
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
                 #print ("sending wall message...")
-                res=self.trans.users[bjid].thread.sendWallMessage(to_id,args["text"])
+                res=self.trans.users[bjid].vclient.sendWallMessage(to_id,args["text"])
                 if res==1:
                     return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
                 elif res==2:
@@ -432,7 +432,7 @@ class addNoteCmd(basicCommand):
         if (args.has_key("text")):
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
-                res=self.trans.users[bjid].thread.addNote(args["text"],args["title"])
+                res=self.trans.users[bjid].vclient.addNote(args["text"],args["title"])
                 if res!=0:
                     return {"status":"completed","title":u"Отправка заметки",'message':u'Ошибка.'}
             else:
@@ -506,7 +506,7 @@ class addDelFriendCmd(basicCommand):
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
         
         if (len(args)!=1):
-            isFriend=self.trans.users[bjid].thread.isFriend(to_id)
+            isFriend=self.trans.users[bjid].vclient.isFriend(to_id)
             fl={"operation":("text-single",u'Операция',"")}
             if (isFriend==0):
                 st=u"друг"
@@ -525,9 +525,9 @@ class addDelFriendCmd(basicCommand):
         #TODO run in pool?
         if (args.has_key("operation")):
             if args["operation"]=='add':
-                user.thread.addDeleteFriend(to_id,1)
+                user.vclient.addDeleteFriend(to_id,1)
             elif args["operation"]=='del':
-                user.thread.addDeleteFriend(to_id,0)
+                user.vclient.addDeleteFriend(to_id,0)
             else:
                 return {"status":"completed","title":self.name,'message':u'Неизвестная операция: %s'%args["operation"]}
             return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}    
@@ -549,7 +549,7 @@ class checkBdays(basicCommand):
         bjid=pyvkt.bareJid(jid)
         if self.trans.hasUser(bjid):
             user=self.trans.users[bjid]
-            cal=user.thread.getCalendar(month=m,year=y)
+            cal=user.vclient.getCalendar(month=m,year=y)
             for i in cal:
                 if (i>d and i<d+delta):
                     for j in cal[i]:
@@ -573,7 +573,7 @@ class listCommands(basicCommand):
         return {"status":"completed","title":self.name,'message':u'Тут когда-нибудь будет список команд...'}
 
 class getWall(basicCommand):
-    name=u"Посмотреть стену (не рекомендуется использовать через ad-hoc)"
+    name=u"Посмотреть стену"
     args={}
     #args={0:"v_id"}
     def __init__(self,trans):
@@ -582,20 +582,20 @@ class getWall(basicCommand):
         bjid=pyvkt.bareJid(jid)
         if self.trans.hasUser(bjid):
             user=self.trans.users[bjid]
-            wm=user.thread.getWallMessages(to_id)
+            wm=user.vclient.getWall(to_id)
             msg=u'Стена:'
             temp={}
             temp['text']=string.Template("$from ($v_id@$tjid) $date:\n$text")
-            temp['audio']=string.Template("$from ($v_id@$tjid) $date:\n$desc\n($link)")
-            temp['graffity']=string.Template(u"$from ($v_id@$tjid) $date:\nГраффити ($link)")
-            temp['video']=string.Template(u"$from ($v_id@$tjid) $date:\nВидео:'$desc'\n($link)\nМиниатюра: $thumb")
-            temp['photo']=string.Template(u"$from ($v_id@$tjid) $date:\nФотография:'$desc'\n($link)\nМиниатюра: $thumb")
+            temp['audio']=string.Template("$from ($v_id@$tjid) $date:\n$desc\n( $dlink )")
+            temp['graffity']=string.Template(u"$from ($v_id@$tjid) $date:\nГраффити ( $dlink )")
+            temp['video']=string.Template(u"$from ($v_id@$tjid) $date:\nВидео:'$desc'\n( $link )\nМиниатюра: $thumb\nСкачать: $dlink")
+            temp['photo']=string.Template(u"$from ($v_id@$tjid) $date:\nФотография:'$desc'\n( $link )\nМиниатюра: $thumb")
             temp['unknown']=string.Template("$from ($v_id@$tjid) $date:\n[error: cant parse]")
             for i,m in wm:
                 try:
-                    msg="%s\n%s"%(msg,temp[m['type']].safe_substitute(m,tjid='pyvk-t.eqx.su'))
+                    msg="%s\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid='pyvk-t.eqx.su'))
                 except KeyError:
-                    msg="%s\n%s"%(msg,temp['unknown'].substitute(m,tjid='pyvk-t.eqx.su'))
+                    msg="%s\n- %s"%(msg,temp['unknown'].substitute(m,tjid='pyvk-t.eqx.su'))
             return {"status":"completed","title":self.name,'message':msg}
                     
             
