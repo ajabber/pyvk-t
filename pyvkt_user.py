@@ -31,7 +31,6 @@ from base64 import b64encode,b64decode
 import time
 from traceback import print_stack, print_exc
 
-
 class user:
     #lock=1
     #active=0
@@ -249,13 +248,14 @@ class user:
         jid=pyvkt.bareJid(jid)
         # TODO self.jid
         try:
-            del self.thread
+            del self.vclient
         except:
             pass
 
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
-            self.thread=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
+            #self.vclient=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
+            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self)
         except libvkontakte.captchaError:
             print "ERR: got captcha request"
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
@@ -271,8 +271,8 @@ class user:
         #self.lock=0
         #self.active=1
         self.state=2
-        #self.thread.start()
-        self.thread.feedOnly=0
+        #self.vclient.start()
+        self.vclient.feedOnly=0
         self.trans.updateStatus(self.bjid,self.VkStatus)
         
     def login(self):
@@ -351,7 +351,7 @@ class user:
         print ("login failed for %s"%self.bjid)
         print "possible database error"
         self.delThread()
-        #del self.thread
+        #del self.vclient
 
     def logout(self):
         #print "logout %s"%self.bjid
@@ -378,7 +378,7 @@ class user:
         self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
         self.contactsOffline(self.onlineList)
         try:
-            self.thread.logout()
+            self.vclient.logout()
         except:
             print_exc()
         try:
@@ -397,8 +397,8 @@ class user:
         #self.lock=0
         self.state=4
         try:
-            #self.thread.stop()
-            del self.thread
+            #self.vclient.stop()
+            del self.vclient
         except:
             pass
         try:
@@ -431,19 +431,19 @@ class user:
         if (1 and self.rosterStatusTimer):
             self.rosterStatusTimer=self.rosterStatusTimer-1
         else:
-            slist=self.thread.getStatusList()
-            self.rosterStatusTimer=15
+            slist=self.vclient.getStatusList()
+            self.rosterStatusTimer=5
             # it's about 5 munutes
             for i in slist:
                 self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
                 #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
-        #self.thread.loopIntern()
-        self.thread
-        tfeed=self.thread.getFeed()
+        #self.vclient.loopIntern()
+        self.vclient
+        tfeed=self.vclient.getFeed()
         #tfeed is epty only on some error. Just ignore it
         if tfeed:
             self.trans.updateFeed(self.bjid,tfeed)
-        self.onlineList=self.thread.getOnlineList()
+        self.onlineList=self.vclient.getOnlineList()
         if (self.tonline.keys()!=self.onlineList.keys()):
             self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
             self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
@@ -451,7 +451,7 @@ class user:
         #FIXME online status
         self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
         if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
-            self.thread.getHttpPage("http://pda.vkontakte.ru/id1")
+            self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
             self.iterationsNumber = 0
         #self.loopDone=True        
         self.refreshDone=True
@@ -463,7 +463,7 @@ class user:
             except:
                 print_exc()
                 nick=None
-            status = self.getStatus("%s@%s"%(i,self.trans.jid)).decode("utf-8")
+            status = self.getStatus("%s@%s"%(i,self.trans.jid))
             self.setName("%s@%s"%(i,self.trans.jid),nick)
             if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,nick=nick,status=status)       
@@ -507,7 +507,12 @@ class user:
             return 0
 
             #return self._active
-        #if (name=='thread'):
+        if (name=='thread'):
+            print "deprecated user.thread!"
+            print_stack(limit=2)
+            return self.vclient
+        if (name=='vclient'):
+            raise pyvkt.noVclientError(self.bjid)
         raise AttributeError("user instance without '%s'"%name)
         #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
     def __setattr__(self,name,val):
@@ -530,7 +535,6 @@ class user:
             else:
                 if self._lock: self.state==3
                 else: self.state==0
-            
             #self._active=val
         self.__dict__[name]=val
 

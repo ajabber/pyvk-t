@@ -25,7 +25,7 @@ import urllib
 import httplib
 import cookielib
 import threading
-import time
+import time,demjson
 from htmlentitydefs import name2codepoint
 from cookielib import Cookie
 from urllib import urlencode
@@ -46,17 +46,17 @@ import StringIO
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
 
-class vkonClient:
-    def updateFeed(self,jid,feed):
-        print feed
-    def usersOffline(self,jid,users):
-        print "offline",users
-    def usersOnline(self,jid,users):
-        print "online",users
-    def threadError(self,jid,message=""):
-        print "error: %s"%message
-    def avatarChanged(self,v_id):
-        print "avatar changed for id%s"%v_id
+#class vkonClient:
+    #def updateFeed(self,jid,feed):
+        #print feed
+    #def usersOffline(self,jid,users):
+        #print "offline",users
+    #def usersOnline(self,jid,users):
+        #print "online",users
+    #def threadError(self,jid,message=""):
+        #print "error: %s"%message
+    #def avatarChanged(self,v_id):
+        #print "avatar changed for id%s"%v_id
 
 
 class tooFastError(Exception):
@@ -79,7 +79,7 @@ class authError(Exception):
         pass
     def __str__(self):
         return 'unexpected auth form'
-class vkonThread():
+class client():
     oldFeed=""
     #onlineList={}
     alive=1
@@ -89,12 +89,12 @@ class vkonThread():
     iterationsNumber = 999999
     # true if there is no loopInternal's in user queue
     tonline={}
-    def __init__(self,cli,jid,email,passw,user):
+    def __init__(self,jid,email,passw,user):
         #threading.Thread.__init__(self,target=self.loop)
         #self.daemon=True
         self.alive=0
         self.user=user
-        self.client=cli
+        #self.client=cli
         self.feedOnly=1
         config = ConfigParser.ConfigParser()
         confName="pyvk-t_new.cfg"
@@ -139,7 +139,8 @@ class vkonThread():
             print "cant read cookie"
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         #cjar.clear()
-        if (self.checkLoginError()!=0):
+        self.v_id=self.getSelfId()
+        if (self.v_id==-1):
             #print "bad cookie..."
             cjar.clear()
             authData={'op':'a_login_attempt','email':email, 'pass':passw}
@@ -165,27 +166,34 @@ class vkonThread():
             # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
             # good<your_id> - success
             self.cookie=cjar.make_cookies(res,req)
-            if (self.checkLoginError()!=0):
-                self.error=1
-                #self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
-                self.alive=0
+            self.v_id=self.getSelfId()
+            if (self.v_id==-1):
                 raise authError
-            else:
+            #if (self.checkLoginError()!=0):
+                #self.error=1
+                ##self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
+                #self.alive=0
+                #raise authError
+            #else:
                 #print "login successful."
-                if self.user.getConfig("save_cookies"):
-                    try:
-                        #print "saving cookie.."
-                        cjar.save()
-                        #print "done"
-                    except:
-                        print "ERR: can't save cookie"
-                        print_exc()
-                self.error=0
-                self.alive=1
+            if self.user.getConfig("save_cookies"):
+                try:
+                    #print "saving cookie.."
+                    cjar.save()
+                    #print "done"
+                except:
+                    print "ERR: can't save cookie"
+                    print_exc()
+            self.error=0
+            self.alive=1
         else:
             #print "cookie accepted!"
             self.alive=1
             self.error=0
+        self.sid=None
+        for i in cjar:
+            if i.name=='remixsid':
+                self.sid=i.value
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
 
@@ -294,8 +302,20 @@ class vkonThread():
             #print type(i[1]['l'])
         #print "--",ret
         return ret
+    def getOnlineList2(self):
+        fl=self.userapiRequest(act='friends_online',id=self.v_id)
+        ret={}
+        for i in fl:
+            fn=i[1].split()
+            ret[i[0]]={'last':fn[1],'first':fn[0]}
+        return ret
+            
 
     def getOnlineList(self):
+        try:
+            return self.getOnlineList2()
+        except:
+            print "userapi request failed"
         ret={}
         page=self.getHttpPage("http://vkontakte.ru/friend.php","act=online&nr=1")
         if not page:
@@ -533,26 +553,8 @@ class vkonThread():
         '''
         Parsing of profile page to get info suitable to show in vcard
         '''
-        page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
-        if not page:
-            return {"FN":""}
-        nsd={'x': 'http://www.w3.org/1999/xhtml'}
-        parser = etree.XMLParser(recover=True)
-        tree   = etree.parse(StringIO.StringIO(page), parser)
-        prof=tree.xpath('//*/x:div[@id="userProfile"]',namespaces=nsd)
-        if (len(prof)==0):
-            print "FIXME search page"
-            return None
-        prof=prof[0]
-        rc=prof.xpath('x:div[@id="rigthColumn"]',namespaces=nsd)
-        if (len(rc)==0):
-            print "FIXME deleted pages"
-            return None
-        rc=rc[0]
-        pn=rc.xpath('//*/x:div[@class="profileName"]',namespaces=nsd)
-        #result["FN"]=pg.
-        if (self.user.getConfig("resolve_nick")):
-            print "FIXME nick resolve"
+        dat=self.userapiRequest(act='profile',id=v_id)
+        print dat
         
     def searchUsers(self, text):
         '''
@@ -795,8 +797,18 @@ class vkonThread():
         #print "unknown error"
         #print page
         #return -1
-
+    def getFriendList2(self):
+        fl=self.userapiRequest(act='friends',id=self.v_id)
+        ret={}
+        for i in fl:
+            fn=i[1].split()
+            ret[i[0]]={'last':fn[1],'first':fn[0]}
+        return ret
     def getFriendList(self):
+        try:
+            return getFriendList2()
+        except:
+            print "getFriendList2 failed"
         page = self.getHttpPage("http://vkontakte.ru/friend.php?nr=1")
         if not page:
             return {}
@@ -835,10 +847,16 @@ class vkonThread():
                 return 0
             return -1
 
-    def checkLoginError(self):
+    def getSelfId(self):
+        feed=self.getFeed()
+        try:
+            return feed['user']['id']
+        except:
+            pass
+        return -1
         page=self.getHttpPage("http://vkontakte.ru/feed2.php")
         if (not page):
-            return 1
+            return -1
         if (page=='{"user": {"id": -1}}' or page[0]!='{'):
             return 1
         return 0
@@ -933,6 +951,10 @@ class vkonThread():
                         print td[1]
                         return
     def getStatusList(self):
+        try:
+            return self.getStatusList2()
+        except:
+            print "userapi failed"
         ret={}
         #print "start"
         for n in [0,1,2]:
@@ -946,11 +968,20 @@ class vkonThread():
                 try:
                     dom = xml.dom.minidom.parseString(page)
                 except Exception ,exc:
-                    print "cant parse news page (%s)"%exc.message
-                    self.dumpString(page,"expat_err")
-                print "page fixed by character filter"
+                    for i in ["&#11;"]:
+                        page=page.replace(i,"")
+                    try:
+                        dom = xml.dom.minidom.parseString(page)
+                    except:
+                        print "cant parse news page (%s)"%exc.message
+                        self.dumpString(page,"expat_err")
+                        page=None
+                    else:
+                        print "fixed by filter (2)"
+                else:    
+                    print "fixed by filter (1)"
                 
-            else:
+            if (page):
                 for i in dom.getElementsByTagName("small"):
                     i.parentNode.removeChild(i)
                 dom.normalize()
@@ -975,7 +1006,16 @@ class vkonThread():
                             ret[v_id]=fe.data.encode("utf-8")
         #print "end"
         return ret
-
+    def getStatusList2(self):
+        sl=self.userapiRequest(act='updates_activity',to='50')
+        sl=sl['d']
+        sl.reverse()
+        ret={}
+        for i in sl:
+            ret[i[1]]=i[5]
+            #print ,i[4],i[5]
+        return ret
+        #print type(sl)
     def getWallMessages(self,v_id=0):
         page = self.getHttpPage("http://vkontakte.ru/wall.php?id=%s"%v_id)
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
@@ -997,9 +1037,9 @@ class vkonThread():
                     ld=eval(ttds[0].img["onclick"][18:-1],{},{})
                     tdata=ttds[1].findAll(text=True)
                     if (self.resolve_links):
-                        pinfo["link"]="http://cs%s.vkontakte.ru/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
+                        pinfo["dlink"]="http://cs%s.vkontakte.ru/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
                     else:
-                        pinfo["link"]='direct links are disabled'
+                        pinfo["dlink"]='direct links are disabled'
                     pinfo["type"]='audio'
                     pinfo["desc"]="%s - %s (%s)"%(tdata[1],tdata[3],tdata[5])
                 else:
@@ -1019,6 +1059,7 @@ class vkonThread():
                         pinfo['desc']=links[0].string
                         #print links
                         if (icon=='/images/icons/movie_icon.gif'):
+                            print cd[1].findAll('img')[1]['src']
                             pinfo["type"]='video'
                         elif(icon=='/images/icons/pic_icon.gif'):
                             pinfo["type"]='photo'
@@ -1040,6 +1081,87 @@ class vkonThread():
             ret.append((int(i["id"][14:]),pinfo))
         #print ret
         return ret
+    def getWall(self,v_id=0):
+        if (not v_id):
+            v_id=self.v_id
+        dat=self.userapiRequest(act='wall',id=v_id,to='20')
+        types=['text','photo','graffiti','video','audio']
+        ret=[]
+        for i in dat['d']:
+            try:
+                t=types[i[2][1]]
+            except IndexError:
+                t='text'
+            #print 'id',i[3][0]
+            pinfo={'type':t,'v_id':i[3][0],'from':i[3][1].replace('\t',' '),'date':time.strftime("%d.%m.%Y %H:%MZ",time.gmtime(i[1]))}
+            try:
+                pinfo['desc']=i[2][2]
+            except:
+                pass
+            if (t=='text'):
+                try:
+                    pinfo['text']=i[2][0]
+                except:
+                    pinfo['text']=""
+                pass
+                try:
+                    pinfo['text']=pinfo['text'].encode('cp1251').decode('utf-8')
+                except:
+                    pass            
+            elif (t=='audio'):
+                #del pinfo['thumb']
+                pinfo['dlink']=i[2][3]
+            elif (t=='video'):
+                pinfo['dlink']=i[2][4]
+                pinfo['thumb']=i[2][3]
+                pinfo['link']='http://vkontakte.ru/video%s_%s'%(i[2][5],i[2][6])
+                #print pinfo
+            elif (t=='graffiti'):
+                pinfo['dlink']=i[2][4]
+                pinfo['thumb']=i[2][3]
+                pinfo['link']='http://vkontakte.ru/graffiti%s?from_id=%s'%(i[2][6],i[2][5])
+            elif (t=='photo'):
+                pinfo['dlink']=i[2][4]
+                pinfo['thumb']=i[2][3]
+                pinfo['link']='http://vkontakte.ru/photo%s_%s'%(i[2][5],i[2][6])
+            if (not self.resolve_links):
+                pinfo['dlink']=u'прямые ссылки отключены админом'
+                    
+            ret.append((i[3][0],pinfo))
+        return ret
+        #print ret
+        #print dat
+    def userapiRequest(self,**kw):
+        nkw=kw
+        nkw['sid']=self.sid
+        nkw['from']='0'
+        if (not nkw.has_key('to')):
+            nkw['to']='1000'
+        url='http://userapi.com/data?'
+        for k in nkw:
+            url="%s%s=%s&"%(url,k,nkw[k])
+        #print url
+        page=self.getHttpPage(url)
+        #print page
+        if (page=='{"ok": -2}'):
+            raise captchaError
+        try:
+            page=page.decode('utf-8')
+        except:
+            try:
+                page=page.decode('cp1251')
+            except:
+                print 'something wrong with charset'
+        ret= demjson.decode(page)
+        try:
+            if (ret['ok']==-2):
+                raise captchaError
+            elif (ret['ok']==-1):
+                print 'GREPME userapi session error'
+        except (KeyError,TypeError):
+            pass
+        return ret
+        
             #print ptype
             #print cd[2].a['href']
             #return

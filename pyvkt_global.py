@@ -21,6 +21,13 @@
  ***************************************************************************/
  """
 import re, htmlentitydefs
+class noVclientError(AttributeError):
+    def __init__(self,bjid=""):
+        AttributeError(self,"user instance without vclient")
+        self.bjid=bjid
+        pass
+    def __str__(self):
+        return 'user without vclient (%s)'%bjid
 
 def bareJid(jid):
     n=jid.find("/")
