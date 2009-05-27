@@ -63,7 +63,7 @@ class user:
         self.tonline={}
         self.onlineList={}
         
-        #roster. {jid:{subscripbed:1/0, subscribe: 1/0, status: sometext, name: sometext}}
+        #roster. {jid:{subscripbed:1/0, subscribe: 1/0, status: sometext, name: sometext,avatar_url: http://urlofavatar,avatar_hash}}
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
@@ -363,7 +363,7 @@ class user:
         self.state=3
         #saving data
         try:
-            mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster)),b64encode(cPickle.dumps(self.config)),safe(self.bjid))
+            mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster,2)),b64encode(cPickle.dumps(self.config,2)),safe(self.bjid))
         except UnicodeEncodeError:
             try:
                 print "unicode error, possible bad JID: %s"%self.bjid
@@ -463,10 +463,40 @@ class user:
             except:
                 print_exc()
                 nick=None
-            status = self.getStatus("%s@%s"%(i,self.trans.jid))
-            self.setName("%s@%s"%(i,self.trans.jid),nick)
-            if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
-                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,nick=nick,status=status)       
+            bjid="%s@%s"%(i,self.trans.jid)
+            status = self.getStatus(bjid)
+            self.setName(bjid,nick)
+            if "avatar_url" in self.onlineList[i]:#we know about avatar
+                if not ("avatar_url" in self.roster[bjid] and self.onlineList[i]["avatar_url"]==self.roster[bjid]["avatar_url"]):
+                    if "avatar_url" in self.roster[bjid] and self.roster[bjid]["avatar_url"]:
+                        print self.roster[bjid]["avatar_url"], self.onlineList[i]["avatar_url"]
+                    self.roster[bjid]["avatar_url"]=self.onlineList[i]["avatar_url"]
+                    if self.roster[bjid]["avatar_url"]:
+                        self.roster[bjid]["avatar_hash"]="nohash"
+                        #FIXME get hash
+                        d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
+                        if self.getConfig("vcard_avatar") and self.trans.show_avatars:
+                            d.addCallback(self.avatarHashCalculated,v_id=i)
+                    else:
+                        self.roster[bjid]["avatar_hash"]=u""
+            if not "avatar_url" in self.onlineList[i] and not "avatar_hash" in self.roster[bjid]:
+                self.roster[bjid]["avatar_hash"]="nohash"
+
+            if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed(bjid)):
+                if self.getConfig("vcard_avatar") and self.trans.show_avatars and ("avatar_hash" in self.roster[bjid]):
+                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=self.roster[bjid]["avatar_hash"])       
+                else:
+                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status)       
+
+    def avatarHashCalculated(self,data,v_id):
+        if not data: return
+        bjid="%s@%s"%(v_id,self.trans.jid)
+        self.roster[bjid]["avatar_hash"]=data[1]
+        if v_id in self.onlineList:
+            status = self.getStatus(bjid)
+            nick = self.getName(bjid)
+            self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=data[1])       
+
     def contactsOffline(self,contacts,force=0):
         """ 
         send 'offline' presence

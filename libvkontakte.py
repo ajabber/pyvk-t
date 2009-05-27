@@ -22,25 +22,28 @@
  """
 import urllib2
 import urllib
-import httplib
-import cookielib
-import threading
-import time,demjson
-from htmlentitydefs import name2codepoint
-from cookielib import Cookie
 from urllib import urlencode
+import httplib
+#from BaseHTTPServer import BaseHTTPRequestHandler as http
+import demjson
+import cookielib
+from cookielib import Cookie
+from htmlentitydefs import name2codepoint
 from BeautifulSoup import BeautifulSoup,SoupStrainer
+import xml.dom.minidom
+#import twisted.web.microdom
+#import simplejson
+#from lxml import etree
+
+#import threading
+import time
+import hashlib
 from os import environ
 import re
 import base64
 import ConfigParser,os,string
-#from BaseHTTPServer import BaseHTTPRequestHandler as http
-import xml.dom.minidom
-#import twisted.web.microdom
-#import simplejson
 from traceback import print_stack, print_exc
-#from lxml import etree
-import StringIO
+#import StringIO
 
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
@@ -307,7 +310,10 @@ class client():
         ret={}
         for i in fl:
             fn=i[1].split()
-            ret[i[0]]={'last':fn[1],'first':fn[0]}
+            if i[2]!="images/question_a.gif" and  i[2]!="images/question_b.gif":
+                ret[i[0]]={'last':fn[1],'first':fn[0],'avatar_url':i[2]}
+            else:
+                ret[i[0]]={'last':fn[1],'first':fn[0],'avatar_url':u""}
         return ret
             
 
@@ -315,7 +321,7 @@ class client():
         try:
             return self.getOnlineList2()
         except:
-            print "userapi request failed"
+            print "getOnlineList: userapi request failed"
         ret={}
         page=self.getHttpPage("http://vkontakte.ru/friend.php","act=online&nr=1")
         if not page:
@@ -511,43 +517,44 @@ class client():
             photourl=lc.find(name="img")['src']
             #if user has no avatar we wont process it
             if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif":
-                fpath=''
-                photo=None
-                if (self.cachePath):
-                    pos=photourl.find(".ru/u")
-                    #TODO don't save avatars from "search"
-                    if (pos!=-1):
-                        fname=photourl[pos+4:].replace("/","_")
-                        fpath="%s/avatar-%s"%(self.cachePath,fname)
-                        ifpath="%s/img-avatar-%s"%(self.cachePath,fname)
-                        try:
-                            cfile=open(fpath,"r")
-                            photo=cfile.read()
-                            cfile.close()
-                        except:
-                            pass
-                            #print "can't read cache: %s"%fname
-                if not photo:
-                    photo = base64.encodestring(self.getHttpPage(photourl))
-                    if photo and self.cachePath and rc!=None:
-                        #FIXME check for old avatars
-                        fn="avatar-u%s"%v_id
-                        fn2="img-avatar-u%s"%v_id
-                        l=len(fn)
-                        l2=len(fn)
-                        fname=None
-                        for i in os.listdir(self.cachePath):
-                            if (i[:l]==fn or i[:l2]==fn2):
-                                os.unlink("%s/%s"%(self.cachePath,i))
-                        cfile=open(fpath,'w')
-                        cfile.write(photo)
-                        cfile.close()
-                        #ifile=open(ifpath,'w')
-                        #ifile.write(imgdata)
-                        #ifile.close()
-                        #self.client.avatarChanged(v_id=v_id,user=self.bjid)
-                if photo:
-                    result["PHOTO"]=photo
+                result["PHOTO"] = photourl
+                #    fpath=''
+                #    photo=None
+                #    if (self.cachePath):
+                #        pos=photourl.find(".ru/u")
+                #        #TODO don't save avatars from "search"
+                #        if (pos!=-1):
+                #            fname=photourl[pos+4:].replace("/","_")
+                #            fpath="%s/avatar-%s"%(self.cachePath,fname)
+                #            ifpath="%s/img-avatar-%s"%(self.cachePath,fname)
+                #            try:
+                #                cfile=open(fpath,"r")
+                #                photo=cfile.read()
+                #                cfile.close()
+                #            except:
+                #                pass
+                #                #print "can't read cache: %s"%fname
+                #    if not photo:
+                #        photo = base64.encodestring(self.getHttpPage(photourl))
+                #        if photo and self.cachePath and rc!=None:
+                #            #FIXME check for old avatars
+                #            fn="avatar-u%s"%v_id
+                #            fn2="img-avatar-u%s"%v_id
+                #            l=len(fn)
+                #            l2=len(fn)
+                #            fname=None
+                #            for i in os.listdir(self.cachePath):
+                #                if (i[:l]==fn or i[:l2]==fn2):
+                #                    os.unlink("%s/%s"%(self.cachePath,i))
+                #            cfile=open(fpath,'w')
+                #            cfile.write(photo)
+                #            cfile.close()
+                #            #ifile=open(ifpath,'w')
+                #            #ifile.write(imgdata)
+                #            #ifile.close()
+                #            #self.client.avatarChanged(v_id=v_id,user=self.bjid)
+                #    if photo:
+                #        result["PHOTO"]=photo
         return result
     def getVcard2(self,v_id, show_avatars=0):
         '''
@@ -555,6 +562,51 @@ class client():
         '''
         dat=self.userapiRequest(act='profile',id=v_id)
         print dat
+
+    def getAvatar(self,photourl,v_id,gen_hash=0):
+        """returns avatar and its hash if asked. Downloads photo if not in cache"""
+        if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif" and photourl[:7]=="http://":
+            fpath=''
+            photo=None
+            if (self.cachePath):
+                pos=photourl.find(".ru/u")
+                #TODO don't save avatars from "search"
+                if (pos!=-1):
+                    fname=photourl[pos+4:].replace("/","_")
+                    fpath="%s/avatar-%s"%(self.cachePath,fname)
+                    ifpath="%s/img-avatar-%s"%(self.cachePath,fname)
+                    try:
+                        cfile=open(fpath,"r")
+                        photo=cfile.read()
+                        cfile.close()
+                        if gen_hash:
+                            hash=hashlib.sha1(base64.decodestring(photo)).hexdigest()
+                    except:
+                        pass
+                        #print "can't read cache: %s"%fname
+            if not photo:
+                picture=self.getHttpPage(photourl)
+                photo = base64.encodestring(picture)
+                if gen_hash:
+                    hash=hashlib.sha1(picture).hexdigest()
+                if photo and self.cachePath:
+                    #FIXME check for old avatars
+                    fn="avatar-u%s"%v_id
+                    fn2="img-avatar-u%s"%v_id
+                    l=len(fn)
+                    l2=len(fn)
+                    fname=None
+                    for i in os.listdir(self.cachePath):
+                        if (i[:l]==fn or i[:l2]==fn2):
+                            os.unlink("%s/%s"%(self.cachePath,i))
+                    cfile=open(fpath,'w')
+                    cfile.write(photo)
+                    cfile.close()
+            if gen_hash:
+                return photo,hash
+            else:
+                return photo
+        return 
         
     def searchUsers(self, text):
         '''
@@ -776,13 +828,14 @@ class client():
         #print data
         page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
         if not page:
+            print "Sending message: HTTP Error"
             return 1
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
             return 0
         elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
-            print "too fast sending messages"
+            print "Sending message: too fast sending messages"
             return 2
-        print "unknown error"
+        print "Sending message: unknown error"
         return -1
         #return
         #if not page:
@@ -954,7 +1007,7 @@ class client():
         try:
             return self.getStatusList2()
         except:
-            print "userapi failed"
+            print "getStatusList: userapi request failed"
         ret={}
         #print "start"
         for n in [0,1,2]:
@@ -1157,7 +1210,7 @@ class client():
             if (ret['ok']==-2):
                 raise captchaError
             elif (ret['ok']==-1):
-                print 'GREPME userapi session error'
+                print 'userapiRequest: GREPME userapi session error'
         except (KeyError,TypeError):
             pass
         return ret

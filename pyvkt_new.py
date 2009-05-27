@@ -219,9 +219,9 @@ class pyvk_t(component.Service):
             if (body[0:1]=="/") and body[:4]!="/me ":
                 if (req and req.uri=='urn:xmpp:receipts'):
                     self.msgDeliveryNotify(0,msg_id=msgid,jid=msg["from"],v_id=0,receipt=1)
-                cmd=body[1:]
+                cmd=body[1:].rstrip()
                 #if (self.users.has_key(bjid) and self.users[bjid].vclient and cmd=="get roster"):
-                if (cmd[:10]=="get roster"):
+                if (cmd=="get roster"):
                     if (self.hasUser(bjid)):
                         d=self.users[bjid].pool.defer(self.users[bjid].vclient.getFriendList)
                         d.addCallback(self.sendFriendlist,jid=bjid)
@@ -292,7 +292,7 @@ class pyvk_t(component.Service):
                     ret=u'Ростер %s:\n'%j
                     if self.hasUser(j):
                         ret = ret + u'\tКоличество контактов: %s\n'%len(self.users[j].roster)
-                        ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster)))
+                        ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster,2)))
                     else:
                         ret = u'Пользователь %s не в сети, можете посмотреть его ростер в базе'%j
                     self.sendMessage(self.jid,msg["from"],ret)
@@ -445,10 +445,8 @@ class pyvk_t(component.Service):
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:register"):
-                    q.addElement("instructions").addContent(u"Введите email и пароль, используемые на vkontakte.ru")
-                    q.addElement("email")
-                    q.addElement("password")
-                    ans.send()
+                    qq=self.dbpool.runQuery("SELECT email FROM users where jid='%s';"%bjid)
+                    qq.addCallback(self.sendRegistrationForm,ans,q)
                     return
                 elif (query.uri=="http://jabber.org/protocol/stats") and (iq["to"]==self.jid): #statistic gathering
                     usersTotal = None
@@ -519,37 +517,37 @@ class pyvk_t(component.Service):
                     text['var']='text'
                     ans.send()
                     return
-                elif (query.uri=="jabber:iq:avatar"):
-                    #FIXME deferred XEP-0008, need to implement avatars via PEP
-                    print "avatar request"
-                    v_id=pyvkt.jidToId(iq["to"])
-                    if (self.cachePath):
-                        if (self.hasUser(bjid)):
-                            fn="avatar-u%s"%v_id
-                            l=len(fn)
-                            fname=None
-                            for i in os.listdir(self.cachePath):
-                                if (i[:l]==fn):
-                                    fname=i
-                            if(fname):
-                                f=open("%s/%s"%(self.cachePath,fname))
-                                d=q.addElement("data")
-                                d["mimetype"]="image/jpeg"
-                                d.addContent(f.read())
-                                f.close()
-                                ans.send()
-                                return
-                            else:
-                                #FIXME another way to get avatars
-                                pass
-                                #self.users[bjid].pool.call(elf.users[bjid].vclient.getVcard(v_id))
-                        else:
-                            #TODO error stranza
-                            print "not logged in"
-                    else:
-                        print "no cache"
-                        pass
-                        #TODO return default avatar
+                #elif (query.uri=="jabber:iq:avatar"):
+                #    #FIXME deferred XEP-0008, need to implement avatars via PEP
+                #    print "avatar request"
+                #    v_id=pyvkt.jidToId(iq["to"])
+                #    if (self.cachePath):
+                #        if (self.hasUser(bjid)):
+                #            fn="avatar-u%s"%v_id
+                #            l=len(fn)
+                #            fname=None
+                #            for i in os.listdir(self.cachePath):
+                #                if (i[:l]==fn):
+                #                    fname=i
+                #            if(fname):
+                #                f=open("%s/%s"%(self.cachePath,fname))
+                #                d=q.addElement("data")
+                #                d["mimetype"]="image/jpeg"
+                #                d.addContent(f.read())
+                #                f.close()
+                #                ans.send()
+                #                return
+                #            else:
+                #                #FIXME another way to get avatars
+                #                pass
+                #                #self.users[bjid].pool.call(elf.users[bjid].vclient.getVcard(v_id))
+                #        else:
+                #            #TODO error stranza
+                #            print "not logged in"
+                #    else:
+                #        print "no cache"
+                #        pass
+                #        #TODO return default avatar
             vcard=iq.vCard
             if (vcard):
                 dogpos=iq["to"].find("@")
@@ -668,7 +666,25 @@ class pyvk_t(component.Service):
         #print iq
         self.xmlstream.send(iq)
 
+    def sendRegistrationForm(self,data,ans,q):
+        """Sends registration form with old email if registered before
+           'ans' parameter is stanza to be sent,
+           'q' - is query child of ans
+        """
+        q.addElement("instructions").addContent(u"Введите email и пароль, используемые на vkontakte.ru")
+        email=q.addElement("email")
+        try:
+            email.addContent(data[0][0])
+            q.addElement("registered")
+        except KeyError:
+            pass
+        except IndexError:
+            pass
+        q.addElement("password")
+        ans.send()
+
     def sendTotalStats(self,data,ans,u):
+        """send service stats as iq"""
         try:
             t=data[0][0]
             u["value"]=str(int(t))
@@ -867,10 +883,25 @@ class pyvk_t(component.Service):
                 tel.addElement("CELL")
                 tel.addElement("NUMBER").addContent(card[u"Моб. телефон:"])
             #avatar
-            if card.has_key(u'PHOTO') and self.show_avatars:
+            if self.show_avatars:
+                #TODO roster 
+                try:
+                    oldurl=self.users[jid].roster[ans["from"]]["avatar_url"]
+                    oldhash=self.users[jid].roster[ans["from"]]["avatar_hash"]
+                except KeyError:
+                    oldurl=u''
+                    oldhash=u"nohash"
+                except IndexError:
+                    oldurl=u""
+                    oldhash="nohash"
+                if oldhash=="nohash":
+                    p,self.users[bjid].roster[ans["from"]]["avatar_hash"]=self.users[bjid].vclient.getAvatar(card[u"PHOTO"],v_id,1)
+                    self.users[bjid].roster[ans["from"]]["avatar_url"]=card["PHOTO"]
+                else:
+                    p=self.vclient.getAvatar(old_url,v_id)
                 photo=vc.addElement(u"PHOTO")
                 photo.addElement("TYPE").addContent("image/jpeg")
-                photo.addElement("BINVAL").addContent(card[u"PHOTO"].replace("\n",""))
+                photo.addElement("BINVAL").addContent(p.replace("\n",""))
             #adress
             if card.has_key(u'Город:'):
                 vc.addElement(u"ADR").addElement("LOCALITY").addContent(card[u"Город:"])
@@ -1106,7 +1137,7 @@ class pyvk_t(component.Service):
 
     def saveConfig(self,bjid):
         try:
-            pcs=b64encode(cPickle.dumps(self.users[bjid].config))
+            pcs=b64encode(cPickle.dumps(self.users[bjid].config,2))
         except KeyError:
             print "keyError"
             return -1
@@ -1146,15 +1177,13 @@ class pyvk_t(component.Service):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
-        #try:
         pr["to"]=dest
-        #except:
-            #log.msg("sendPresence: possible charset error")
-            #pr["to"]=dest
         pr["from"]=src
         if(show):
             pr.addElement("show").addContent(show)
+        #FIXME ver is not version
         pr["ver"]=self.revision
+        #status
         if(status):
             if (type(status)==unicode):
                 pr.addElement("status").addContent(status)
@@ -1162,31 +1191,44 @@ class pyvk_t(component.Service):
                 #non-unicode status >>> FIXME
                 pr.addElement("status").addContent(status.decode('utf-8'))
         pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
+        #nick
         if (nick):
             pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
+        #avatar
+        if avatar!=None:#vcard based avatar
+            x=pr.addElement("x")
+            x["xmlns"]="vcard-temp:x:update"
+            if avatar:#some avatar, possibly not ready
+                if avatar!="nohash":#got hash
+                    x.addElement("photo").addContent(avatar)
+                else:#no hash ready
+                    pass
+            else:#empty avatar
+                x.addElement("photo")
+                pass
         #FIXME!!!
-        if(0 and t==None and src!=self.jid):
-            try:
-                bjid=pyvkt.bareJid(dest)
-                v_id=pyvkt.jidToId(src)
-                if (bjid==self.admin and self.cachePath):
-                    fn="img-avatar-u%s"%v_id
-                    l=len(fn)
-                    fname=None
-                    for i in os.listdir(self.cachePath):
-                        if (i[:l]==fn):
-                            fname=i
-                    if(fname):
-                        f=open("%s/%s"%(self.cachePath,fname))
-                        hsh=sha.new(f.read()).hexdigest()
-                        f.close()
-                        pr.addElement("x",'jabber:x:avatar').addElement("hash").addContent(hsh)
-                        print "hash added"
-                    else:
-                        print "requesting avatar..."
-                        self.users[bjid].pool.call(self.users[bjid].vclient.getVcard,v_id=v_id,show_avatars=1)
-            except:
-                print_exc()
+        #if(0 and t==None and src!=self.jid):
+        #    try:
+        #        bjid=pyvkt.bareJid(dest)
+        #        v_id=pyvkt.jidToId(src)
+        #        if (bjid==self.admin and self.cachePath):
+        #            fn="img-avatar-u%s"%v_id
+        #            l=len(fn)
+        #            fname=None
+        #            for i in os.listdir(self.cachePath):
+        #                if (i[:l]==fn):
+        #                    fname=i
+        #            if(fname):
+        #                f=open("%s/%s"%(self.cachePath,fname))
+        #                hsh=sha.new(f.read()).hexdigest()
+        #                f.close()
+        #                pr.addElement("x",'jabber:x:avatar').addElement("hash").addContent(hsh)
+        #                print "hash added"
+        #            else:
+        #                print "requesting avatar..."
+        #                self.users[bjid].pool.call(self.users[bjid].vclient.getVcard,v_id=v_id,show_avatars=1)
+        #    except:
+        #        print_exc()
         try:
             self.xmlstream.send(pr)
         except UnicodeDecodeError:
