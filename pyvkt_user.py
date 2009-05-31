@@ -468,19 +468,18 @@ class user:
             self.setName(bjid,nick)
             if "avatar_url" in self.onlineList[i]:#we know about avatar
                 if not ("avatar_url" in self.roster[bjid] and self.onlineList[i]["avatar_url"]==self.roster[bjid]["avatar_url"]):
-                    if "avatar_url" in self.roster[bjid] and self.roster[bjid]["avatar_url"]:
-                        print self.roster[bjid]["avatar_url"], self.onlineList[i]["avatar_url"]
                     self.roster[bjid]["avatar_url"]=self.onlineList[i]["avatar_url"]
                     if self.roster[bjid]["avatar_url"]:
                         self.roster[bjid]["avatar_hash"]="nohash"
-                        #FIXME get hash
-                        d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
-                        if self.getConfig("vcard_avatar") and self.trans.show_avatars:
-                            d.addCallback(self.avatarHashCalculated,v_id=i)
-                    else:
+                    else:#no avatar -> no hash needed
                         self.roster[bjid]["avatar_hash"]=u""
-            if not "avatar_url" in self.onlineList[i] and not "avatar_hash" in self.roster[bjid]:
+            if not "avatar_url" in self.onlineList[i] or not "avatar_hash" in self.roster[bjid]:
                 self.roster[bjid]["avatar_hash"]="nohash"
+            #if no hash yet update it
+            if self.getConfig("vcard_avatar") and self.trans.show_avatars and self.roster[bjid]["avatar_hash"]=="nohash":
+                print "contactsOnline: getAvatar"
+                d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
+                d.addCallback(self.avatarHashCalculated,v_id=i)
 
             if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed(bjid)):
                 if self.getConfig("vcard_avatar") and self.trans.show_avatars and ("avatar_hash" in self.roster[bjid]):
@@ -489,13 +488,15 @@ class user:
                     self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status)       
 
     def avatarHashCalculated(self,data,v_id):
+        """saves hash of avatar previously calculated in getAvatar funcrion"""
         if not data: return
         bjid="%s@%s"%(v_id,self.trans.jid)
         self.roster[bjid]["avatar_hash"]=data[1]
-        if v_id in self.onlineList:
-            status = self.getStatus(bjid)
-            nick = self.getName(bjid)
-            self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=data[1])       
+        if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed(bjid)):
+            if v_id in self.onlineList:
+                status = self.getStatus(bjid)
+                nick = self.getName(bjid)
+                self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=data[1])       
 
     def contactsOffline(self,contacts,force=0):
         """ 
