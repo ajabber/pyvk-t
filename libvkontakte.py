@@ -492,6 +492,9 @@ class client():
                     result['GIVEN']=list[1].strip()
                     result['NICKNAME']=list[2].strip()
                     result['FAMILY']=list[3].strip()
+        else:
+            result["NICKNAME"]=result["FN"]
+            del result["FN"]
         #now parsing additional user data
         #there are several tables
         try:
@@ -512,12 +515,13 @@ class client():
                             result[unicode(label.string)] = string
         except:
             print "cannot parse user data"
+        #FIXME avatars!!!
         #avatars are asked only if needed
-        if lc and show_avatars and self.user.getConfig("vcard_avatar"):
-            photourl=lc.find(name="img")['src']
-            #if user has no avatar we wont process it
-            if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif":
-                result["PHOTO"] = photourl
+        #if lc and show_avatars and self.user.getConfig("vcard_avatar"):
+        #    photourl=lc.find(name="img")['src']
+        #    #if user has no avatar we wont process it
+        #    if photourl!="images/question_a.gif" and  photourl!="images/question_b.gif":
+        #        result["PHOTO"] = photourl
                 #    fpath=''
                 #    photo=None
                 #    if (self.cachePath):
@@ -606,6 +610,7 @@ class client():
                 return photo,hash
             else:
                 return photo
+        print "getAvatar: No avatars (%s,%s)"%(photourl,v_id)
         return 
         
     def searchUsers(self, text):
@@ -1056,7 +1061,7 @@ class client():
                     del links[0]
                     if (not len(links)):
                         if (not ret.has_key(v_id)):
-                            ret[v_id]=fe.data.encode("utf-8")
+                            ret[v_id]=pyvkt.unescape(fe.data.encode("utf-8"))
         #print "end"
         return ret
     def getStatusList2(self):

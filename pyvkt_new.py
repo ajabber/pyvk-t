@@ -75,12 +75,12 @@ class LogService(component.Service):
 
     def rawDataIn(self, buf):
         self.packetsIn += 1
-#        log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        #log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
     def rawDataOut(self, buf):
         self.packetsOut += 1
-#        log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
+        #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
 class pyvkt_stats:
@@ -885,23 +885,41 @@ class pyvk_t(component.Service):
             #avatar
             if self.show_avatars:
                 #TODO roster 
-                try:
-                    oldurl=self.users[jid].roster[ans["from"]]["avatar_url"]
-                    oldhash=self.users[jid].roster[ans["from"]]["avatar_hash"]
-                except KeyError:
-                    oldurl=u''
-                    oldhash=u"nohash"
-                except IndexError:
-                    oldurl=u""
-                    oldhash="nohash"
-                if oldhash=="nohash":
-                    p,self.users[bjid].roster[ans["from"]]["avatar_hash"]=self.users[bjid].vclient.getAvatar(card[u"PHOTO"],v_id,1)
-                    self.users[bjid].roster[ans["from"]]["avatar_url"]=card["PHOTO"]
-                else:
-                    p=self.vclient.getAvatar(old_url,v_id)
-                photo=vc.addElement(u"PHOTO")
-                photo.addElement("TYPE").addContent("image/jpeg")
-                photo.addElement("BINVAL").addContent(p.replace("\n",""))
+                p=None
+                if ans["from"] in self.users[bjid].roster:
+                    if not self.users[bjid].roster[ans["from"]]:
+                        self.users[bjid].roster[ans["from"]]={}
+                    try:
+                        oldurl=self.users[bjid].roster[ans["from"]]["avatar_url"]
+                    except KeyError:
+                        oldurl=u''
+                    try:
+                        oldhash=self.users[jid].roster[ans["from"]]["avatar_hash"]
+                    except KeyError:
+                        oldhash=u"nohash"
+                    if "PHOTO" in card and card["PHOTO"]!=oldurl:
+                        self.users[bjid].roster[ans["from"]]["avatar_url"]=card["PHOTO"]
+                        print "card['PHOTO']=%s"%card["PHOTO"]
+                        oldurl=card["PHOTO"]
+                        if card["PHOTO"]:
+                            oldhash="nohash"
+                        else:
+                            oldhash=""
+                            self.users[bjid].roster[ans["from"]]["avatar_hash"]=""
+                    if oldhash=="nohash" and oldurl:
+                        h=self.users[bjid].vclient.getAvatar(oldurl,v_id,1)
+                        if h:
+                            p,self.users[bjid].roster[ans["from"]]["avatar_hash"]=h
+                        else:
+                            print "Error: no avatar"
+                    elif oldurl:
+                        p=self.users[bjid].vclient.getAvatar(oldurl,v_id)
+                elif "PHOTO" in card:
+                    p=self.vclient.getAvatar(card["PHOTO"],v_id)
+                if p:
+                    photo=vc.addElement(u"PHOTO")
+                    photo.addElement("TYPE").addContent("image/jpeg")
+                    photo.addElement("BINVAL").addContent(p.replace("\n",""))
             #adress
             if card.has_key(u'Город:'):
                 vc.addElement(u"ADR").addElement("LOCALITY").addContent(card[u"Город:"])
@@ -1181,8 +1199,6 @@ class pyvk_t(component.Service):
         pr["from"]=src
         if(show):
             pr.addElement("show").addContent(show)
-        #FIXME ver is not version
-        pr["ver"]=self.revision
         #status
         if(status):
             if (type(status)==unicode):
@@ -1190,22 +1206,24 @@ class pyvk_t(component.Service):
             else:
                 #non-unicode status >>> FIXME
                 pr.addElement("status").addContent(status.decode('utf-8'))
-        pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
-        #nick
-        if (nick):
-            pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
-        #avatar
-        if avatar!=None:#vcard based avatar
-            x=pr.addElement("x")
-            x["xmlns"]="vcard-temp:x:update"
-            if avatar:#some avatar, possibly not ready
-                if avatar!="nohash":#got hash
-                    x.addElement("photo").addContent(avatar)
-                else:#no hash ready
+        #if contact goes offline we should not send extra information to supress traffic
+        if (t!="unavailable"):
+            pr.addElement("c","http://jabber.org/protocol/caps").attributes={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision}
+            #nick
+            if (nick):
+                pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
+            #avatar
+            if avatar!=None:#vcard based avatar
+                x=pr.addElement("x")
+                x["xmlns"]="vcard-temp:x:update"
+                if avatar:#some avatar, possibly not ready
+                    if avatar!="nohash":#got hash
+                        x.addElement("photo").addContent(avatar)
+                    else:#no hash ready
+                        pass
+                else:#empty avatar
+                    x.addElement("photo")
                     pass
-            else:#empty avatar
-                x.addElement("photo")
-                pass
         #FIXME!!!
         #if(0 and t==None and src!=self.jid):
         #    try:

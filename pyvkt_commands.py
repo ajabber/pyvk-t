@@ -202,11 +202,18 @@ class cmdManager:
         #TODO check namespace
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
-                try:
-                    ret[f['var']]=f.value.children[0]
-                except:
-                    ret[f['var']]=""
-                    print_exc()
+                ret[f["var"]]=""
+                data=0
+                for v in f.children:
+                    if type(v)!=unicode and v.name=="value":
+                        if v.children:
+                            if data:
+                                ret[f['var']]+=u'\n'+v.children[0]
+                            else:
+                                ret[f['var']]=v.children[0]
+                        elif data:
+                            ret[f["var"]]+='\n'
+                    data=1#some data already found
         #print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
