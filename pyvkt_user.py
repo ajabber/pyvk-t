@@ -477,7 +477,7 @@ class user:
                 self.roster[bjid]["avatar_hash"]="nohash"
             #if no hash yet update it
             if self.getConfig("vcard_avatar") and self.trans.show_avatars and self.roster[bjid]["avatar_hash"]=="nohash":
-                print "contactsOnline: getAvatar"
+                #print "contactsOnline: getAvatar"
                 d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
                 d.addCallback(self.avatarHashCalculated,v_id=i)
 

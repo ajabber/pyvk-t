@@ -204,6 +204,7 @@ class cmdManager:
             if (type(f)!=unicode and f.name=='field'):
                 ret[f["var"]]=""
                 data=0
+                #TODO check types
                 for v in f.children:
                     if type(v)!=unicode and v.name=="value":
                         if v.children:
