@@ -17,19 +17,19 @@ db: dbname
 [features]
 #отображение аватарок. Раcкомментируйте для включения
 #avatars: true
-#sync_status: true
+sync_status: true
 #путь к кэшу аватарок. Раскомментируйте, чтобы включить.
 #cache_path: ./cache
 #управление ростером
-#roster_management: true
+roster_management: true
 #поповещения о новых группах и прочем сообщением
-#feed_notify: true
+feed_notify: true
 #поддерживать статус online (экспериментально)
 #keep_online: true
 #сохранять cookies в указаный катало
-#cookies_path: ./cookies
+cookies_path: ./cookies
 #высылать прямые ссылки на аудио/видео
-#resolve_links: true
+resolve_links: true
 
 [debug]
 #Путь для сохранения страниц, вызвавших ошибки. Оставьте пустым или закомментируйте для отключения.

@@ -24,6 +24,7 @@ import urllib2
 import urllib
 from urllib import urlencode
 import httplib
+import pyvkt_global as pyvkt
 #from BaseHTTPServer import BaseHTTPRequestHandler as http
 import demjson
 import cookielib
@@ -610,7 +611,7 @@ class client():
                 return photo,hash
             else:
                 return photo
-        print "getAvatar: No avatars (%s,%s)"%(photourl,v_id)
+        #print "getAvatar: No avatars (%s,%s)"%(photourl,v_id)
         return 
         
     def searchUsers(self, text):
@@ -659,7 +660,7 @@ class client():
                     else:
                         result[i['id'][4:]]["matches"]=u''
         except:
-            print "wrong page format"
+            print "SearchUsers: wrong page format"
             self.dumpString(page,"search_wrong_format")
             return None
         return result
@@ -776,7 +777,7 @@ class client():
             bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
             chas=bs.find(name="input",attrs={"name":"chas"})["value"]
         except:
-            print "unknown error.. saving page.."
+            print "SendMessage_legacy: unknown error.. saving page.."
             self.dumpString(page,"send_chas")
         if (type(body)==unicode):
             tbody=body.encode("utf-8")

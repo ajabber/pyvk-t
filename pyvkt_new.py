@@ -259,6 +259,8 @@ class pyvk_t(component.Service):
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
+                    qq=self.dbpool.runQuery("SELECT jid FROM users;")
+                    qq.addCallback(self.sendProbes,msg["from"])
                 elif (cmd=="users"):
                     count = 0
                     ret = u''
@@ -702,6 +704,19 @@ class pyvk_t(component.Service):
         ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut)
         self.sendMessage(self.jid,to,ret)
 
+    def sendProbes(self,data,to):
+        n=0
+        for i in data:
+            try:
+                t=i[0]
+                if t and not self.hasUser(t):
+                    self.sendPresence(self.jid,t,t="probe")
+                    n+=1
+            except IndexError:
+                pass
+        ret=u"%s запросов отправлено. Пользователей всего - %s"%(n,len(data))
+        self.sendMessage(self.jid,to,ret)
+
     def register2(self,qres,jid,iq_id,success):
         #FIXME failed registration
         ans=xmlstream.IQ(self.xmlstream,"result")
@@ -993,6 +1008,8 @@ class pyvk_t(component.Service):
         """
         Act on the presence stanza that has just been received.
         """
+        if not prs.hasAttribute("from"):
+            return
         bjid=pyvkt.bareJid(prs["from"])
         if(prs.hasAttribute("type")):
             if prs["type"]=="unavailable" and self.hasUser(bjid) and (prs["to"]==self.jid or self.users[bjid].subscribed(prs["to"]) or not self.roster_management):
