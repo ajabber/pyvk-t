@@ -214,7 +214,7 @@ class cmdManager:
                                 ret[f['var']]=v.children[0]
                         elif data:
                             ret[f["var"]]+='\n'
-                    data=1#some data already found
+                        data=1#some data already found
         #print "got ",ret
         return ret
     def onDiscoInfo(self,iq):

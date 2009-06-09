@@ -128,7 +128,7 @@ class user:
             self.roster[bjid]={"subscribe":0,"subscribed":0,"name":name,'status':''}
 
     def askSubscibtion(self, bjid,nick=None):
-        """just ask for subscribtion if needed"""
+        """just ask for subscribtion if needed and returns if requested"""
         if not bjid in self.roster:
             self.roster[bjid]={"subscribe":0,"subscribed":0}
         if not nick:
@@ -137,6 +137,8 @@ class user:
             self.roster[bjid]["name"]=nick
         if 1 or not self.subscribed(bjid):
             self.trans.sendPresence(bjid,self.bjid,"subscribe",nick=nick)
+            return 1
+        return 0
 
     def subscribe(self,bjid):
         """ answer on subscription request """
