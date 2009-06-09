@@ -142,6 +142,10 @@ class pyvk_t(component.Service):
         except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
             print "features/cache_path isn't set. disabling cache"
             self.cachePath=None
+        try:
+            self.cookPath=config.get("features","cookies_path")
+        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
+            print "features/cookies_path isn't set."
         #try:
         #if config.has_option("features","pubsub_avatars"):
             #self.pubsub=pubsub.pubsubMgr(self)
@@ -344,17 +348,22 @@ class pyvk_t(component.Service):
                     body = body + u"\n--------\n" + s
                 d=self.users[bjid].pool.defer(f=self.users[bjid].vclient.sendMessage,to_id=v_id,body=body,title=title)
                 if (req and req.uri=='urn:xmpp:receipts'):
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1)
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,receipt=1,body=body,subject=title)
                 else:
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id)
+                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,body=body,subject=title)
                 d.addErrback(self.errorback)
 
-    def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0):
+    def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
         """
         Send delivery notification if message successfully sent
         use receipt flag if needed to send receipt
         """
         msg=domish.Element((None,"message"))
+        #if res!=0:
+        #    if body:
+        #        msg.addElement("body").addContent(body)
+        #    if subject:
+        #        msg.addElement("subject").addContent(subject)
         msg["to"]=jid
         if (v_id):
             msg["from"]="%s@%s"%(v_id,self.jid)
@@ -368,14 +377,16 @@ class pyvk_t(component.Service):
         elif res == 2:
             err = msg.addElement("error")
             err.attributes["type"]="wait"
-            err.attributes["code"]="400"
-            err.addElement("unexpected-request","urn:ietf:params:xml:ns:xmpp-stanzas")
+            err.attributes["code"]="500"
+            err.addElement("resource-constraint","urn:ietf:params:xml:ns:xmpp-stanzas")
             err.addElement("too-many-stanzas","urn:xmpp:errors")
+            err.addElement("text","urn:ietf:params:xml:ns:xmpp-stanzas").addContent(u"Слишком часто посылаете сообщения. Подождите немного.")
         else:
             err = msg.addElement("error")
             err.attributes["type"]="cancel"
             err.attributes["code"]="500"
             err.addElement("undefined-condition","urn:ietf:params:xml:ns:xmpp-stanzas")
+            err.addElement("text","urn:ietf:params:xml:ns:xmpp-stanzas").addContent(u"Капча на сайте или ошибка сервера")
 
         self.xmlstream.send(msg)
 
@@ -712,6 +723,7 @@ class pyvk_t(component.Service):
                 if t and not self.hasUser(t):
                     self.sendPresence(self.jid,t,t="probe")
                     n+=1
+                    time.sleep(0.02)
             except IndexError:
                 pass
         ret=u"%s запросов отправлено. Пользователей всего - %s"%(n,len(data))
@@ -719,34 +731,41 @@ class pyvk_t(component.Service):
 
     def register2(self,qres,jid,iq_id,success):
         #FIXME failed registration
+        os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
         ans=xmlstream.IQ(self.xmlstream,"result")
         ans["to"]=jid
         ans["from"]=self.jid
         ans["id"]=iq_id
         ans.send()
-        pr=domish.Element(('',"presence"))
-        pr["type"]="subscribe"
-        pr["to"]=jid
-        pr["from"]=self.jid
-        self.xmlstream.send(pr)
-        pr=domish.Element(('',"presence"))
-        pr["type"]="subscribed"
-        pr["to"]=jid
-        pr["from"]=self.jid
-        self.xmlstream.send(pr)
+        self.sendPresence(self.jid,jid,"subscribe")
+        self.sendPresence(self.jid,jid,"subscribed")
+        #pr=domish.Element(('',"presence"))
+        #pr["type"]="subscribe"
+        #pr["to"]=jid
+        #pr["from"]=self.jid
+        #self.xmlstream.send(pr)
+        #pr=domish.Element(('',"presence"))
+        #pr["type"]="subscribed"
+        #pr["to"]=jid
+        #pr["from"]=self.jid
+        #self.xmlstream.send(pr)
         self.sendMessage(self.jid,jid,u"/get roster для получения списка\n/login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
 
     def sendFriendlist(self,fl,jid):
         #log.msg("fiendlist ",jid)
         #log.msg(fl)
         bjid=pyvkt.bareJid(jid)
+        n=0
         if self.hasUser(bjid):
             for f in fl:
                 src="%s@%s"%(f,self.jid)
-                self.users[bjid].askSubscibtion(src,nick=u"%s %s"%(fl[f]["first"],fl[f]["last"]))
+                x=self.users[bjid].askSubscibtion(src,nick=u"%s %s"%(fl[f]["first"],fl[f]["last"]))
+                if x: 
+                    n+=1
             #self.sendPresence(src,jid,"subscribed")
             #self.sendPresence(src,jid,"subscribe")
             #return
+            self.sendMessage(self.jid,jid,u"Отправлены запросы авторизации.")
         return
 
     def getSearchResult(self,jid,q,iq_id):
