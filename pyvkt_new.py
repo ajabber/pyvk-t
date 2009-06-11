@@ -731,7 +731,10 @@ class pyvk_t(component.Service):
 
     def register2(self,qres,jid,iq_id,success):
         #FIXME failed registration
-        os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
+        try:
+            os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
+        except OSError:
+            pass
         ans=xmlstream.IQ(self.xmlstream,"result")
         ans["to"]=jid
         ans["from"]=self.jid
