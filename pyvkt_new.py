@@ -272,6 +272,7 @@ class pyvk_t(component.Service):
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
+                elif (cmd=="sendprobes"):
                     threads.deferToThread(self.sendProbes,msg["from"])
 
                 elif (cmd=="users"):
@@ -507,7 +508,7 @@ class pyvk_t(component.Service):
                     if not query.children:
                         q.addElement("stat")["name"] = "time/uptime"
                         q.addElement("stat")["name"] = "users/online"
-                        q.addElement("stat")["name"] = "users/total"
+                        #q.addElement("stat")["name"] = "users/total"
                         if self.logger:
                             q.addElement("stat")["name"] = "bandwidth/packets-in"
                             q.addElement("stat")["name"] = "bandwidth/packets-out"
