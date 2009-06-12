@@ -102,27 +102,48 @@ class reqQueue(threading.Thread):
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
+        self.watchdog=int(time.time())
         self.daemon=True
         threading.Thread.__init__(self,target=self.loop,name="Poll Manager")
         self.alive=1
         self.trans=trans
     def loop(self):
+        pollInterval=15
+        groupsNum=3
+        currGroup=0
+        self.freeze=False
         while (self.alive):
             #print "poll", len(self.trans.users.keys()), 'user(s)'
-            for u in self.trans.users.keys():
-                #print "poll for %s"%u
-                if (self.trans.hasUser(u)):
-                    try:
-                        if(self.trans.users[u].refreshDone):
-                            self.trans.users[u].vclient
-                            self.trans.users[u].refreshDone=False
-                            self.trans.users[u].pool.call(self.trans.users[u].refreshData)
-                    except pyvkt.noVclientError:
-                        print "user w/o client. skipping"
-                    except:
-                        print "GREPME: unhandled exception"
-                        print_exc()
-            time.sleep(15)
+            delta=int(time.time())-self.watchdog
+            #print 'out traffic %sK'%(self.trans.logger.bytesOut/1024)
+            if (delta>150):
+                print 'freeze detected!\nupdates temporary disabled'
+                print 'users online: %s'%len(self.trans.users)
+                if (delta>300):
+                    print 'critical freeze. shutting down'
+                    self.trans.stopService()
+                    self.alive=0
+            else:
+                for u in self.trans.users.keys():
+                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
+                        try:
+                            if(self.trans.users[u].refreshDone):
+                                self.trans.users[u].vclient
+                                self.trans.users[u].refreshDone=False
+                                self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                        except pyvkt.noVclientError:
+                            print "user w/o client. skipping"
+                        except:
+                            print "GREPME: unhandled exception"
+                            print_exc()
+            #print delta
+            if (currGroup==0):
+                #print 'echo sent'
+                self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='%s'%int(time.time()))
+            #print "cg",currGroup
+            currGroup +=1
+            currGroup=currGroup%groupsNum
+            time.sleep(5)
         print "pollManager stopped"
     def stop(self):
         self.alive=0

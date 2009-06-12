@@ -21,10 +21,7 @@
  ***************************************************************************/
  """
 #TODO clean up this import hell!!
-import platform
-import time
 import twisted
-from twisted.words.protocols.jabber import jid, xmlstream
 from twisted.application import internet, service
 from twisted.internet import interfaces, defer, reactor,threads
 from twisted.python import log
@@ -32,25 +29,20 @@ from twisted.words.xish import domish
 from twisted.words.protocols.jabber.xmlstream import IQ
 from twisted.enterprise import adbapi 
 from twisted.enterprise.adbapi import safe 
-
 from twisted.words.protocols.jabber.ijabber import IService
-from twisted.words.protocols.jabber import component,xmlstream
+from twisted.words.protocols.jabber import component,xmlstream,jid
+
 from base64 import b64encode,b64decode
-from libvkontakte import *
 from zope.interface import Interface, implements
-import ConfigParser
-from twisted.internet import defer
-from twisted.python.threadpool import ThreadPool
-import sys,os,cPickle,sha
 from base64 import b64encode,b64decode
-import pyvkt_commands
+from traceback import print_stack, print_exc
+import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
+
 from pyvkt_user import user
 import pyvkt_global as pyvkt
-#import pyvkt_pubsub as pubsub
-import pyvkt_user
-from traceback import print_stack, print_exc
+import pyvkt_user,pyvkt_commands
+from libvkontakte import *
 from pyvkt_spikes import pollManager
-import threading
 
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
@@ -68,6 +60,8 @@ class LogService(component.Service):
     """
     packetsIn = 0
     packetsOut = 0
+    bytesIn = 0
+    bytesOut = 0
     
     def transportConnected(self, xmlstream):
         xmlstream.rawDataInFn = self.rawDataIn
@@ -75,16 +69,23 @@ class LogService(component.Service):
 
     def rawDataIn(self, buf):
         self.packetsIn += 1
+        try:
+            self.bytesIn += len(buf)
+        except:
+            pass
         #log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
     def rawDataOut(self, buf):
         self.packetsOut += 1
+        try:
+            self.bytesOut += len(buf)
+        except:
+            pass
+
         #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
 
-class pyvkt_stats:
-    pass
 class pyvk_t(component.Service):
 
     implements(IService)
@@ -97,6 +98,7 @@ class pyvk_t(component.Service):
         if(os.environ.has_key("PYVKT_CONFIG")):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
+        self.httpIn = 0
         dbmodule=config.get("database","module") 
         if dbmodule=="MySQLdb":
             self.dbpool = adbapi.ConnectionPool(
@@ -129,6 +131,11 @@ class pyvk_t(component.Service):
             self.show_avatars = config.getboolean("features","avatars")
         else:
             self.show_avatars = 0
+        if config.has_option("features","datadir"):
+            self.datadir = config.get("features","datadir")
+        else:
+            print "you have to set features/datadir in your config file and convert yur DB to new format using #convertdb command"
+            raise Exception
         if config.has_option("features","roster_management"):
             self.roster_management = config.getboolean("features","roster_management")
         else:
@@ -172,6 +179,7 @@ class pyvk_t(component.Service):
         self.pollMgr=pollManager(self)
         
         self.unregisteredList=[]
+        signal.signal(signal.SIGUSR1,self.signalHandler)
 
     def componentConnected(self, xmlstream):
         """
@@ -186,10 +194,11 @@ class pyvk_t(component.Service):
         xmlstream.addObserver('/iq', self.onIq, 1)
         #xmlstream.addOnetimeObserver('/iq/vCard', self.onVcard, 2)
         xmlstream.addObserver('/message', self.onMessage, 1)
-        try:
+        if (self.pollMgr.isAlive()):
+            print "reconnect happened"
+        else:
             self.pollMgr.start()
-        except:
-            print_exc()
+            
         print "component ready!"
 
     def onMessage(self, msg):
@@ -263,8 +272,8 @@ class pyvk_t(component.Service):
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
                 elif (cmd=="start"):
                     self.isActive=1
-                    qq=self.dbpool.runQuery("SELECT jid FROM users;")
-                    qq.addCallback(self.sendProbes,msg["from"])
+                    threads.deferToThread(self.sendProbes,msg["from"])
+
                 elif (cmd=="users"):
                     count = 0
                     ret = u''
@@ -275,8 +284,9 @@ class pyvk_t(component.Service):
                     ret=u"%s user(s) online"%count + ret
                     self.sendMessage(self.jid,msg["from"],ret)
                 elif (cmd=="stats"):
-                    qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
-                    qq.addCallback(self.sendStatsMessage,msg["from"])
+                    #TODO async request
+                    self.sendStatsMessage(msg['from'])
+
                 elif (cmd=="resources"):
                     count = 0
                     rcount = 0
@@ -309,21 +319,17 @@ class pyvk_t(component.Service):
                             #print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
                         except:
                             pass
-                elif(cmd=="reload"):
-                    # for development only!!!
-                    try:
-                        reload(pubsub)
-                        reload(pyvkt)
-                        reload(pyvkt_user)
-                    except:
-                        print_exc()
-                        self.sendMessage(self.jid,msg["from"],"sigfart")
-                    else:
-                        self.sendMessage(self.jid,msg["from"],"OK")
                 elif (cmd[:4]=="wall"):
                     for i in self.users:
                         self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
+                elif (cmd=='convertdb'):
+                    print "convertdb request\nstopping transport..."
+                    self.stopService(suspend=True)
+                    qq=self.dbpool.runQuery("SELECT * FROM users;")
+                    qq.addCallback(self.convertDb)
+                    #print repr(ulist)
+                    
                 else:
                     self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
                 return
@@ -352,6 +358,40 @@ class pyvk_t(component.Service):
                 else:
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,body=body,subject=title)
                 d.addErrback(self.errorback)
+            if (msg["to"]==self.jid and msg["from"]==self.jid):
+                print 'got echo t=',body
+                try:
+                    self.pollMgr.watchdog=int(body)
+                except:
+                    print_exc()
+    def convertDb(self,ulist):
+        print "got user list"
+        print "length: ",len(ulist)
+        cnt=0
+        woep=0
+        ad=0
+        for i in ulist:
+            bjid=i[0]
+            print "jid: ",repr(bjid),
+            u=user(self,bjid,noLoop=True)
+            try:
+                u.readData()
+                print "already in new format. skipping"
+                ad+=1
+            except:
+                u.parseDbData([i])
+                if (u.email and u.password):
+                    print repr(u.password)
+                    u.saveData()
+                    print "done"
+                    cnt +=1
+                else:
+                    print "user w/o email or pass. skipping"
+                    woep+=1
+        print "total: ",len(ulist)
+        print "converted:",cnt
+        print "skipped (already done):",ad
+        print "skipped (no email/pass):",woep
 
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
         """
@@ -416,7 +456,8 @@ class pyvk_t(component.Service):
                     elif(node==''):
                         if (iq["to"]==self.jid):
                             q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":"Vkontakte.ru transport [pyvk-t]"}
-                            q.addElement("feature")["var"]="jabber:iq:register"
+                            if (self.isActive):
+                                q.addElement("feature")["var"]="jabber:iq:register"
                             q.addElement("feature")["var"]="jabber:iq:gateway"
                             q.addElement("feature")["var"]="jabber:iq:version"
                             if (self.hasUser(bjid)):
@@ -458,8 +499,8 @@ class pyvk_t(component.Service):
                     ans.send()
                     return
                 elif (query.uri=="jabber:iq:register"):
-                    qq=self.dbpool.runQuery("SELECT email FROM users where jid='%s';"%bjid)
-                    qq.addCallback(self.sendRegistrationForm,ans,q)
+                    #TODO asynchronous?
+                    self.sendRegistrationForm(ans,q)
                     return
                 elif (query.uri=="http://jabber.org/protocol/stats") and (iq["to"]==self.jid): #statistic gathering
                     usersTotal = None
@@ -472,6 +513,9 @@ class pyvk_t(component.Service):
                             q.addElement("stat")["name"] = "bandwidth/packets-out"
                     else:
                         for i in query.children:
+                            #print type(i)
+                            if (type(i)==unicode):
+                                continue
                             t=q.addElement("stat")
                             t['name']=i["name"]
                             if i["name"]=='time/uptime':
@@ -480,10 +524,10 @@ class pyvk_t(component.Service):
                             elif i["name"]=='users/online':
                                 t['units']='users'
                                 t['value']=str(len(self.users))
-                            elif i["name"]=='users/total':
-                                t['units']='users'
-                                t['value']=len(self.users)
-                                usersTotal = t
+                            #elif i["name"]=='users/total':
+                                #t['units']='users'
+                                #t['value']=len(self.users)
+                                #usersTotal = t
                             elif i["name"]=="bandwidth/packets-in" and self.logger:
                                 t['units']='packets'
                                 t['value']= str(self.logger.packetsIn)
@@ -493,11 +537,13 @@ class pyvk_t(component.Service):
                             else:
                                 e=t.addElement("error","Service Unavailable")
                                 e["code"]="503"
-                    if usersTotal:
-                        qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
-                        qq.addCallback(self.sendTotalStats,ans,usersTotal)
-                    else:
-                        ans.send()
+                    #if usersTotal:
+                        #qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
+                        #qq.addCallback(self.sendTotalStats,ans,usersTotal)
+                    #else:
+                    #self.sendTotlalStats()
+                    ans.send()
+                    #print ans
                     return
                 elif query.uri=="jabber:iq:last" and (iq["to"]==self.jid):
                     q["seconds"]=str(int(time.time()-self.startTime))
@@ -530,37 +576,6 @@ class pyvk_t(component.Service):
                     text['var']='text'
                     ans.send()
                     return
-                #elif (query.uri=="jabber:iq:avatar"):
-                #    #FIXME deferred XEP-0008, need to implement avatars via PEP
-                #    print "avatar request"
-                #    v_id=pyvkt.jidToId(iq["to"])
-                #    if (self.cachePath):
-                #        if (self.hasUser(bjid)):
-                #            fn="avatar-u%s"%v_id
-                #            l=len(fn)
-                #            fname=None
-                #            for i in os.listdir(self.cachePath):
-                #                if (i[:l]==fn):
-                #                    fname=i
-                #            if(fname):
-                #                f=open("%s/%s"%(self.cachePath,fname))
-                #                d=q.addElement("data")
-                #                d["mimetype"]="image/jpeg"
-                #                d.addContent(f.read())
-                #                f.close()
-                #                ans.send()
-                #                return
-                #            else:
-                #                #FIXME another way to get avatars
-                #                pass
-                #                #self.users[bjid].pool.call(elf.users[bjid].vclient.getVcard(v_id))
-                #        else:
-                #            #TODO error stranza
-                #            print "not logged in"
-                #    else:
-                #        print "no cache"
-                #        pass
-                #        #TODO return default avatar
             vcard=iq.vCard
             if (vcard):
                 dogpos=iq["to"].find("@")
@@ -617,8 +632,9 @@ class pyvk_t(component.Service):
             query=iq.query
             if (query):
                 if (query.uri=="jabber:iq:register"):
+                    bjid=pyvkt.bareJid(iq["from"])
                     if (query.remove):
-                        qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';"%safe(pyvkt.bareJid(iq["from"])))
+                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
                         return
                     print "new user: %s"%pyvkt.bareJid(iq["from"])
                     email=""
@@ -640,11 +656,18 @@ class pyvk_t(component.Service):
                                 # TODO error stranza
                                 print "fixme: error stranza"
                                 return
-                    #qq=self.dbpool.runQuery("DELETE FROM users WHERE jid='%s';INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s');"%
-                    qq=self.dbpool.runQuery("INSERT INTO users (jid,email,pass) VALUES ('%s','%s','%s') ON DUPLICATE KEY UPDATE email='%s', pass='%s';"%
-                        (safe(pyvkt.bareJid(iq["from"])),safe(email),safe(pw),safe(email),safe(pw)))
-                    qq.addCallback(self.register2,jid=iq["from"],iq_id=iq["id"],success=1)
-                    qq.addErrback(self.errorback)
+                    #FIXME asynchronous!!
+                    u=user(self,pyvkt.bareJid(iq["from"]))
+                    try:
+                        u.readData()
+                    except:
+                        print_exc()
+                        print "cant read data. possible new user"
+                        u.config={}
+                    u.email=email
+                    u.password=pw
+                    u.saveData()
+                    self.register2(bjid,iq['id'])
                     return
                 if (query.uri=="jabber:iq:gateway"):
                     for prompt in query.elements():
@@ -679,20 +702,25 @@ class pyvk_t(component.Service):
         #print iq
         self.xmlstream.send(iq)
 
-    def sendRegistrationForm(self,data,ans,q):
+    def sendRegistrationForm(self,ans,q):
         """Sends registration form with old email if registered before
            'ans' parameter is stanza to be sent,
            'q' - is query child of ans
         """
         q.addElement("instructions").addContent(u"Введите email и пароль, используемые на vkontakte.ru")
         email=q.addElement("email")
+        u=user(self,ans['to'],noLoop=True)
         try:
-            email.addContent(data[0][0])
+            u.readData()
+            email.addContent(u.email)
             q.addElement("registered")
-        except KeyError:
-            pass
-        except IndexError:
-            pass
+        except IOError, err:
+            if (err.errno==2):
+                pass
+            else:
+                print_exc()
+        except:
+            print_exc()
         q.addElement("password")
         ans.send()
 
@@ -705,31 +733,36 @@ class pyvk_t(component.Service):
             pass
         ans.send()
 
-    def sendStatsMessage(self,data,to):
-        try:
-            t=data[0][0]
-            total=int(t)
-        except IndexError:
-            total=0
-            pass
-        ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut)
+    def sendStatsMessage(self,to):
+        total=0
+        #FIXME
+        ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов\nxmpp траффик %sK/%sK"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut,self.logger.bytesIn/1024,self.logger.bytesOut/1024)
         self.sendMessage(self.jid,to,ret)
-
-    def sendProbes(self,data,to):
+    def getUserList(self):
+        ret=[]
+        for i in os.listdir(self.datadir):
+            dn=self.datadir+'/'+i
+            if (os.path.isdir(dn)):
+                for u in os.listdir(dn):
+                    ret.append(u)
+        return ret
+        
+    def sendProbes(self,to):
         n=0
-        for i in data:
-            try:
-                t=i[0]
-                if t and not self.hasUser(t):
-                    self.sendPresence(self.jid,t,t="probe")
-                    n+=1
-                    time.sleep(0.02)
-            except IndexError:
-                pass
-        ret=u"%s запросов отправлено. Пользователей всего - %s"%(n,len(data))
-        self.sendMessage(self.jid,to,ret)
+        ulist=self.getUserList()
+        for u in ulist:
+            if not self.hasUser(u):
+                self.sendPresence(self.jid,u,t="probe",sepThread=True)
+                print repr(u)
+                n+=1
+                time.sleep(0.1)
+        print "sendprobes done"
+        ret=u"%s запросов отправлено. Пользователей всего - %s"%(n,len(ulist))
+        #print ret.encode('utf-8')
+        
+        self.sendMessage(self.jid,to,ret,sepThread=True)
 
-    def register2(self,qres,jid,iq_id,success):
+    def register2(self,jid,iq_id,success=0):
         #FIXME failed registration
         try:
             os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
@@ -1005,7 +1038,10 @@ class pyvk_t(component.Service):
                     self.users[bjid].pool.stop()
                 except:
                     pass
-                del self.users[bjid]
+                try:
+                    del self.users[bjid]
+                except:
+                    print_exc()
             return 0
         return 0
     def addResource(self,jid,prs=None):
@@ -1085,7 +1121,16 @@ class pyvk_t(component.Service):
                     for i in feed[j]["items"]:
                         if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             if pyvkt.feedInfo[j]["url"]:
-                                gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" [ "+pyvkt.feedInfo[j]["url"]%i + " ]"
+                                try:
+                                    gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" [ "+pyvkt.feedInfo[j]["url"]%i + " ]"
+                                except TypeError:
+                                    print_exc()
+                                    print repr(feed)
+                                    print 'j:',j,'i:',i
+                                    try:
+                                        print 'feed[j]\n',repr(feed[j])
+                                    except:
+                                        pass
                             gc+=1
                     if gc:
                         if pyvkt.feedInfo[j]["url"]:
@@ -1102,29 +1147,6 @@ class pyvk_t(component.Service):
             except KeyError:
                 pass
         self.users[jid].feed = feed
-
-    def usersOnline(self,jid,users):
-        #FIXME not thread-safe!!
-        print "deprecated pyvkt.uonline"
-        print_stack(limit=2)
-        # need to call sendPresence from reactor thread!
-        bjid=pyvkt.bareJid(jid)
-        if (self.hasUser(bjid)):
-            self.users[bjid].contactsOnline(jid,users)
-        else:
-            print "usersOnline: no such user: %s"%jid
-
-    def usersOffline(self,jid,users,force=0):
-        print "deprecated pyvkt.uoffline"
-        print_stack(limit=2)
-
-        #FIXME not thread-safe!!
-        bjid=pyvkt.bareJid(jid)
-        
-        if (self.hasUser(bjid)):
-            self.users[bjid].contactsOffline(jid,users)
-        else:
-            print "usersOffline: no such user: %s"%jid
 
     def threadError(self,jid,err):
         return
@@ -1184,7 +1206,10 @@ class pyvk_t(component.Service):
         defer.waitForDeferred(deflist)
         print "done\ndeleting user objects"
         for i in self.users.keys():
-            del self.users[i]
+            try:
+                del self.users[i]
+            except:
+                pass
         if (len(threading.enumerate())):
             print "warning: some threads are still alive"
             print threading.enumerate()
@@ -1192,18 +1217,7 @@ class pyvk_t(component.Service):
             print "done"
         return None
 
-    def saveConfig(self,bjid):
-        try:
-            pcs=b64encode(cPickle.dumps(self.users[bjid].config,2))
-        except KeyError:
-            print "keyError"
-            return -1
-        q="UPDATE users SET config = '%s' WHERE jid = '%s';"%(safe(pcs),safe(bjid))
-        print q
-        qq=self.dbpool.runQuery(q)
-        return 0
-
-    def sendMessage(self,src,dest,body,title=None):
+    def sendMessage(self,src,dest,body,title=None,sepThread=False):
         msg=domish.Element((None,"message"))
         #try:
             #msg["to"]=dest.encode("utf-8")
@@ -1221,7 +1235,10 @@ class pyvk_t(component.Service):
         #FIXME "id"???
         try:
             
-            self.xmlstream.send(msg)
+            if (0 and sepThread):
+                reactor.callFromThread(self.xmlstream.send,msg)
+            else:
+                self.xmlstream.send(msg)            
         except UnicodeDecodeError:
             #FIXME user notify
             log.msg("unicode bug@sendMessage")
@@ -1230,10 +1247,14 @@ class pyvk_t(component.Service):
             except:
                 pass
             pass
-    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None, nick=None,avatar=None):
+    def sendPresence(self,src,dest,t=None,extra=None,status=None,show=None, nick=None,avatar=None,sepThread=False):
         pr=domish.Element((None,"presence"))
         if (t):
             pr["type"]=t
+        try:
+            dest=dest.decode('utf-8')
+        except:
+            pass
         pr["to"]=dest
         pr["from"]=src
         if(show):
@@ -1251,6 +1272,11 @@ class pyvk_t(component.Service):
             #nick
             if (nick):
                 pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
+                if (type(nick)==unicode):
+                    pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick)
+                else:
+                    #non-unicode status >>> FIXME
+                    pr.addElement("nick",'http://jabber.org/protocol/nick').addContent(nick.decode('utf-8'))
             #avatar
             if avatar!=None:#vcard based avatar
                 x=pr.addElement("x")
@@ -1263,31 +1289,11 @@ class pyvk_t(component.Service):
                 else:#empty avatar
                     x.addElement("photo")
                     pass
-        #FIXME!!!
-        #if(0 and t==None and src!=self.jid):
-        #    try:
-        #        bjid=pyvkt.bareJid(dest)
-        #        v_id=pyvkt.jidToId(src)
-        #        if (bjid==self.admin and self.cachePath):
-        #            fn="img-avatar-u%s"%v_id
-        #            l=len(fn)
-        #            fname=None
-        #            for i in os.listdir(self.cachePath):
-        #                if (i[:l]==fn):
-        #                    fname=i
-        #            if(fname):
-        #                f=open("%s/%s"%(self.cachePath,fname))
-        #                hsh=sha.new(f.read()).hexdigest()
-        #                f.close()
-        #                pr.addElement("x",'jabber:x:avatar').addElement("hash").addContent(hsh)
-        #                print "hash added"
-        #            else:
-        #                print "requesting avatar..."
-        #                self.users[bjid].pool.call(self.users[bjid].vclient.getVcard,v_id=v_id,show_avatars=1)
-        #    except:
-        #        print_exc()
         try:
-            self.xmlstream.send(pr)
+            if (0 and sepThread):
+                reactor.callFromThread(self.xmlstream.send,pr)
+            else:
+                self.xmlstream.send(pr)
         except UnicodeDecodeError:
             log.msg("unicode bug@sendPresence")
             print_exc()
@@ -1296,7 +1302,18 @@ class pyvk_t(component.Service):
             except:
                 pass
             pass
-
+    #def sendRosterItems(self,items,dest,act='modify')
+        #msg=domish.Element((None,"message"))
+        ##try:
+            ##msg["to"]=dest.encode("utf-8")
+        ##except:
+            ##log.msg("sendMessage: possible charset error")
+        #msg["to"]=dest
+        #msg["from"]=self.jid
+        #r=msg.addElement(x,'http://jabber.org/protocol/rosterx')
+        #for v_id,nick in items:
+            #r.addElement(item).attributes={'action'=act,jid="%s@%s"%(v_id,self.jid),name=nick}
+        #self.xmlstream.send(msg)
     def __del__(self):
         print "stopping service..."
         self.stopService()
@@ -1306,5 +1323,9 @@ class pyvk_t(component.Service):
     def errorback(self,err):
         print "ERR: error in deferred: %s (%s)"%(err.type,err.getErrorMessage)
         err.printTraceback()
+    def signalHandler(self,sig,frame):
+        if (sig==signal.SIGUSR1):
+            print "caught SIGTUSR1, stopping transport"
+            self.stopService()
 
 

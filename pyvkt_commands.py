@@ -34,7 +34,7 @@ import time,string
 class cmdManager:
     def __init__(self,trans):
         self.trans=trans
-        self.cmdList={"echo":echoCmd(trans),'setstatus':setStatusCmd(trans)}
+        self.globalCmdList={"echo":echoCmd(trans),'list':listCommands(trans)}
         self.transportCmdList={"echo":echoCmd(trans),
                 'setstatus':setStatusCmd(trans),
                 "login":loginCmd(trans),
@@ -53,6 +53,9 @@ class cmdManager:
         ret={}
         bjid=pyvkt.bareJid(s_jid)
         #print bjid,v_id
+        for i in self.globalCmdList:
+            ret[i]=self.globalCmdList[i]
+
         if (v_id==0):
             for i in self.transportCmdList:
                 ret[i]=self.transportCmdList[i]
@@ -74,8 +77,6 @@ class cmdManager:
         else:
             args=text[cl+1:].split(",")
             node=text[:cl]
-        if (node=='list'):
-            return repr(cmdList.keys())
         ret="command: '%s', args: %s"%(node,repr(args))
         if (cmdList.has_key(node)):
             cmd=cmdList[node]
@@ -479,6 +480,9 @@ class setConfigCmd(basicCommand):
                         user.config[i]=args[i]=="1"
                     else:
                         user.config[i]=args[i]
+                else:
+                    print "WTF!"
+            print user.config
             nc=str(user.config)
             show_onlines = user.getConfig("show_onlines")
             #if show_onlines flag changed hide or show online contacts
@@ -486,7 +490,8 @@ class setConfigCmd(basicCommand):
                 user.contactsOffline(user.onlineList,force=1)
             if not show_onlines_old and show_onlines:
                 user.contactsOnline(user.onlineList)
-            self.trans.saveConfig(bjid)
+            user.saveData()
+            #self.trans.saveConfig(bjid)
             #except KeyError:
                 #print "keyError"
                 #nc="[void]"
@@ -573,12 +578,17 @@ class checkBdays(basicCommand):
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
 class listCommands(basicCommand):
-    name=u"Список команд"
+    name=u"Список доступных команд"
     args={}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)            
     def run(self,jid,args,sessid="0",to_id=0):
-        return {"status":"completed","title":self.name,'message':u'Тут когда-нибудь будет список команд...'}
+        cl=self.trans.commands.makeCmdList(jid,to_id)
+        msg=u''
+        print "list cmd"
+        for i in sorted(cl.keys()):
+            msg=u"%s'/%s' - %s\n"%(msg,i,cl[i].name)
+        return {"status":"completed","title":self.name,'message':msg}
 
 class getWall(basicCommand):
     name=u"Посмотреть стену"
@@ -601,9 +611,9 @@ class getWall(basicCommand):
             temp['unknown']=string.Template("$from ($v_id@$tjid) $date:\n[error: cant parse]")
             for i,m in wm:
                 try:
-                    msg="%s\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid='pyvk-t.eqx.su'))
+                    msg="%s\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid=self.trans.jid))
                 except KeyError:
-                    msg="%s\n- %s"%(msg,temp['unknown'].substitute(m,tjid='pyvk-t.eqx.su'))
+                    msg="%s\n- %s"%(msg,temp['unknown'].substitute(m,tjid=self.trans.jid))
             return {"status":"completed","title":self.name,'message':msg}
                     
             

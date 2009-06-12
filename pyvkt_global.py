@@ -20,7 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-import re, htmlentitydefs
+import re, htmlentitydefs,ConfigParser
 class noVclientError(AttributeError):
     def __init__(self,bjid=""):
         AttributeError(self,"user instance without vclient")
@@ -28,6 +28,19 @@ class noVclientError(AttributeError):
         pass
     def __str__(self):
         return 'user without vclient (%s)'%bjid
+class config:
+    fields={'genegal':{1:1}}
+    def __init__(cfile='pyvk-t_new.conf'):
+        print "reading config..."
+        config = ConfigParser.ConfigParser()
+        #for i in 
+    def __getitem__(self,key):
+        pass
+        
+
+        
+
+        
 
 def bareJid(jid):
     n=jid.find("/")
