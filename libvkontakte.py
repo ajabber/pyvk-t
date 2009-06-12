@@ -32,11 +32,6 @@ from cookielib import Cookie
 from htmlentitydefs import name2codepoint
 from BeautifulSoup import BeautifulSoup,SoupStrainer
 import xml.dom.minidom
-#import twisted.web.microdom
-#import simplejson
-#from lxml import etree
-
-#import threading
 import time
 import hashlib
 from os import environ
@@ -44,24 +39,12 @@ import re
 import base64
 import ConfigParser,os,string
 from traceback import print_stack, print_exc
+import pyvkt_global as pyvkt
 #import StringIO
 
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
-
-#class vkonClient:
-    #def updateFeed(self,jid,feed):
-        #print feed
-    #def usersOffline(self,jid,users):
-        #print "offline",users
-    #def usersOnline(self,jid,users):
-        #print "online",users
-    #def threadError(self,jid,message=""):
-        #print "error: %s"%message
-    #def avatarChanged(self,v_id):
-        #print "avatar changed for id%s"%v_id
-
 
 class tooFastError(Exception):
     def __init__(self):
@@ -96,6 +79,7 @@ class client():
     def __init__(self,jid,email,passw,user):
         #threading.Thread.__init__(self,target=self.loop)
         #self.daemon=True
+        self.bytesIn = 0
         self.alive=0
         self.user=user
         #self.client=cli
@@ -147,7 +131,7 @@ class client():
         if (self.v_id==-1):
             #print "bad cookie..."
             cjar.clear()
-            authData={'op':'a_login_attempt','email':email, 'pass':passw}
+            authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
             params=urllib.urlencode(authData)
             req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
             req.addheaders = [('User-agent', USERAGENT)]
@@ -200,16 +184,20 @@ class client():
                 self.sid=i.value
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
-
     def getHttpPage(self,url,params=None):
         """ get contents of web page
             returns u'' if some of errors took place
         """
+        #if (type(params)==type({})):
+            #for i in params:
+                #if type(params[i]==unicode):
+                    #params[i]=params[i].encode('utf-8')
         if params:
             req=urllib2.Request(url,params)
         else:
             req=urllib2.Request(url)
         req.addheaders = [('User-agent', USERAGENT)]
+
         try:
             res=self.opener.open(req)
             page=res.read()
@@ -229,6 +217,7 @@ class client():
         except httplib.HTTPException, err:
             print "HTTP exception.\n URL: %s"%(req.get_full_url())
             return ''
+        self.bytesIn += len(page)
         return page
 
     def checkPage(self,page):
@@ -339,14 +328,12 @@ class client():
         fil.write(string)
         fil.close()
         print "buggy page saved to",fname
-        
-    def getInfo(self,v_id):
-        prs=vcardPrs()
-        page=self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
-        prs.feed(page)
-        return prs.vcard
-
     def getHistory(self,v_id):
+        try:
+            return self.getHistory2(v_id)
+        except:
+            print "userapi failed"
+            print_exc()
         page=self.getHttpPage("http://vkontakte.ru/mail.php","act=history&mid=%s"%v_id)
         if not page:
             return []
@@ -365,7 +352,18 @@ class client():
             ret.append((t,m.replace('<br />','\n')))
         #ret=ret.replace('<br />','\n')
         return ret
-
+    def getHistory2(self,v_id):
+        dat=self.userapiRequest(act='message',id=v_id, to=15)
+        ret=[]
+        for i in dat['d']:
+            if (i[3][0]==self.v_id):
+                t=u'out'
+            else:
+                t=u'in'
+            #print i[1],i[2][0]
+            ret.append((t,i[2][0]))
+        return ret
+        #print dat
     def sendWallMessage(self,v_id,text):
         """ 
         Send a message to user's wall
@@ -390,36 +388,6 @@ class client():
             return 2
         if not type(text)==type(u""):
             text=unicode(text,"utf-8")
-        params=urllib.urlencode({"message":text.encode("utf-8")})
-        page=self.getHttpPage("http://pda.vkontakte.ru%s&%s"%(formurl,params))
-        if page:
-            return 0
-        return 1
-
-    def sendWallMessage2(self,v_id,text):
-        """ 
-        Send a message to user's wall
-        Returns:
-        0   - success
-        1   - http|urllib error
-        2   - could not get form
-        3   - no data
-        -1  - unknown error
-        """
-        if not text:
-            return 3
-        page=self.getHttpPage("http://wap.vkontakte.ru/id%s"%v_id)
-        if not page:
-            return 1
-        dom=xml.dom.minidom.parseString(page)
-        gos=dom.getElementsByTagName("go")
-        go=filter(lambda x: x.getAttribute("method")=='POST',gos)
-        if (len(go)!=1):
-            return -1
-        go=go[0]
-        url=go.getAttribute("href")
-        if (url==""):
-            return -1
         params=urllib.urlencode({"message":text.encode("utf-8")})
         page=self.getHttpPage("http://pda.vkontakte.ru%s&%s"%(formurl,params))
         if page:
@@ -678,9 +646,18 @@ class client():
         if not res or not res.find(u"аметка добавлена"):
             return 1
         return 0
+    def getStatus(self):
+        dat=self.userapiRequest(act='activity',to=1,id=self.v_id)
+        print dat['h']
+        return (dat['h'],dat['d'][0][5])
+        
 
-    def setStatus(self,text):
+    def setStatus(self,text,ts=None):
         """ Sets status (aka activity) on vkontakte.ru site"""
+        #if (ts):
+            #res=self.userapiRequest(act='set_activity', text=text,ts=ts)
+            #print res
+        #return
         page = self.getHttpPage("http://pda.vkontakte.ru/status")
         if not page:
             return None
@@ -710,9 +687,15 @@ class client():
         #print "getmessage %s started"%msgid
         page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
         if not page:
-            return {"text":"error: html exception","from":"error","title":""}
+            return {"text":"<internal error: can't get message http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
         dom = xml.dom.minidom.parseString(page)
-        form=dom.getElementsByTagName("form")[0]
+        try:
+            form=dom.getElementsByTagName("form")[0]
+        except:
+            print_exc()
+            self.dumpString(page,"msg-no-form")
+            return {"text":"<internal error: can't get message. http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
+
         ret={}
         #print form.toxml()
         links=form.getElementsByTagName("span")
@@ -733,31 +716,6 @@ class client():
         msg=msg.replace("<br/>","\n")[6:-6]
         ret["text"]=msg
         return ret
-        #p=dom.getElementsByTagName("p")[0]
-        #p.normalize()
-
-        #anchors=p.getElementsByTagName("anchor")
-        
-        #from_id=anchors[1].getElementsByTagName('go')[0].getAttribute("href")[2:]
-        #i_s=p.getElementsByTagName("i")
-        #date=i_s[2].nextSibling.data
-        ##ERR ^^^ index out of range
-        #title=i_s[3].nextSibling.data
-        #msg=""
-        #t=i_s[3].nextSibling
-        #while(1):
-            #t=t.nextSibling
-            #try:
-                #if (t.nodeName=="i"):
-                    #break
-            #except AttributeError:
-                #pass
-            ##print t.toxml()
-            #msg="%s%s"%(msg,t.toxml())
-        #msg=msg.replace("<br/>","\n")[4:-4]
-        ##print msg
-        ##print "getmessage %s finished"%msgid
-        #return {"from":from_id,"date":date,"title":title,"text":msg}
     def sendMessage_legacy(self,to_id,body,title="[null]"):
         """
         Sends message through website
@@ -843,19 +801,6 @@ class client():
             return 2
         print "Sending message: unknown error"
         return -1
-        #return
-        #if not page:
-            #return 1
-        #if (page.find('<i id="msg">Сообщение отправлено.')!=-1):
-            ##print "message delivered"
-            #return 0
-        #elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
-            ##FIXME adapt to wap version
-            #print "too fast sending messages"
-            #return 2
-        #print "unknown error"
-        #print page
-        #return -1
     def getFriendList2(self):
         fl=self.userapiRequest(act='friends',id=self.v_id)
         ret={}
@@ -880,6 +825,18 @@ class client():
         2 - friendship requested
         -1 - error
         """
+        try:
+            dat=self.userapiRequest(act='profile',id=v_id)
+        except:
+            print_exc()
+            return -1
+        #print dat["isf"]
+        if (dat["isf"]):
+            return 0
+        if (dat["isi"]):
+            return 2
+        return 1
+        #print dat["isi"]
         page = self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
         #print page
         if not page: 
@@ -937,29 +894,7 @@ class client():
     def __del__(self):
         self.logout()
         #threading.Thread.exit(self)
-    def getSmallAvatar(self,v_id):
-        #FIXME
-        req=urllib2.Request("http://wap.vkontakte.ru/id%s"%v_id)
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return -1
-        dom = xml.dom.minidom.parseString(page)
-        imgs=filter(lambda x: x.getAttribute("class")=='pphoto',dom.getElementsByTagName('img'))
-        if (len(imgs)):
-            url=imgs[0].getAttribute("src")
-            req=urllib2.Request(url)
-            try:
-                res=self.opener.open(req)
-                return res.read()
-            except urllib2.HTTPError, err:
-                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-                return -1
 
-            print url
-        return 0
     def getCalendar(self,month,year):
         #import string
         page=self.getHttpPage("http://vkontakte.ru/calendar_ajax.php?month=%s&year=%sp"%(month,year))
@@ -1076,6 +1011,7 @@ class client():
         return ret
         #print type(sl)
     def getWallMessages(self,v_id=0):
+        #deprecated
         page = self.getHttpPage("http://vkontakte.ru/wall.php?id=%s"%v_id)
         bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         wall=bs.find("div",id='wallpage')
@@ -1191,6 +1127,7 @@ class client():
         #print ret
         #print dat
     def userapiRequest(self,**kw):
+        #import simplejson as json
         nkw=kw
         nkw['sid']=self.sid
         nkw['from']='0'
@@ -1211,7 +1148,20 @@ class client():
                 page=page.decode('cp1251')
             except:
                 print 'something wrong with charset'
-        ret= demjson.decode(page)
+        #print page
+        #ret=json.loads(page)
+        try:
+            ret= demjson.decode(page,strict=False)
+        except:
+            print "json error. trying to remofe 'fr.' blocks..."
+            sr=re.search(',"fr":{.*?},"fro":{.*?},"frm":{.*?}',page)
+            if (sr):
+                page=page[:sr.start()]+page[sr.end():]
+            ret= demjson.decode(page,strict=False)
+            #sr=re.search(',"fro":{.*?}',page)
+            #page=page[:sr.start()]+page[sr.end():]
+            #sr=re.search(',"frm":{.*?}',page)
+            #page=page[:sr.start()]+page[sr.end():]
         try:
             if (ret['ok']==-2):
                 raise captchaError
@@ -1221,40 +1171,3 @@ class client():
             pass
         return ret
         
-            #print ptype
-            #print cd[2].a['href']
-            #return
-        #print targ
-        #print cont.toxml()
-#        req=urllib2.Request(url)
-#        try:
-#            res=self.opener.open(req)
-#            page=res.read()
-#        except urllib2.HTTPError, err:
-#            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-#            return
-#        if (fn):
-#            f=open(fn,'w')
-#            w.write(page)
-#
-#        else:
-#            #print page.decode("cp1251")
-#            page=page[page.find("</div></div>")+12:].decode("cp1251")
-#            from lxml import etree
-#            import StringIO
-#            parser = etree.XMLParser(recover=True)
-#            tree   = etree.parse(StringIO.StringIO(page), parser)
-#            msgs=tree.xpath('/div/table/tr')
-#            print len(msgs)
-#            for i in msgs:
-#                mt=i.xpath('td/div')
-#                #print etree.tostring(i)
-#                print "-----------"
-#                print etree.tostring(mt[0])
-#                print mt[0].findtext(".")
-#                #for j in mt[0].getchildren():
-#                    #print j
-#            #print etree.tostring(tree.getroot())
-
-
-

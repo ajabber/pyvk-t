@@ -30,14 +30,15 @@ import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
 from traceback import print_stack, print_exc
-
+import xml.dom.minidom
+import lxml.etree as xml
 class user:
     #lock=1
     #active=0
-    def __init__(self,trans,jid):
+    def __init__(self,trans,jid,noLoop=False):
         bjid=pyvkt.bareJid(jid)
         #print "user constructor: %s"%bjid
-        
+        self.loginTime=int(time.time())
         self.trans=trans
         self.bjid=bjid      #bare jid of a contact
         self.resources={}   #available resources with their status
@@ -67,8 +68,9 @@ class user:
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
-        self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
-        self.pool.start()
+        if (not noLoop):
+            self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
+            self.pool.start()
         
 
     def addResource(self,jid,prs=None):
@@ -276,6 +278,8 @@ class user:
         #self.vclient.start()
         self.vclient.feedOnly=0
         self.trans.updateStatus(self.bjid,self.VkStatus)
+        self.pool.call(self.refreshData)
+
         
     def login(self):
         # TODO bare jid?
@@ -291,69 +295,52 @@ class user:
             #WARN bjid?
             return
         try:
-            mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
-        except UnicodeEncodeError:
+            self.readData()
+            self.login1()
+        except:
+            print_exc()
+            #print "readdata failed. trying DB..."
+            #try:
+                #mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
+            #except UnicodeEncodeError:
+                #try:
+                    #print "unicode error, possible bad JID: %s"%self.bjid
+                #except:
+                    #print "unicode error. can't print jid"
+                ##self.lock=0
+                ##self.active=0
+                #self.state=4
+                #return
+            #print mq
+            #print_stack()
+            #q=self.trans.dbpool.runQuery(mq)
+            #q.addCallback(self.login1)
+            #q.addErrback(self.loginFailed)
+            print "FIXME unregistered warning"
+
+    def login1(self,data=None):
+        if (data):
             try:
-                print "unicode error, possible bad JID: %s"%self.bjid
-            except:
-                print "unicode error. can't print jid"
-            #self.lock=0
-            #self.active=0
-            self.state=4
-            return
-        #print mq
-        #print_stack()
-        q=self.trans.dbpool.runQuery(mq)
-        q.addCallback(self.login1)
-        q.addErrback(self.loginFailed)
-
-    def login1(self,data):
-        try:
-            t=data[0]
-        except IndexError:
-            #print "FIXME unregistered user: %s ?"%self.bjid
-            if not self.bjid in self.trans.unregisteredList:
-                reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
-                self.trans.unregisteredList.append(self.bjid)
-                print "unregistered warning sent"
-            #self.lock=0
-            #self.active=0
-            self.state=4
-            return
-        bjid=data[0][0].lower()
-        if (bjid!=self.bjid):
-            return
-        #getting config
-        self.config={}
-        try:
-            if data[0][3]:
-                self.config=cPickle.loads(b64decode(data[0][3]))
-        except EOFError:
-            print "error while parsing config"
-        except TypeError:
-            print "Error decoding config"
-        except IndexError:
-            print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
-        #getting roster
-        self.roster={}
-        try:
-            if data[0][4]:
-                self.roster=cPickle.loads(b64decode(data[0][4]))
-        except EOFError:
-            print "error while parsing roster"
-        except TypeError:
-            print "Error decoding roster"
-        except IndexError:
-            print ("roster field not found! please add it to your database (see pyvk-t_new.sql for details)")
-
-        defer.execute(self.createThread,jid=bjid,email=data[0][1],pw=data[0][2])
+                t=data[0]
+            except IndexError:
+                #print "FIXME unregistered user: %s ?"%self.bjid
+                if not self.bjid in self.trans.unregisteredList:
+                    reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
+                    self.trans.unregisteredList.append(self.bjid)
+                    print "unregistered warning sent"
+                #self.lock=0
+                #self.active=0
+                self.state=4
+                return
+            self.parseDbData(data)
+        defer.execute(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
         return
 
     def loginFailed(self,data):
+        print data
         print ("login failed for %s"%self.bjid)
         print "possible database error"
         self.delThread()
-        #del self.vclient
 
     def logout(self):
         #print "logout %s"%self.bjid
@@ -364,18 +351,25 @@ class user:
             return
         self.state=3
         #saving data
+        #self.config["last_activity"]=int(time.time())
         try:
-            mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster,2)),b64encode(cPickle.dumps(self.config,2)),safe(self.bjid))
-        except UnicodeEncodeError:
-            try:
-                print "unicode error, possible bad JID: %s"%self.bjid
-            except:
-                pass
-        except AttributeError:
+            self.saveData()
+        except:
+            print "GREPME savedata failed"
             print_exc()
-        else:
-            q=self.trans.dbpool.runQuery(mq)
-            defer.waitForDeferred(q)
+        #try:
+            #mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster,2)),b64encode(cPickle.dumps(self.config,2)),safe(self.bjid))
+        #except UnicodeEncodeError:
+            #try:
+                #print "unicode error, possible bad JID: %s"%self.bjid
+            #except:
+                #pass
+        #except AttributeError:
+            #print_exc()
+        #else:
+            #pass
+            #q=self.trans.dbpool.runQuery(mq)
+            #defer.waitForDeferred(q)
         #now it's blocking ;)
         self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
         self.contactsOffline(self.onlineList)
@@ -399,7 +393,11 @@ class user:
         #self.lock=0
         self.state=4
         try:
-            #self.vclient.stop()
+            self.trans.httpIn += self.vclient.bytesIn
+        except:
+            pass
+            #print_exc()
+        try:
             del self.vclient
         except:
             pass
@@ -510,8 +508,117 @@ class user:
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
     def __del__(self):
         self.delThread()
+    def saveData(self):
+        dirname=self.trans.datadir+"/"+self.bjid[:1]
+        fname=dirname+"/"+self.bjid
+        #print dirname
+        if (not os.path.exists(dirname)):
+            print "creating dir %s"%dirname
+            os.mkdir(dirname)
+        root=xml.Element("userdata",{'version':'0.1'})
+        # versions:
+        # 0.1 - initial
+        if (type(self.email)==str):
+            self.email=self.email.decode('utf-8')
+        if (type(self.password)==str):
+            self.password=self.password.decode('utf-8')
 
-
+        xml.SubElement(root,"email").text=self.email
+        xml.SubElement(root,"password").text=self.password
+        #print self.config
+        conf=xml.SubElement(root,"config")
+        for i in self.config:
+            try:
+                xml.SubElement(conf,'option',{'name':i,'value':unicode(self.config[i])})
+            except:
+                print_exc()
+        rost=xml.SubElement(root,"roster")
+        for i in self.roster:
+            item=xml.SubElement(rost,'item',{'jid':i})
+            for j in ('status', 'name', 'subscribed', 'subscribe', 'avatar_url', 'avatar_hash'):
+                try:
+                    try:
+                        t=unicode(self.roster[i][j])
+                    except:
+                        t=self.roster[i][j].decode("utf-8")
+                    xml.SubElement(item,j).text=t
+                except KeyError:
+                    pass
+                except:
+                    print_exc()
+        dat=xml.tostring(root,pretty_print=True)
+        if (len(dat)==0):
+            print "ERROR: empty file creation prevented!"
+            return
+        cfile=open(fname,'w')
+        cfile.write(dat)
+        cfile.close()
+        print "user data successfully saved"
+    def readData(self):
+        dirname=self.trans.datadir+"/"+self.bjid[:1]
+        fname=dirname+"/"+self.bjid
+        cfile=open(fname,'r')
+        try:
+            tree=xml.parse(cfile)
+        except:
+            print "cant parse user config (%s)"%repr(self.bjid)
+            print_exc()
+            raise Exception
+        self.email= tree.xpath('//email/text()')[0]
+        self.password=tree.xpath('//password/text()')[0]        
+        self.config={}
+        for i in  tree.xpath('//config/*'):
+            n,v=i.get('name'),i.get('value')
+            try:
+                if (pyvkt.userConfigFields[n]['type']=='boolean'):
+                    if (v=='True'):
+                        v=True
+                    else:
+                        v=False
+                self.config[n]=v
+            except:
+                print_exc()
+            
+        #print config
+        self.roster={}
+        for i in  tree.xpath('//roster/*'):
+            t={}
+            for j in i:
+                if (j.tag in ('subscribed','subscribe')):
+                    t[j.tag]=int(j.text)
+                else:
+                    t[j.tag]=j.text
+            self.roster[i.get('jid')]=t
+        #print "data file successfully parsed"
+        cfile.close()
+    def parseDbData(self,data):
+        bjid=data[0][0].lower()
+        if (bjid!=self.bjid):
+            return
+        #getting config
+        self.config={}
+        try:
+            if data[0][3]:
+                self.config=cPickle.loads(b64decode(data[0][3]))
+        except EOFError:
+            print "error while parsing config"
+        except TypeError:
+            print "Error decoding config"
+        except IndexError:
+            print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
+        #getting roster
+        self.roster={}
+        try:
+            if data[0][4]:
+                self.roster=cPickle.loads(b64decode(data[0][4]))
+        except EOFError:
+            print "error while parsing roster"
+        except TypeError:
+            print "Error decoding roster"
+        except IndexError:
+            print ("roster field not found! please add it to your database (see pyvk-t_new.sql for details)")
+        self.email=data[0][1]
+        self.password=data[0][2]        
     def getConfig(self,fieldName):
         if (not fieldName in pyvkt.userConfigFields):
             raise KeyError("user config: no such field (%s)"%fieldName)
