@@ -360,7 +360,7 @@ class pyvk_t(component.Service):
                     d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=msg["from"],v_id=v_id,body=body,subject=title)
                 d.addErrback(self.errorback)
             if (msg["to"]==self.jid and msg["from"]==self.jid):
-                print 'got echo t=',body
+                #print 'got echo t=',body
                 try:
                     self.pollMgr.watchdog=int(body)
                 except:
@@ -635,7 +635,10 @@ class pyvk_t(component.Service):
                 if (query.uri=="jabber:iq:register"):
                     bjid=pyvkt.bareJid(iq["from"])
                     if (query.remove):
-                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
+                        try:
+                            os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
+                        except OSError:
+                            pass
                         return
                     print "new user: %s"%pyvkt.bareJid(iq["from"])
                     email=""
@@ -739,6 +742,7 @@ class pyvk_t(component.Service):
         #FIXME
         ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов\nxmpp траффик %sK/%sK"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut,self.logger.bytesIn/1024,self.logger.bytesOut/1024)
         self.sendMessage(self.jid,to,ret)
+
     def getUserList(self):
         ret=[]
         for i in os.listdir(self.datadir):
@@ -1107,11 +1111,12 @@ class pyvk_t(component.Service):
             self.sendPresence(self.jid,jid,status=ret)
         ret=""
         try:
-            if (feed["messages"]["count"]):
+            if (feed["messages"]["count"]) and feed["messages"]["items"]:
                 for i in feed ["messages"]["items"].keys():
                     #print "requesting message"
                     self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
         except KeyError:
+            print_exc()
             pass
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
@@ -1121,7 +1126,8 @@ class pyvk_t(component.Service):
                     gc=0
                     for i in feed[j]["items"]:
                         if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
-                            if pyvkt.feedInfo[j]["url"]:
+                            #it is a vkontakte.ru bug, when it stores null inside items. (e.g when there are invitaions to deleted groups)
+                            if pyvkt.feedInfo[j]["url"] and feed[j]["items"]!="null":
                                 try:
                                     gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" [ "+pyvkt.feedInfo[j]["url"]%i + " ]"
                                 except TypeError:

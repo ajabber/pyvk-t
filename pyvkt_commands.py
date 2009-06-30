@@ -605,15 +605,16 @@ class getWall(basicCommand):
             temp={}
             temp['text']=string.Template("$from ($v_id@$tjid) $date:\n$text")
             temp['audio']=string.Template("$from ($v_id@$tjid) $date:\n$desc\n( $dlink )")
-            temp['graffity']=string.Template(u"$from ($v_id@$tjid) $date:\nГраффити ( $dlink )")
+            temp['graffiti']=string.Template(u"$from ($v_id@$tjid) $date:\nГраффити ( $dlink )")
             temp['video']=string.Template(u"$from ($v_id@$tjid) $date:\nВидео:'$desc'\n( $link )\nМиниатюра: $thumb\nСкачать: $dlink")
             temp['photo']=string.Template(u"$from ($v_id@$tjid) $date:\nФотография:'$desc'\n( $link )\nМиниатюра: $thumb")
             temp['unknown']=string.Template("$from ($v_id@$tjid) $date:\n[error: cant parse]")
             for i,m in wm:
                 try:
-                    msg="%s\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid=self.trans.jid))
+                    msg="%s\n\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid=self.trans.jid))
                 except KeyError:
-                    msg="%s\n- %s"%(msg,temp['unknown'].substitute(m,tjid=self.trans.jid))
+                    msg="%s\n\n- %s"%(msg,temp['unknown'].substitute(m,tjid=self.trans.jid))
+            msg=pyvkt.unescape(msg.replace('<br>','\n')).strip()
             return {"status":"completed","title":self.name,'message':msg}
                     
             
