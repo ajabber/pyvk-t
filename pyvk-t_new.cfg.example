@@ -26,10 +26,12 @@ roster_management: true
 feed_notify: true
 #поддерживать статус online (экспериментально)
 #keep_online: true
-#сохранять cookies в указаный катало
+#сохранять cookies в указаный каталог
 cookies_path: ./cookies
 #высылать прямые ссылки на аудио/видео
 resolve_links: true
+#директория для хранения данных
+datadir: ./datadir
 
 [debug]
 #Путь для сохранения страниц, вызвавших ошибки. Оставьте пустым или закомментируйте для отключения.

@@ -32,6 +32,8 @@ import time
 from traceback import print_stack, print_exc
 import xml.dom.minidom
 import lxml.etree as xml
+import time
+
 class user:
     #lock=1
     #active=0
@@ -521,7 +523,11 @@ class user:
         if (type(self.email)==str):
             self.email=self.email.decode('utf-8')
         if (type(self.password)==str):
-            self.password=self.password.decode('utf-8')
+            try:
+                self.password=self.password.decode('utf-8')
+            except UnicodeDecodeError:
+                print "Password is not in Utd8. Trying cp1251"
+                self.password=self.password.decode('cp1251')
 
         xml.SubElement(root,"email").text=self.email
         xml.SubElement(root,"password").text=self.password
@@ -553,7 +559,8 @@ class user:
         cfile=open(fname,'w')
         cfile.write(dat)
         cfile.close()
-        print "user data successfully saved"
+        print "user %s data successfully saved"%self.bjid
+
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid

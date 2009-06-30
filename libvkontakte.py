@@ -1082,6 +1082,8 @@ class client():
         dat=self.userapiRequest(act='wall',id=v_id,to='20')
         types=['text','photo','graffiti','video','audio']
         ret=[]
+        if not "d" in dat:
+            return ret
         for i in dat['d']:
             try:
                 t=types[i[2][1]]
