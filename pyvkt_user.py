@@ -141,6 +141,7 @@ class user:
             self.roster[bjid]["name"]=nick
         if 1 or not self.subscribed(bjid):
             self.trans.sendPresence(bjid,self.bjid,"subscribe",nick=nick)
+            #print 'askSubscribtion: to=%s, from=%s'%(bjid,self.bjid)
             return 1
         return 0
 

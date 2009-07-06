@@ -688,8 +688,8 @@ class client():
         page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
         if not page:
             return {"text":"<internal error: can't get message http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
-        dom = xml.dom.minidom.parseString(page)
         try:
+            dom = xml.dom.minidom.parseString(page)
             form=dom.getElementsByTagName("form")[0]
         except:
             print_exc()
@@ -810,8 +810,9 @@ class client():
         return ret
     def getFriendList(self):
         try:
-            return getFriendList2()
+            return self.getFriendList2()
         except:
+            print_exc()
             print "getFriendList2 failed"
         page = self.getHttpPage("http://vkontakte.ru/friend.php?nr=1")
         if not page:
