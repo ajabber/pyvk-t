@@ -62,13 +62,19 @@ class LogService(component.Service):
     packetsOut = 0
     bytesIn = 0
     bytesOut = 0
-    
+    logIn=[]
+    logOut=[]
     def transportConnected(self, xmlstream):
         xmlstream.rawDataInFn = self.rawDataIn
         xmlstream.rawDataOutFn = self.rawDataOut
 
     def rawDataIn(self, buf):
         self.packetsIn += 1
+        try:
+            self.logIn.append((time.time(),len(buf)))
+            
+        except:
+            print_exc()
         try:
             self.bytesIn += len(buf)
         except:
@@ -79,13 +85,32 @@ class LogService(component.Service):
     def rawDataOut(self, buf):
         self.packetsOut += 1
         try:
+            self.logOut.append((time.time(),len(buf)))
+            pass
+        except:
+            print_exc()
+        try:
             self.bytesOut += len(buf)
         except:
             pass
-
         #log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
         pass
-
+    def getTraffic(self,t):
+        ct=time.time()
+        bt=ct-t
+        dt=ct-600
+        
+        #print self.logIn
+        self.logIn=filter(lambda x:x[0]>dt,self.logIn,)
+        self.logOut=filter(lambda x:x[0]>dt,self.logOut)
+        il=filter(lambda x:x[0]>bt,self.logIn)
+        ol=filter(lambda x:x[0]>bt,self.logOut)
+        oc=0
+        ic=0
+        for i in il:ic+=i[1]
+        for i in ol:oc+=i[1]
+        return (ic,oc)
+        
 class pyvk_t(component.Service):
 
     implements(IService)
@@ -330,6 +355,12 @@ class pyvk_t(component.Service):
                     qq=self.dbpool.runQuery("SELECT * FROM users;")
                     qq.addCallback(self.convertDb)
                     #print repr(ulist)
+                elif (cmd[:7]=='traffic'):
+                    try:
+                        self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
+                    except:
+                        print_exc()
+                        
                     
                 else:
                     self.sendMessage(self.jid,msg["from"],"unknown command: '%s'"%cmd)
@@ -510,8 +541,12 @@ class pyvk_t(component.Service):
                         q.addElement("stat")["name"] = "users/online"
                         #q.addElement("stat")["name"] = "users/total"
                         if self.logger:
-                            q.addElement("stat")["name"] = "bandwidth/packets-in"
-                            q.addElement("stat")["name"] = "bandwidth/packets-out"
+                            #q.addElement("stat")["name"] = "bandwidth/packets-in"
+                            #q.addElement("stat")["name"] = "bandwidth/packets-out"
+                            q.addElement("stat")["name"] = "bandwidth/bytes-out"
+                            q.addElement("stat")["name"] = "bandwidth/bytes-in"                            
+                            q.addElement("stat")["name"] = "bandwidth/bytes-out-1min"
+                            q.addElement("stat")["name"] = "bandwidth/bytes-in-1min" 
                     else:
                         for i in query.children:
                             #print type(i)
@@ -535,6 +570,20 @@ class pyvk_t(component.Service):
                             elif i["name"]=="bandwidth/packets-out" and self.logger:
                                 t['units']='packets'
                                 t['value']=str(self.logger.packetsOut)
+                            elif i["name"]=="bandwidth/bytes-in" and self.logger:
+                                t['units']='bytes'
+                                t['value']= str(self.logger.bytesIn)
+                            elif i["name"]=="bandwidth/bytes-out" and self.logger:
+                                t['units']='bytes'
+                                t['value']=str(self.logger.bytesOut)
+                            elif i["name"]=="bandwidth/bytes-in-1min" and self.logger:
+                                t['units']='bytes'
+                                t['value']= str(self.logger.getTraffic(60)[0])
+                            elif i["name"]=="bandwidth/bytes-out-1min" and self.logger:
+                                t['units']='bytes'
+                                t['value']= str(self.logger.getTraffic(60)[1])
+                                
+                                
                             else:
                                 e=t.addElement("error","Service Unavailable")
                                 e["code"]="503"
@@ -1049,13 +1098,13 @@ class pyvk_t(component.Service):
                     print_exc()
             return 0
         return 0
-    def addResource(self,jid,prs=None):
+    def addResource(self,jid,prs=None,captcha_key=None):
         #print "addRes"
         bjid=pyvkt.bareJid(jid)
         #if (self.hasUser(bjid)==0):
         if (not self.users.has_key(bjid)):
             #print "creating user %s"
-            self.users[bjid]=user(self,jid)
+            self.users[bjid]=user(self,jid,captcha_key=captcha_key)
         self.users[bjid].addResource(jid,prs)
 
     def delResource(self,jid,to=None):

@@ -37,11 +37,13 @@ import time
 class user:
     #lock=1
     #active=0
-    def __init__(self,trans,jid,noLoop=False):
+    def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=pyvkt.bareJid(jid)
+        self.captcha_key=captcha_key
         #print "user constructor: %s"%bjid
         self.loginTime=int(time.time())
         self.trans=trans
+        self.captcha_sid=None
         self.bjid=bjid      #bare jid of a contact
         self.resources={}   #available resources with their status
         self._lock=0
@@ -262,11 +264,25 @@ class user:
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
             #self.vclient=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
-            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self)
-        except libvkontakte.captchaError:
+            if (self.captcha_key and self.captcha_sid):
+                print "captcha fighting!"
+                self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,
+                    captcha_key=self.captcha_key,captcha_sid=self.captcha_sid)
+                self.captcha_sid=None
+            else:
+                self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self)
+        except libvkontakte.captchaError,exc:
             print "ERR: got captcha request"
+            print exc
+            
+            if (exc.sid):
+                self.captcha_sid=exc.sid
+                self.saveData()
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
-            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body="ERROR: captcha request.\nPlease, contact transport administrator")
+            url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%exc.sid
+            print url
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
+                body=u"Ошибка подключения, стребуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '/login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
             self.state=4
             return
         except libvkontakte.authError:
@@ -533,6 +549,8 @@ class user:
         xml.SubElement(root,"email").text=self.email
         xml.SubElement(root,"password").text=self.password
         #print self.config
+        if (self.captcha_sid):
+            xml.SubElement(root,"captcha_sid").text=self.captcha_sid
         conf=xml.SubElement(root,"config")
         for i in self.config:
             try:
@@ -561,7 +579,6 @@ class user:
         cfile.write(dat)
         cfile.close()
         print "user %s data successfully saved"%self.bjid
-
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid
@@ -575,6 +592,10 @@ class user:
         self.email= tree.xpath('//email/text()')[0]
         self.password=tree.xpath('//password/text()')[0]        
         self.config={}
+        try:
+            self.captcha_sid=tree.xpath('//captcha_sid/text()')[0]
+        except:
+            print_exc()
         for i in  tree.xpath('//config/*'):
             n,v=i.get('name'),i.get('value')
             try:

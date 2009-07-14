@@ -109,20 +109,27 @@ class pollManager(threading.Thread):
         self.trans=trans
     def loop(self):
         pollInterval=15
-        groupsNum=3
+        groupsNum=5
         currGroup=0
         self.freeze=False
         while (self.alive):
             #print "poll", len(self.trans.users.keys()), 'user(s)'
             delta=int(time.time())-self.watchdog
             #print 'out traffic %sK'%(self.trans.logger.bytesOut/1024)
-            if (delta>150):
+
+            if (delta>60):
                 print 'freeze detected!\nupdates temporary disabled'
                 print 'users online: %s'%len(self.trans.users)
-                if (delta>300):
+                for i in [5,10,30,60,120,300]:
+                    print '%s sec traffic: '%i,self.trans.logger.getTraffic(i)
+                if (delta>1200):
                     print 'critical freeze. shutting down'
+                    self.trans.isActive=0
                     self.trans.stopService()
                     self.alive=0
+                    f=open('killme','w')
+                    f.write('1')
+                    f.close()
             else:
                 for u in self.trans.users.keys():
                     if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
@@ -140,6 +147,7 @@ class pollManager(threading.Thread):
             if (currGroup==0):
                 #print 'echo sent'
                 self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='%s'%int(time.time()))
+            #print '10 sec traffic: ',self.trans.logger.getTraffic(10)                
             #print "cg",currGroup
             currGroup +=1
             currGroup=currGroup%groupsNum

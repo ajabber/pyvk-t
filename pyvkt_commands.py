@@ -357,7 +357,7 @@ class setStatusCmd(basicCommand):
 
 class loginCmd(basicCommand):
     name=u"Подключиться"
-    args={}
+    args={0:'key'}
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
@@ -366,7 +366,13 @@ class loginCmd(basicCommand):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
         if (self.trans.hasUser(bjid)):
             return {"status":"completed","title":u"Подключение",'message':u'Вы уже подключены'}
-        self.trans.addResource(jid)
+        captcha_key=None
+        try:
+            print args['key']
+            captcha_key=args['key']
+        except KeyError:
+            pass
+        self.trans.addResource(jid,captcha_key=captcha_key)
         #print "resources: ",self.trans.users[bjid].resources
         return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}
 
@@ -621,4 +627,4 @@ class getWall(basicCommand):
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
 
-        
+            
