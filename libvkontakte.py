@@ -57,10 +57,12 @@ class authFormError(Exception):
     def __str__(self):
         return 'unexpected auth form'
 class captchaError(Exception):
-    def __init__(self):
+    sid=None
+    def __init__(self,sid=None):
+        self.sid=sid
         pass
     def __str__(self):
-        return 'got captcha request'
+        return 'got captcha request (sid = "%s")'%self.sid
 class authError(Exception):
     def __init__(self):
         pass
@@ -76,7 +78,7 @@ class client():
     iterationsNumber = 999999
     # true if there is no loopInternal's in user queue
     tonline={}
-    def __init__(self,jid,email,passw,user):
+    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None):
         #threading.Thread.__init__(self,target=self.loop)
         #self.daemon=True
         self.bytesIn = 0
@@ -132,6 +134,10 @@ class client():
             #print "bad cookie..."
             cjar.clear()
             authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            if (captcha_key and captcha_sid):
+                authData['captcha_key']=captcha_key
+                authData['captcha_sid']=captcha_sid
+            print authData
             params=urllib.urlencode(authData)
             req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
             req.addheaders = [('User-agent', USERAGENT)]
@@ -146,10 +152,17 @@ class client():
             #print tpage
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
                 print "ERR: got captcha request"
+                sid=None
+                try:
+                    cdata=demjson.decode(tpage)
+                    print "answer: ",cdata
+                    sid=cdata['captcha_sid']
+                except:
+                    print_exc()
                 self.error=1
                 #self.client.threadError(self.jid,"auth error: got captha request")
                 self.alive=0
-                raise captchaError
+                raise captchaError(sid=sid)
                 return
             # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
             # good<your_id> - success
