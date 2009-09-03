@@ -27,8 +27,6 @@ from twisted.internet import interfaces, defer, reactor,threads
 from twisted.python import log
 from twisted.words.xish import domish
 from twisted.words.protocols.jabber.xmlstream import IQ
-from twisted.enterprise import adbapi 
-from twisted.enterprise.adbapi import safe 
 from twisted.words.protocols.jabber.ijabber import IService
 from twisted.words.protocols.jabber import component,xmlstream,jid
 
@@ -124,30 +122,6 @@ class pyvk_t(component.Service):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
         self.httpIn = 0
-        dbmodule=config.get("database","module") 
-        if dbmodule=="MySQLdb":
-            self.dbpool = adbapi.ConnectionPool(
-                dbmodule,
-                host=config.get("database","host"), 
-                user=config.get("database","user"), 
-                passwd=config.get("database","passwd"), 
-                db=config.get("database","db"),
-                cp_reconnect=1)
-        elif dbmodule=="sqlite3":
-            self.dbpool = adbapi.ConnectionPool(
-                dbmodule,
-                database=config.get("database","db"),
-                cp_reconnect=1)
-        else:
-            self.dbpool = adbapi.ConnectionPool(
-                dbmodule,
-                host=config.get("database","host"), 
-                user=config.get("database","user"), 
-                password=config.get("database","passwd"), 
-                database=config.get("database","db"),
-                cp_reconnect=1)
-
-            
         if config.has_option("features","sync_status"):
             self.sync_status = config.getboolean("features","sync_status")
         else:
@@ -349,12 +323,6 @@ class pyvk_t(component.Service):
                     for i in self.users:
                         self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
                     self.sendMessage(self.jid,msg["from"],"'%s' done"%cmd)
-                elif (cmd=='convertdb'):
-                    print "convertdb request\nstopping transport..."
-                    self.stopService(suspend=True)
-                    qq=self.dbpool.runQuery("SELECT * FROM users;")
-                    qq.addCallback(self.convertDb)
-                    #print repr(ulist)
                 elif (cmd[:7]=='traffic'):
                     try:
                         self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
