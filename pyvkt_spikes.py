@@ -41,11 +41,11 @@ def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
 class reqQueue(threading.Thread):
     daemon=True
     def __init__(self,user,name=None):
-        self.daemon=True
         try:
             threading.Thread.__init__(self,target=self.loop,name=name)
         except UnicodeEncodeError:
             threading.Thread.__init__(self,target=self.loop,name="user_with_bad_jid")
+        self.daemon=True
         self.user=user
         self.queue=Queue.Queue(200)
         self.alive=1
@@ -102,9 +102,9 @@ class reqQueue(threading.Thread):
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
+        threading.Thread.__init__(self,target=self.loop,name="Poll Manager")
         self.watchdog=int(time.time())
         self.daemon=True
-        threading.Thread.__init__(self,target=self.loop,name="Poll Manager")
         self.alive=1
         self.trans=trans
     def loop(self):
