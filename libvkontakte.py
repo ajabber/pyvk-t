@@ -140,7 +140,7 @@ class client():
                 tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt','captcha_key':captcha_key,'captcha_sid':captcha_sid})
             else:
                 tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt'})
-            print tpage
+            #print tpage
             #print 'captcha test: ',ct
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
                 print "ERR: got captcha request"
@@ -162,7 +162,7 @@ class client():
             if (captcha_key and captcha_sid):
                 authData['captcha_key']=captcha_key
                 authData['captcha_sid']=captcha_sid
-            print authData
+            #print authData
 
             tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
             #print tpage
