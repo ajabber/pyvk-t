@@ -36,7 +36,7 @@ import time
 import hashlib
 from os import environ
 import re
-import base64
+import base64,copy
 import ConfigParser,os,string
 from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
@@ -62,7 +62,8 @@ class captchaError(Exception):
         self.sid=sid
         pass
     def __str__(self):
-        return 'got captcha request (sid = "%s")'%self.sid
+        url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
+        return 'got captcha request (sid = "%s", url=%s)'%(self.sid,url)
 class authError(Exception):
     def __init__(self):
         pass
@@ -87,7 +88,7 @@ class client():
         #self.client=cli
         self.feedOnly=1
         config = ConfigParser.ConfigParser()
-        confName="pyvk-t_new.cfg"
+        confName="pyvkt.cfg"
         if(os.environ.has_key("PYVKT_CONFIG")):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
@@ -133,29 +134,20 @@ class client():
         if (self.v_id==-1):
             #print "bad cookie..."
             cjar.clear()
-            authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            #authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            #first, check for captcha
             if (captcha_key and captcha_sid):
-                authData['captcha_key']=captcha_key
-                authData['captcha_sid']=captcha_sid
-            print authData
-            params=urllib.urlencode(authData)
-            req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
-            req.addheaders = [('User-agent', USERAGENT)]
-            try:
-                res=self.opener.open(req)
-            except urllib2.HTTPError, err:
-                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-                self.error=1
-                self.alive=0
-                return 
-            tpage=res.read()
-            #print tpage
+                tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt','captcha_key':captcha_key,'captcha_sid':captcha_sid})
+            else:
+                tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt'})
+            print tpage
+            #print 'captcha test: ',ct
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
                 print "ERR: got captcha request"
                 sid=None
                 try:
                     cdata=demjson.decode(tpage)
-                    print "answer: ",cdata
+                    #print "answer: ",cdata
                     sid=cdata['captcha_sid']
                 except:
                     print_exc()
@@ -164,19 +156,33 @@ class client():
                 self.alive=0
                 raise captchaError(sid=sid)
                 return
+                
+            #return
+            authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            if (captcha_key and captcha_sid):
+                authData['captcha_key']=captcha_key
+                authData['captcha_sid']=captcha_sid
+            print authData
+
+            tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
+            #print tpage
+            i=tpage.find("value='")
+            i+=7
+            p=tpage.find("'",i+1)
+            #print '=================='
+            self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':tpage[i:p]})
+            #print xml.dom.minidom.parseString(tpage)
             # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
             # good<your_id> - success
-            self.cookie=cjar.make_cookies(res,req)
+            #self.cookie=cjar.make_cookies(res,req)
+            #for i in cjar:
+                #print i
+                #k=copy.copy(i)
+                #k.domain='vkontakte.ru'
+                #cjar.set_cookie(k)
             self.v_id=self.getSelfId()
             if (self.v_id==-1):
                 raise authError
-            #if (self.checkLoginError()!=0):
-                #self.error=1
-                ##self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
-                #self.alive=0
-                #raise authError
-            #else:
-                #print "login successful."
             if self.user.getConfig("save_cookies"):
                 try:
                     #print "saving cookie.."
@@ -192,12 +198,19 @@ class client():
             self.alive=1
             self.error=0
         self.sid=None
+        #print cjar.make_cookies()
         for i in cjar:
+            #print i
             if i.name=='remixsid':
                 self.sid=i.value
+
+        #print '====='
+        ##for i in cjar:
+            #print i
+            
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
-    def getHttpPage(self,url,params=None):
+    def getHttpPage(self,url,params=None,cjar=None):
         """ get contents of web page
             returns u'' if some of errors took place
         """
@@ -205,6 +218,8 @@ class client():
             #for i in params:
                 #if type(params[i]==unicode):
                     #params[i]=params[i].encode('utf-8')
+        if (type(params)==type({})):
+            params=urllib.urlencode(params)
         if params:
             req=urllib2.Request(url,params)
         else:
@@ -231,6 +246,8 @@ class client():
             print "HTTP exception.\n URL: %s"%(req.get_full_url())
             return ''
         self.bytesIn += len(page)
+        if (cjar):
+            cjar.make_cookies(res,req)
         return page
 
     def checkPage(self,page):
@@ -647,7 +664,7 @@ class client():
         return result
 
     def addNote(self,text,title=u""):
-        """ Posts a public note on vkontakte.ru site"""
+        """ Posts a public note on vk.com site"""
         page = self.getHttpPage("http://pda.vkontakte.ru/newnote")
         if not page:
             return None
@@ -666,7 +683,7 @@ class client():
         
 
     def setStatus(self,text,ts=None):
-        """ Sets status (aka activity) on vkontakte.ru site"""
+        """ Sets status (aka activity) on vk.com site"""
         #if (ts):
             #res=self.userapiRequest(act='set_activity', text=text,ts=ts)
             #print res
@@ -699,6 +716,7 @@ class client():
         """
         #print "getmessage %s started"%msgid
         page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
+        #print page
         if not page:
             return {"text":"<internal error: can't get message http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
         try:
@@ -893,7 +911,7 @@ class client():
 
     def dummyRequest(self):
         """ request that means nothing"""
-        req=urllib2.Request("http://wap.vkontakte.ru/")
+        req=urllib2.Request("http://wap.vk.com/")
         try:
             res=self.opener.open(req)
             page=res.read()
@@ -1046,7 +1064,7 @@ class client():
                     ld=eval(ttds[0].img["onclick"][18:-1],{},{})
                     tdata=ttds[1].findAll(text=True)
                     if (self.resolve_links):
-                        pinfo["dlink"]="http://cs%s.vkontakte.ru/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
+                        pinfo["dlink"]="http://cs%s.vk.com/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
                     else:
                         pinfo["dlink"]='direct links are disabled'
                     pinfo["type"]='audio'
