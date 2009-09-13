@@ -88,7 +88,7 @@ class client():
         #self.client=cli
         self.feedOnly=1
         config = ConfigParser.ConfigParser()
-        confName="pyvkt.cfg"
+        confName="pyvk-t_new.cfg"
         if(os.environ.has_key("PYVKT_CONFIG")):
             confName=os.environ["PYVKT_CONFIG"]
         config.read(confName)
