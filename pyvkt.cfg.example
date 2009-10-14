@@ -1,0 +1,20 @@
+[general]
+#jid: pyvk-t.localhost
+#server: localhost
+#secret: yourveeeeeeeerylongcomponentpassword
+#port: 5349
+#admin: vpupkin@localhost
+#service_name: pyvk-t [notwisted branch]
+
+[features]
+#avatars: true
+#sync_status: true
+#status: Этот транспорт перешел на ветку notwisted =)
+
+[storage]
+#cache: ./cache
+#datadir: ./data
+#cookies: ./cookies
+
+[debug]
+#dump_path: dumps
