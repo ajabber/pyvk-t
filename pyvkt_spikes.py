@@ -21,13 +21,28 @@
  ***************************************************************************/
  """
 from twisted.python import failure
-from twisted.internet import defer,reactor
+from twisted.internet import reactor
+from twisted.internet.defer import Deferred
 from twisted.python import log, runtime, context, failure
 import Queue
-import threading,time
-from traceback import print_stack, print_exc
-from libvkontakte import authFormError
+import threading,time,logging
+from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
+from libvkontakte import authFormError,HTTPError,UserapiSidError
 import pyvkt_global as pyvkt
+class pseudoXml:
+    def __init__(self):
+        self.items={}
+        self.children=[]
+        self.attrs={}
+    def __getitem__(self,n):
+        return self.items[n]
+    def __getattr__(self,n):
+        return self.attrs[n]
+    def hasAttribute(self,k):
+        return self.attrs.has_key(k)
+    def __nonzero__(self):
+        return True
+        
 def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
     #WARN "too fast"?
     print "deprecated deferToThreadPool"
@@ -56,55 +71,67 @@ class reqQueue(threading.Thread):
         print_stack(limit=2)
         self.call(foo,**kw)
     def call(self,foo,**kw):
-        elem={"foo":foo,"args":kw}
+        elem={"foo":foo,"args":kw,'stack':extract_stack()}
         self.queue.put(elem)
     def defer(self,f,**kw):
-        d=defer.Deferred()
-        elem={"foo":f,"args":kw,"deferred":d}
+        d=Deferred()
+        elem={"foo":f,"args":kw,"deferred":d,'stack':extract_stack()}
         self.queue.put(elem)
         return d
     def stop(self):
         self.alive=0
         self.call(self.dummy)
+        self.user=None
     def dummy(self):
         return
     def loop(self):
         while(self.alive):
-            elem=self.queue.get(block=True)
-            f=elem["foo"]
-            args=elem["args"]
             try:
-                res=f(**args)
-            except authFormError:
-                print "%s: got login form"
-                try:
-                    self.alive=0
-                    self.user.logout()
-                    reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
-                except:
-                    print_exc()
-            except pyvkt.noVclientError:
-                print "err: no vClient (%s)"%repr(self.user.bjid)
-            except Exception, exc:
-                print "Caught exception"
-                print_exc()
-                print "thread is alive!"
+                elem=self.queue.get(block=True,timeout=10)
+            except Queue.Empty:
+                pass
             else:
+                f=elem["foo"]
+                args=elem["args"]
                 try:
-                    elem["deferred"].callback(res)
-                except KeyError:
-                    pass
-                except:
-                    print "GREPME unhandled exception in callback"
-                    print_exc()
-            self.queue.task_done()
+                    res=f(**args)
+                except authFormError:
+                    logging.warn("%s: got login form")
+                    try:
+                        self.alive=0
+                        self.user.logout()
+                        reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
+                    except:
+                        logging.error(format_exc())
+                except pyvkt.noVclientError:
+                    logging.error("err: no vClient (%s)"%repr(self.user.bjid))
+                except HTTPError,e:
+                    logging.error("http error: "+str(e).replace('\n',', '))
+                except UserapiSidError:
+                    logging.error('userapi sid error (%s)'%self.user.bjid)
+                except Exception, exc:
+                    logging.error(format_exc())
+                    #print "Caught exception"
+                    #print_exc()
+                    #print "thread is alive!"
+                    
+                else:
+                    try:
+                        elem["deferred"].callback(res)
+                    except KeyError:
+                        pass
+                    except:
+                        logging.error('error in callback')
+                        logging.error(format_exc())
+                        [logging.error('TB '+i) for i[:-1] in format_list(elem['stack'])]
+                self.queue.task_done()
         #print "queue (%s) stopped"%self.user.bjid
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
-        self.watchdog=int(time.time())
-        self.daemon=True
         threading.Thread.__init__(self,target=self.loop,name="Poll Manager")
+        self.daemon=True
+        self.watchdog=int(time.time())
         self.alive=1
         self.trans=trans
     def loop(self):
@@ -114,35 +141,34 @@ class pollManager(threading.Thread):
         self.freeze=False
         while (self.alive):
             #print "poll", len(self.trans.users.keys()), 'user(s)'
-            delta=int(time.time())-self.watchdog
+            #delta=int(time.time())-self.watchdog
             #print 'out traffic %sK'%(self.trans.logger.bytesOut/1024)
 
-            if (delta>60):
-                print 'freeze detected!\nupdates temporary disabled'
-                print 'users online: %s'%len(self.trans.users)
-                for i in [5,10,30,60,120,300]:
-                    print '%s sec traffic: '%i,self.trans.logger.getTraffic(i)
-                if (delta>1200):
-                    print 'critical freeze. shutting down'
-                    self.trans.isActive=0
-                    self.trans.stopService()
-                    self.alive=0
-                    f=open('killme','w')
-                    f.write('1')
-                    f.close()
-            else:
-                for u in self.trans.users.keys():
-                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
-                        try:
-                            if(self.trans.users[u].refreshDone):
-                                self.trans.users[u].vclient
-                                self.trans.users[u].refreshDone=False
-                                self.trans.users[u].pool.call(self.trans.users[u].refreshData)
-                        except pyvkt.noVclientError:
-                            print "user w/o client. skipping"
-                        except:
-                            print "GREPME: unhandled exception"
-                            print_exc()
+            #if (delta>60):
+                #print 'freeze detected!\nupdates temporary disabled'
+                #print 'users online: %s'%len(self.trans.users)
+                #for i in [5,10,30,60,120,300]:
+                    #print '%s sec traffic: '%i,self.trans.logger.getTraffic(i)
+                #if (delta>1200):
+                    #print 'critical freeze. shutting down'
+                    #self.trans.isActive=0
+                    #self.trans.stopService()
+                    #self.alive=0
+                    #f=open('killme','w')
+                    #f.write('1')
+                    #f.close()
+            #else:
+            for u in self.trans.users.keys():
+                if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
+                    try:
+                        if(self.trans.users[u].refreshDone):
+                            self.trans.users[u].vclient
+                            self.trans.users[u].refreshDone=False
+                            self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                    except pyvkt.noVclientError:
+                        print "user w/o client. skipping"
+                    except:
+                        logging.error(format_exc())
             #print delta
             if (currGroup==0):
                 #print 'echo sent'
@@ -155,10 +181,56 @@ class pollManager(threading.Thread):
         print "pollManager stopped"
     def stop(self):
         self.alive=0
-    def __del__(self):
-        self.alive=0
-        threading.Thread.exit(self)
+#class Deferred1:
+    #cblist=[]
+    #def addCallback(self,foo,*args,**kwargs):
+        #cb=(foo,args,kwargs)
+        #self.cblist.append(cb)
+    #def addErrback(self,foo,*args,**kwargs):
+        #pass
+    #def callback(self,res):
+        #for i in self.cblist:
+            #f,a,k=i
+            #try:
+                #f(res,*a,**k)
+            #except:
+                #logging.error(format_exc())
+#class ThreadPool:
+    #threads=[]
+    #active=True
+    #def __init__(self,threadNum=1,name='pool'):
+        #self.q=Queue()
         
+        #for i in range(threadNum):
+            #t=Thread(name='%s[%s]'%(name,i),target=self.loop)
+            #t.daemon=True
+            #threads.append(t)
+    #def start(self):
+        #[t.start() for t in threads]
+    #def stop(self):
+        #self.active=False
+    #def loop(self):
+        #while(self.active):
+            #try:
+                #task=q.get(block=True,timeout=5)
+            #except Queue.Empty:
+                #pass
+            #else:
+                #d,f,k=task
+                #try:
+                    #res=f(**k)
+                    #if (d):
+                        #d.callback(res)
+                #except:
+                    #logging.error("unhandled exception:\n"+format_exc())
+    #def defer(self,foo,**kw):
+        #d=Deferred()
+        #el=(d,foo,kw)
+        #q.append(el)
+        #return d
+    #def call(self,foo,**kw):
+        #el=(None,foo,kw)
+        #q.append(el)
 
 
 

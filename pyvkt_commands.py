@@ -28,7 +28,9 @@ from twisted.internet.defer import waitForDeferred
 
 from traceback import print_stack, print_exc
 import pyvkt_global as pyvkt
-import time,string
+import time,string,logging
+from comstream import createElement,addChild,createReply
+from lxml.etree import tostring
 
 
 class cmdManager:
@@ -68,7 +70,7 @@ class cmdManager:
         #print ret
         return ret
     def onMsg(self,jid,text,v_id=0):
-        #print "command:", text
+        logging.info("text command '%s' from %s"%(text,jid))
         cmdList=self.makeCmdList(jid,v_id)
         cl=text.find(" ")
         if (cl==-1):
@@ -95,46 +97,52 @@ class cmdManager:
             #print "cmd done"
             ret="[cmd:%s]\n%s"%(res["title"],txt)
         else:
-            return "unknown command: %s"%node
+            return u"Неопознан  ная команда: '%s'\nЕсли вы хотите просто отправить сообщение, начинающееся с точки, вставьте перед ней пробел ;)"%node
         return ret
         pass
     def onIqSet(self,iq):
-        if (iq.command["node"][:4]=='cmd:'):
-            node=iq.command["node"][4:]
-        else:
-            node=iq.command["node"]
-        v_id=pyvkt.jidToId(iq["to"])
-        cmdList=self.makeCmdList(iq["from"],v_id)
+        URI='http://jabber.org/protocol/commands'
+        iqcmd=iq.find('{http://jabber.org/protocol/commands}command')
+        node=iqcmd.get("node")[4:]
+        v_id=pyvkt.jidToId(iq.get("to"))
+        cmdList=self.makeCmdList(iq.get("from"),v_id)
+        #logging.warning(tostring(iq))
         #cmdList=self.transportCmdList
         if (cmdList.has_key(node)):
             #FIXME different actions
-            if iq.command.hasAttribute("action"):
-                act = iq.command["action"]
-                if act=="cancel":
-                    ans=xmlstream.toResponse(iq)
-                    ans["type"]="result"
-                    ans["type"]="result"
-                    q=ans.addElement("command",iq.command.uri)
-                    if iq.command.hasAttribute("sessionid"):
-                        q["sessionid"]=iq.command["sessionid"]
-                    q["status"]="canceled"
-                    q["node"]=node
-                    return ans
-
-            if (iq.command.x!=None):
-                args=self.getXdata(iq.command.x)
+            act=iqcmd.get('action')
+            
+            if act=="cancel":
+                ans=createReply(iq,'result')
+                q=addChild(ans,'command',URI,{'status':'cancelled','node':node})
+                #q=ans.addElement("command",iq.command.uri)
+                #q=addChild()
+                sid=iqcmd.get('sessionid',None)
+                if sid:
+                    q.set("sessionid",sid)
+                #q["status"]="canceled"
+                #q["node"]=node
+                return ans
+            x=iqcmd.find('{jabber:x:data}x')
+            #logging.error(x)
+            if (x!=None):
+                #logging.warning('xdata')
+                args=self.getXdata(x)
             else:
                 #print "empty "
                 args={}
             cmd=cmdList[node]
             
-            res=cmd.run(iq["from"],args,to_id=v_id)
-            resp=xmlstream.toResponse(iq)
-            resp["type"]="result"
-            c=resp.addElement("command",'http://jabber.org/protocol/commands')
-            c["node"]=node
-            c["status"]=res["status"]
-            c["sessionid"]='0'
+            res=cmd.run(iq.get("from"),args,to_id=v_id)
+            resp=createReply(iq,'result')
+            #resp=xmlstream.toResponse(iq)
+            #resp["type"]="result"
+            c=addChild(resp,'command',URI,{'node':'cmd:%s'%node,'status':res['status'],'sessionid':'0'})
+            
+            #c=resp.addElement("command",'http://jabber.org/protocol/commands')
+            #c["node"]=node
+            #c["status"]=res["status"]
+            #c["sessionid"]='0'
             #when command completed we do not have form usually
             #it does not work in psi correctly
             #if res["status"]=="completed":
@@ -143,22 +151,27 @@ class cmdManager:
             #    note.addContent(res["message"])
             #    return resp
             #if not completed we prepare form for sending
-            x=c.addElement("x",'jabber:x:data')
-            
+            #x=c.addElement("x",'jabber:x:data')
+            x=addChild(c,'x','jabber:x:data')
             if (res.has_key("form")):
-                act=c.addElement("actions")
-                act["execute"]="next"
-                act.addElement("next")
-                x["type"]="form"
+                act=addChild(c,'actions',attrs={'execute':'next'})
+                #act=c.addElement("actions")
+                #act["execute"]="next"
+                addChild(act,'next')
+                #act.addElement("next")
+                x.set('type','form')
+                #x["type"]="form"
             else:
-                x["type"]="result"
+                x.set('type','result')
             try:
-                x.addElement("title").addContent(res["title"])
-            except:
-                x.addElement("title").addContent(u"result")
+                addChild(x,'title').text=res["title"]
+            except KeyError:
+                addChild(x,'title','result')
+                #x.addElement("title").addContent(u"result")
             try:
-                x.addElement("instructions").addContent(res["message"])
-            except:
+                addChild(x,'instructions').text=res["message"]
+                #x.addElement("instructions").addContent(res["message"])
+            except KeyError:
                 pass
             try:
                 fields=res["form"]["fields"]
@@ -182,25 +195,46 @@ class cmdManager:
                     except IndexError:
                         #print "initial value isn't set"
                         val=''
+                    fn=addChild(x,'field',attrs={"type":ft, 'var':i,'label':fd})
+                    if(val):
+                        addChild(fn,'value').text=val
 
-                    f=x.addElement("field")
-                    f.attributes={"type":ft, 'var':i,'label':fd}
-                    f.addElement("value").addContent(val)
+                    #f=x.addElement("field")
+                    ##f.attributes={"type":ft, 'var':i,'label':fd}
+                    #f.addElement("value").addContent(val)
             except KeyError:
                 pass
             return resp
         else:
+            logging.warning('cant find command %s'%node)
             #FIXME error strnza
             pass
+        
     def getXdata(self,x):
         #print("xdata")
         #print(x.toXml().encode("ascii","replace"))
         #x=elem.x
         ret={}
-        if (x==None):
-            #print "none"
-            return ret
+        #if (x==None):
+            ##print "none"
+            #return ret
         #TODO check namespace
+        #logging.error(tostring(x))
+        #logging.error(x.findall('{jabber:x:data}field'))
+        for i in x.findall('{jabber:x:data}field'):
+            #logging.warning(tostring(i))
+            vals=i.findall('{jabber:x:data}value')
+            #logging.warning(v)
+            val=''
+            for v in vals:
+                if (val):
+                    val='%s\n%s'%(val,v.text)
+                else:
+                    val=v.text
+            ret[i.get('var')]=val
+        logging.warning('xdata: '+str(ret))
+        return ret
+                
         for f in x.children:
             if (type(f)!=unicode and f.name=='field'):
                 ret[f["var"]]=""
@@ -219,50 +253,48 @@ class cmdManager:
         #print "got ",ret
         return ret
     def onDiscoInfo(self,iq):
-        v_id=pyvkt.jidToId(iq["to"])
-        cmdList=self.makeCmdList(iq["from"],v_id)
-        resp=xmlstream.toResponse(iq)
-        resp["type"]="result"
-        q=resp.addElement("query",'http://jabber.org/protocol/disco#info')
-        q["node"]=iq.query["node"]
-        if (iq.query["node"][:4]=='cmd:'):
-            node=iq.query["node"][4:]
-        else:
-            node=iq.query["node"]
-        #if (type(node)==unicode):
-            #node=node.encode("utf-8")
-        #else:
-            #print "WARNING non-unicode node name: %s"%node
+        v_id=pyvkt.jidToId(iq.get("to"))
+        cmdList=self.makeCmdList(iq.get("to"),v_id)
+        resp=createReply(iq)
+        resp.set("type","result")
+        q=addChild(resp,"query",'http://jabber.org/protocol/disco#info')
+        node=iq.find('{http://jabber.org/protocol/disco#info}query').get("node")
+        q.set('node',node)
         if (node=='http://jabber.org/protocol/commands'):
-            if (v_id==0):
-                q.addElement("identity").attributes={"name":"pyvk-t commands","category":"automation","type":"command-node"}
-            else:
-                q.addElement("identity").attributes={"category":"automation","type":"command-node"}
+            # FIXME
+            name=u"Команды [ad-hoc]"
+            
+            #addChild(q,'identity',attrs={"name":u"Команды [ad-hoc]","category":"automation","type":"command-node"})
+                #q.addElement("identity").attributes={"name":"pyvk-t commands","category":"automation","type":"command-node"}
+            #else:
+                #addChild(q,'identity',attrs={"name":"pyvk-t commands","category":"automation","type":"command-node"})
+                #q.addElement("identity").attributes={"category":"automation","type":"command-node"}
                 
         else:
             try:
-                cmd=cmdList[node]
-                q.addElement("identity").attributes={"name":cmd.name,"category":"automation","type":"command-node"}
+                cmd=cmdList[node[4:]]
+                name=cmd.name
             except KeyError:
-                #print node
-                #print_exc()
-                q.addElement("identity").attributes={"name":"unknown","category":"automation","type":"command-node"}
-
-        q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-        q.addElement("feature")["var"]='jabber:x:data'
+                #FIXME error stranza?
+                name="unknown"
+        addChild(q,'identity',attrs={"name":name,"category":"automation","type":"command-node"})
+        addChild(q,"feature",attrs={'var':'http://jabber.org/protocol/commands'})
+        addChild(q,"feature",attrs={'var':'jabber:x:data'})
         return resp
     def onDiscoItems(self,iq):
         cmdList={}
         #if (iq["to"]==self.trans.jid):
             #cmdList=self.transportCmdList
-        v_id=pyvkt.jidToId(iq["to"])
-        cmdList=self.makeCmdList(iq["from"],v_id)
-        resp=xmlstream.toResponse(iq)
-        resp["type"]="result"
-        q=resp.addElement("query",'http://jabber.org/protocol/disco#items')
-        q["node"]='http://jabber.org/protocol/commands'
+        v_id=pyvkt.jidToId(iq.get("to"))
+        cmdList=self.makeCmdList(iq.get("from"),v_id)
+        #resp=xmlstream.toResponse(iq)
+        resp=createReply(iq)
+        resp.set("type",'result')
+        q=addChild(resp,"query",'http://jabber.org/protocol/disco#items',attrs={'node':'http://jabber.org/protocol/commands'})
+        #q["node"]='http://jabber.org/protocol/commands'
         for i in cmdList:
-            q.addElement("item").attributes={"jid":iq["to"], "node":"cmd:%s"%i, "name":cmdList[i].name}
+            addChild(q,'item',attrs={"jid":iq.get("to"), "node":"cmd:%s"%i, "name":cmdList[i].name})
+            #q.addElement("item").attributes=
         return resp
 
 class basicCommand:
@@ -306,11 +338,10 @@ class basicCommand:
             try:
                 ret[self.args[i]]=args[i]
             except IndexError:
-                print("args error")
+                #print("args error")
                 return {}
         return ret
     def onMsg(self,jid,text):
-        #return "not implemented"
         args=text.split(",")
         ret="command: '%s', args: %s"%(node,repr(args))
         return ret
@@ -361,6 +392,7 @@ class loginCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
+        #print "login"
         bjid=pyvkt.bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
@@ -593,7 +625,7 @@ class listCommands(basicCommand):
         msg=u''
         print "list cmd"
         for i in sorted(cl.keys()):
-            msg=u"%s'/%s' - %s\n"%(msg,i,cl[i].name)
+            msg=u"%s'.%s' - %s\n"%(msg,i,cl[i].name)
         return {"status":"completed","title":self.name,'message':msg}
 
 class getWall(basicCommand):

@@ -29,11 +29,12 @@ from twisted.internet import defer,reactor
 import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
-from traceback import print_stack, print_exc
+from traceback import print_stack, print_exc,format_exc
 import xml.dom.minidom
 import lxml.etree as xml
-import time
-
+import time,logging
+class UnregisteredError (Exception):
+    pass
 class user:
     #lock=1
     #active=0
@@ -215,11 +216,12 @@ class user:
         stores presence of a resource and returns it
         """
         if (prs==None):return
-        jid=prs["from"]
+        jid=prs.get("from")
         p={"jid":jid,"priority":'0',"status":u"","show":u"","time":time.time()}
-        for i in prs.elements():
-            if i.children and i.name in p:
-                p[i.name]=i.children[0]
+        for i in prs:
+            if len(i) and i.tag in p:
+                p[i.name]=i.text
+        logging.info("presence params: %s"%str(p))
         p["priority"]=int(p["priority"])
         self.resources[jid]=p
 
@@ -265,22 +267,22 @@ class user:
         try:
             #self.vclient=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
             if (self.captcha_key and self.captcha_sid):
-                print "captcha fighting!"
+                #print "captcha fighting!"
                 self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,
                     captcha_key=self.captcha_key,captcha_sid=self.captcha_sid)
                 self.captcha_sid=None
             else:
                 self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self)
         except libvkontakte.captchaError,exc:
-            print "ERR: got captcha request"
-            print exc
+            #print "ERR: got captcha request"
+            logging.warning(str(exc))
             
             if (exc.sid):
                 self.captcha_sid=exc.sid
                 self.saveData()
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
             url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%exc.sid
-            print url
+            #print url
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
                 body=u"Ошибка подключения, стребуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '/login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
             self.state=4
@@ -315,50 +317,33 @@ class user:
             return
         try:
             self.readData()
-            self.login1()
-        except:
-            print_exc()
-            #print "readdata failed. trying DB..."
+        except UnregisteredError:
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
+        defer.execute(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
+    def loginCallback(self,stage):
+        self.trans.sendPresence(self.trans.jid,self.bjid,status=u'Подключаюсь [%s]... '%stage,show="away")
+    def login1(self,data=None):
+        #if (data):
             #try:
-                #mq="SELECT * FROM users WHERE jid='%s'"%safe(self.bjid)
-            #except UnicodeEncodeError:
-                #try:
-                    #print "unicode error, possible bad JID: %s"%self.bjid
-                #except:
-                    #print "unicode error. can't print jid"
+                #t=data[0]
+            #except IndexError:
+                ##print "FIXME unregistered user: %s ?"%self.bjid
+                #if not self.bjid in self.trans.unregisteredList:
+                    #reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
+                    #self.trans.unregisteredList.append(self.bjid)
+                    ##logging.info("unregistered warning sent")
                 ##self.lock=0
                 ##self.active=0
                 #self.state=4
                 #return
-            #print mq
-            #print_stack()
-            #q=self.trans.dbpool.runQuery(mq)
-            #q.addCallback(self.login1)
-            #q.addErrback(self.loginFailed)
-            print "FIXME unregistered warning"
-
-    def login1(self,data=None):
-        if (data):
-            try:
-                t=data[0]
-            except IndexError:
-                #print "FIXME unregistered user: %s ?"%self.bjid
-                if not self.bjid in self.trans.unregisteredList:
-                    reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
-                    self.trans.unregisteredList.append(self.bjid)
-                    print "unregistered warning sent"
-                #self.lock=0
-                #self.active=0
-                self.state=4
-                return
-            self.parseDbData(data)
-        defer.execute(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
+            #self.parseDbData(data)
+        
         return
 
     def loginFailed(self,data):
-        print data
-        print ("login failed for %s"%self.bjid)
-        print "possible database error"
+        #print data
+        logging.warning ("login failed for %s"%self.bjid)
+        #print "possible database error"
         self.delThread()
 
     def logout(self):
@@ -376,20 +361,7 @@ class user:
         except:
             print "GREPME savedata failed"
             print_exc()
-        #try:
-            #mq="UPDATE users SET roster='%s', config='%s' WHERE jid='%s';"%(b64encode(cPickle.dumps(self.roster,2)),b64encode(cPickle.dumps(self.config,2)),safe(self.bjid))
-        #except UnicodeEncodeError:
-            #try:
-                #print "unicode error, possible bad JID: %s"%self.bjid
-            #except:
-                #pass
-        #except AttributeError:
-            #print_exc()
-        #else:
-            #pass
-            #q=self.trans.dbpool.runQuery(mq)
-            #defer.waitForDeferred(q)
-        #now it's blocking ;)
+
         self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
         self.contactsOffline(self.onlineList)
         try:
@@ -398,12 +370,14 @@ class user:
             print_exc()
         try:
             self.pool.stop()
+            #self.pool.join()
         except:
             print_exc()
         try:
             self.delThread()
         except:
             print_exc()
+        #TODO separate thread
         self.trans.hasUser(self.bjid)
         return 0
     def delThread(self,void=0):
@@ -525,8 +499,6 @@ class user:
         for i in contacts:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
-    def __del__(self):
-        self.delThread()
     def saveData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid
@@ -543,7 +515,7 @@ class user:
             try:
                 self.password=self.password.decode('utf-8')
             except UnicodeDecodeError:
-                print "Password is not in Utd8. Trying cp1251"
+                print "Password is not in Utf8. Trying cp1251"
                 self.password=self.password.decode('cp1251')
 
         xml.SubElement(root,"email").text=self.email
@@ -578,24 +550,24 @@ class user:
         cfile=open(fname,'w')
         cfile.write(dat)
         cfile.close()
-        print "user %s data successfully saved"%self.bjid
+        #print "user %s data successfully saved"%self.bjid
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid
-        cfile=open(fname,'r')
         try:
-            tree=xml.parse(cfile)
-        except:
-            print "cant parse user config (%s)"%repr(self.bjid)
-            print_exc()
-            raise Exception
+            cfile=open(fname,'r')
+        except IOError, err:
+            if (err.errno==2):
+                logging.warning('readData for unregistered: %s'%self.bjid)
+                raise UnregisteredError
+        tree=xml.parse(cfile)
         self.email= tree.xpath('//email/text()')[0]
         self.password=tree.xpath('//password/text()')[0]        
         self.config={}
         try:
             self.captcha_sid=tree.xpath('//captcha_sid/text()')[0]
-        except:
-            print_exc()
+        except IndexError:
+            pass
         for i in  tree.xpath('//config/*'):
             n,v=i.get('name'),i.get('value')
             try:
@@ -605,6 +577,7 @@ class user:
                     else:
                         v=False
                 self.config[n]=v
+            
             except:
                 print_exc()
             
@@ -620,34 +593,7 @@ class user:
             self.roster[i.get('jid')]=t
         #print "data file successfully parsed"
         cfile.close()
-    def parseDbData(self,data):
-        bjid=data[0][0].lower()
-        if (bjid!=self.bjid):
-            return
-        #getting config
-        self.config={}
-        try:
-            if data[0][3]:
-                self.config=cPickle.loads(b64decode(data[0][3]))
-        except EOFError:
-            print "error while parsing config"
-        except TypeError:
-            print "Error decoding config"
-        except IndexError:
-            print ("config field not found! please add it to your database (see pyvk-t_new.sql for details)")
-        #getting roster
-        self.roster={}
-        try:
-            if data[0][4]:
-                self.roster=cPickle.loads(b64decode(data[0][4]))
-        except EOFError:
-            print "error while parsing roster"
-        except TypeError:
-            print "Error decoding roster"
-        except IndexError:
-            print ("roster field not found! please add it to your database (see pyvk-t_new.sql for details)")
-        self.email=data[0][1]
-        self.password=data[0][2]        
+
     def getConfig(self,fieldName):
         if (not fieldName in pyvkt.userConfigFields):
             raise KeyError("user config: no such field (%s)"%fieldName)
@@ -656,56 +602,57 @@ class user:
         except KeyError:
             return pyvkt.userConfigFields[fieldName]["default"]
         except AttributeError:
-            print "user without config\nstate=%s"%(self.state)
+            logging.warn("user without config\nstate=%s"%(self.state))
             return pyvkt.userConfigFields[fieldName]["default"]
-    def __getattr__(self,name):
-        #print "getattr",name
-        #print "state = ",self.state
-        if (name=="lock"):
-            print "deprecated user.lock!"
-            print_stack(limit=2)
-            if (self.state in (1,3)):
-                return 1
-            return 0
-            #return self._lock
-        if (name=="active"):
-            print "deprecated user.active!"
-            print_stack(limit=2)
-            if (self.state in (1,2)):
-                return 1
-            return 0
+    #def __getattr__(self,name):
+        ##print "getattr",name
+        ##print "state = ",self.state
+        #if (name=="lock"):
+            #print "deprecated user.lock!"
+            #print_stack(limit=2)
+            #if (self.state in (1,3)):
+                #return 1
+            #return 0
+            ##return self._lock
+        #if (name=="active"):
+            #print "deprecated user.active!"
+            #print_stack(limit=2)
+            #if (self.state in (1,2)):
+                #return 1
+            #return 0
 
-            #return self._active
-        if (name=='thread'):
-            print "deprecated user.thread!"
-            print_stack(limit=2)
-            return self.vclient
-        if (name=='vclient'):
-            raise pyvkt.noVclientError(self.bjid)
-        raise AttributeError("user instance without '%s'"%name)
+            ##return self._active
+        #if (name=='thread'):
+            #print "deprecated user.thread!"
+            #print_stack(limit=2)
+            #return self.vclient
+        #if (name=='vclient'):
+            #raise pyvkt.noVclientError(self.bjid)
+        #raise AttributeError("user instance without '%s'"%name)
         #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
-    def __setattr__(self,name,val):
-        if (name=="lock"):
-            print "deprecated user.lock!"
-            print_stack(limit=2)
-            if (val):
-                if self._active: self.state==1
-                else: self.state==3
-            else:
-                if self._active: self.state==2
-                else: self.state==0
-            #self._lock=val
-        if (name=="active"):
-            print "deprecated user.active!"
-            print_stack(limit=2)
-            if (val):
-                if self._lock: self.state==1
-                else: self.state==2
-            else:
-                if self._lock: self.state==3
-                else: self.state==0
-            #self._active=val
-        self.__dict__[name]=val
+    #def __setattr__(self,name,val):
+        #if (name=="lock"):
+            #print "deprecated user.lock!"
+            #print_stack(limit=2)
+            #if (val):
+                #if self._active: self.state==1
+                #else: self.state==3
+            #else:
+                #if self._active: self.state==2
+                #else: self.state==0
+            ##self._lock=val
+        #if (name=="active"):
+            #print "deprecated user.active!"
+            #print_stack(limit=2)
+            #if (val):
+                #if self._lock: self.state==1
+                #else: self.state==2
+            #else:
+                #if self._lock: self.state==3
+                #else: self.state==0
+            ##self._active=val
+        #self.__dict__[name]=val
+
 
 #TODO destructor
 

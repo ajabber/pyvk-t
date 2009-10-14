@@ -36,10 +36,12 @@ import time
 import hashlib
 from os import environ
 import re
-import base64
+import base64,copy
 import ConfigParser,os,string
-from traceback import print_stack, print_exc
+from traceback import print_stack, print_exc,format_exc
 import pyvkt_global as pyvkt
+import logging
+import pyvkt_config as conf
 #import StringIO
 
 #user-agent used to request web pages
@@ -62,12 +64,17 @@ class captchaError(Exception):
         self.sid=sid
         pass
     def __str__(self):
-        return 'got captcha request (sid = "%s")'%self.sid
+        url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
+        return 'got captcha request (sid = "%s", url=%s)'%(self.sid,url)
 class authError(Exception):
     def __init__(self):
         pass
     def __str__(self):
         return 'unexpected auth form'
+class UserapiSidError(Exception):
+    pass
+class HTTPError(Exception):
+    pass
 class client():
     oldFeed=""
     #onlineList={}
@@ -86,42 +93,15 @@ class client():
         self.user=user
         #self.client=cli
         self.feedOnly=1
-        config = ConfigParser.ConfigParser()
-        confName="pyvk-t_new.cfg"
-        if(os.environ.has_key("PYVKT_CONFIG")):
-            confName=os.environ["PYVKT_CONFIG"]
-        config.read(confName)
-        self.config=config
-        global opener
-        self.jid=jid
-        #deprecated self.jid
         self.bjid=jid
-        try:
-            self.dumpPath=config.get("debug","dump_path")
-        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            print "debug/dump_path isn't set. disabling dumps"
-            self.dumpPath=None
-        try:
-            self.cachePath=config.get("features","cache_path")
-        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            print "features/cache_path isn't set. disabling cache"
-            self.cachePath=None
-        try:
-            self.keep_online=config.get("features","keep_online")
-        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            print "features/keep_online isn't set."
-            self.keep_online=None
-        try:
-            self.resolve_links=config.get("features","resolve_links")
-        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            self.resolve_links=False
-        try:
-            self.cookPath=config.get("features","cookies_path")
-            cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
-        except (ConfigParser.NoOptionError,ConfigParser.NoSectionError):
-            print "features/cookies_path isn't set. disabling cookie cache"
-            cjar=cookielib.MozillaCookieJar()
-            self.cookPath=None
+
+        self.dumpPath=conf.get("debug/dump_path")
+        self.cachePath=conf.get('storage','cache')
+        self.cookPath=conf.get('storage','cookies')
+        self.keep_online=True
+        self.resolve_links=True
+        #FIXME delete 
+        cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
         try:
             cjar.clear()
             cjar.load()
@@ -129,54 +109,54 @@ class client():
             print "cant read cookie"
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         #cjar.clear()
+        self.user.loginCallback(u"проверка cookies")
         self.v_id=self.getSelfId()
         if (self.v_id==-1):
             #print "bad cookie..."
             cjar.clear()
-            authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            #authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            #first, check for captcha
+            self.user.loginCallback(u"проверка captcha")
             if (captcha_key and captcha_sid):
-                authData['captcha_key']=captcha_key
-                authData['captcha_sid']=captcha_sid
-            print authData
-            params=urllib.urlencode(authData)
-            req=urllib2.Request("http://vkontakte.ru/login.php?%s"%params)
-            req.addheaders = [('User-agent', USERAGENT)]
-            try:
-                res=self.opener.open(req)
-            except urllib2.HTTPError, err:
-                print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-                self.error=1
-                self.alive=0
-                return 
-            tpage=res.read()
+                tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt','captcha_key':captcha_key,'captcha_sid':captcha_sid})
+            else:
+                tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt'})
             #print tpage
+            #print 'captcha test: ',ct
             if (tpage[:20]=='{"ok":-2,"captcha_si'):
-                print "ERR: got captcha request"
+                
+                #print "ERR: got captcha request"
                 sid=None
                 try:
                     cdata=demjson.decode(tpage)
-                    print "answer: ",cdata
+                    #print "answer: ",cdata
                     sid=cdata['captcha_sid']
                 except:
                     print_exc()
                 self.error=1
-                #self.client.threadError(self.jid,"auth error: got captha request")
+                #self.client.threadError(self.bjid,"auth error: got captha request")
                 self.alive=0
                 raise captchaError(sid=sid)
                 return
-            # {"ok":-2,"captcha_sid":"962043805179","text":"Enter code"} - captcha
-            # good<your_id> - success
-            self.cookie=cjar.make_cookies(res,req)
+                
+            #return
+            authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            if (captcha_key and captcha_sid):
+                authData['captcha_key']=captcha_key
+                authData['captcha_sid']=captcha_sid
+            #print authData
+            self.user.loginCallback(u"проверка логина и пароля")
+            
+            tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
+            i=tpage.find("value='")
+            i+=7
+            p=tpage.find("'",i+1)
+            self.user.loginCallback(u"вход на сайт")
+            self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':tpage[i:p]})
+            self.user.loginCallback(u"проверка cookies")
             self.v_id=self.getSelfId()
             if (self.v_id==-1):
                 raise authError
-            #if (self.checkLoginError()!=0):
-                #self.error=1
-                ##self.client.threadError(self.jid,"auth error (possible wrong email/pawssword)")
-                #self.alive=0
-                #raise authError
-            #else:
-                #print "login successful."
             if self.user.getConfig("save_cookies"):
                 try:
                     #print "saving cookie.."
@@ -192,12 +172,20 @@ class client():
             self.alive=1
             self.error=0
         self.sid=None
+        #print cjar.make_cookies()
         for i in cjar:
+            #print i
             if i.name=='remixsid':
                 self.sid=i.value
+        self.user.loginCallback(u"подключился")
+                
+        #print '====='
+        ##for i in cjar:
+            #print i
+            
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
-    def getHttpPage(self,url,params=None):
+    def getHttpPage(self,url,params=None,cjar=None):
         """ get contents of web page
             returns u'' if some of errors took place
         """
@@ -205,6 +193,8 @@ class client():
             #for i in params:
                 #if type(params[i]==unicode):
                     #params[i]=params[i].encode('utf-8')
+        if (type(params)==type({})):
+            params=urllib.urlencode(params)
         if params:
             req=urllib2.Request(url,params)
         else:
@@ -215,36 +205,37 @@ class client():
             res=self.opener.open(req)
             page=res.read()
         except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return ''
+            raise HTTPError("HTTP error %s.\nURL:%s"%(err.code,req.get_full_url()))
+            #return ''
         except IOError, e:
-            print "IO Error"
+            msg="IO Error"
             if hasattr(e, 'reason'):
-                print "Reason: %s.\nURL:%s"%(e.reason,req.get_full_url())
+                msg=msg+"\nReason: %s.\nURL:%s"%(e.reason,req.get_full_url())
             elif hasattr(e, 'code'):
-                print "Code: %s.\nURL:%s"%(e.code,req.get_full_url())
+                msg=msg+"\nCode: %s.\nURL:%s"%(e.code,req.get_full_url())
+            raise HTTPError(msg)
             return ''
         except httplib.BadStatusLine, err:
-            print "HTTP bad status line error.\nURL:%s"%(req.get_full_url())
-            return ''
+            raise HTTPError("HTTP bad status line error.\nURL:%s"%(req.get_full_url()))
         except httplib.HTTPException, err:
-            print "HTTP exception.\n URL: %s"%(req.get_full_url())
-            return ''
+            raise HTTPError("HTTP exception.\n URL: %s"%(req.get_full_url()))
         self.bytesIn += len(page)
+        if (cjar):
+            cjar.make_cookies(res,req)
         return page
 
     def checkPage(self,page):
         if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
-            print ("%s: banned"%self.jid)
+            print ("%s: banned"%self.bjid)
             raise tooFastError
         if (page.find('<form method="post" name="login" id="login" action="/login.php"')!=-1):
-            print ("%s: logged out"%self.jid)
+            print ("%s: logged out"%self.bjid)
             raise authFormError
         return 
 
     def logout(self):
         self.alive=0
-        #self.client.usersOffline(self.jid,self.onlineList)
+        #self.client.usersOffline(self.bjid,self.onlineList)
         self.onlineList={}
         if not self.user.getConfig("save_cookies"):
             self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
@@ -259,7 +250,7 @@ class client():
             return {}
         s=s.replace(u':"',u':u"')
         try:
-            return eval(s,{"null":"null"},{})
+            return eval(s,{"null":None},{})
         except:
             print("JSON decode error")
             print_exc()
@@ -323,8 +314,12 @@ class client():
     def getOnlineList(self):
         try:
             return self.getOnlineList2()
+        except UserapiSidError:
+            raise
         except:
-            print "getOnlineList: userapi request failed"
+            logging.warning(format_exc())
+            #print "getOnlineList: userapi request failed"
+            #print_exc()
         ret={}
         page=self.getHttpPage("http://vkontakte.ru/friend.php","act=online&nr=1")
         if not page:
@@ -647,7 +642,7 @@ class client():
         return result
 
     def addNote(self,text,title=u""):
-        """ Posts a public note on vkontakte.ru site"""
+        """ Posts a public note on vk.com site"""
         page = self.getHttpPage("http://pda.vkontakte.ru/newnote")
         if not page:
             return None
@@ -666,7 +661,7 @@ class client():
         
 
     def setStatus(self,text,ts=None):
-        """ Sets status (aka activity) on vkontakte.ru site"""
+        """ Sets status (aka activity) on vk.com site"""
         #if (ts):
             #res=self.userapiRequest(act='set_activity', text=text,ts=ts)
             #print res
@@ -699,6 +694,7 @@ class client():
         """
         #print "getmessage %s started"%msgid
         page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
+        #print page
         if not page:
             return {"text":"<internal error: can't get message http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
         try:
@@ -760,6 +756,7 @@ class client():
             ttitle=title
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
         page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        print page
         if not page:
             return 1
         if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
@@ -781,6 +778,7 @@ class client():
         -1  - unknown error
         """
         page = self.getHttpPage("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
+        #print page
         if not page:
             return 1
         dom = xml.dom.minidom.parseString(page)
@@ -804,6 +802,7 @@ class client():
         data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
         #print data
         page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
+        #print page
         if not page:
             print "Sending message: HTTP Error"
             return 1
@@ -819,7 +818,10 @@ class client():
         ret={}
         for i in fl:
             fn=i[1].split()
-            ret[i[0]]={'last':fn[1],'first':fn[0]}
+            try:
+                ret[i[0]]={'last':fn[1],'first':fn[0]}
+            except IndexError:
+                ret[i[0]]={'first':fn[0]}
         return ret
     def getFriendList(self):
         try:
@@ -893,7 +895,7 @@ class client():
 
     def dummyRequest(self):
         """ request that means nothing"""
-        req=urllib2.Request("http://wap.vkontakte.ru/")
+        req=urllib2.Request("http://wap.vk.com/")
         try:
             res=self.opener.open(req)
             page=res.read()
@@ -901,12 +903,11 @@ class client():
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return -1
     def exit(self):
-        #self.client.usersOffline(self.jid,self.onlineList.keys())
+        #self.client.usersOffline(self.bjid,self.onlineList.keys())
         self.logout()
         self.alive=0
         #threading.Thread.exit(self)
-    def __del__(self):
-        self.logout()
+
         #threading.Thread.exit(self)
 
     def getCalendar(self,month,year):
@@ -962,6 +963,7 @@ class client():
         try:
             return self.getStatusList2()
         except:
+            logging.warning(format_exc())
             print "getStatusList: userapi request failed"
         ret={}
         #print "start"
@@ -1017,6 +1019,8 @@ class client():
     def getStatusList2(self):
         sl=self.userapiRequest(act='updates_activity',to='50')
         sl=sl['d']
+        if (not sl):
+            return {}
         sl.reverse()
         ret={}
         for i in sl:
@@ -1046,7 +1050,7 @@ class client():
                     ld=eval(ttds[0].img["onclick"][18:-1],{},{})
                     tdata=ttds[1].findAll(text=True)
                     if (self.resolve_links):
-                        pinfo["dlink"]="http://cs%s.vkontakte.ru/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
+                        pinfo["dlink"]="http://cs%s.vk.com/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
                     else:
                         pinfo["dlink"]='direct links are disabled'
                     pinfo["type"]='audio'
@@ -1163,17 +1167,21 @@ class client():
             try:
                 page=page.decode('cp1251')
             except:
-                print 'something wrong with charset'
+                logging.warning("strange userapi charset")
         #print page
         #ret=json.loads(page)
         try:
             ret= demjson.decode(page,strict=False)
         except:
-            print "json error. trying to remofe 'fr.' blocks..."
+            logging.warning("json error. trying to remofe 'fr.' blocks...")
             sr=re.search(',"fr":{.*?},"fro":{.*?},"frm":{.*?}',page)
             if (sr):
                 page=page[:sr.start()]+page[sr.end():]
-            ret= demjson.decode(page,strict=False)
+            try:
+                ret= demjson.decode(page,strict=False)
+            except Exception,e:
+                logging.error("userapi failed\n'%s'\n%s"%(repr(page),str(e)))
+                raise e
             #sr=re.search(',"fro":{.*?}',page)
             #page=page[:sr.start()]+page[sr.end():]
             #sr=re.search(',"frm":{.*?}',page)
@@ -1182,7 +1190,8 @@ class client():
             if (ret['ok']==-2):
                 raise captchaError
             elif (ret['ok']==-1):
-                print 'userapiRequest: GREPME userapi session error'
+                raise UserapiSidError()
+                #logging.error('userapiRequest: GREPME userapi session error (%s)'%self.bjid)
         except (KeyError,TypeError):
             pass
         return ret
