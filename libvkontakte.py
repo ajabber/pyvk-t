@@ -158,7 +158,8 @@ class client():
                 return
                 
             #return
-            authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            #authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+            authData={'email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
             if (captcha_key and captcha_sid):
                 authData['captcha_key']=captcha_key
                 authData['captcha_sid']=captcha_sid
