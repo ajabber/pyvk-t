@@ -22,7 +22,11 @@ def createElement(tag,attrs=None):
     ret=etree.Element(tag)
     if (attrs):
         for i in attrs.keys():
-            ret.set(i,attrs[i])
+            try:
+                ret.set(i,attrs[i])
+            except TypeError:
+                logging.warning("wrong attribute: '%s': '%s'"%(i,attrs[i]))
+                raise
     return ret
 def createReply(iq,t='result'):
     ret=etree.Element('iq')
@@ -174,6 +178,7 @@ class xmlstream:
                             self.handlePacket(st)
                         except:
                             logging.error("unhandled exception:\n"+format_exc().decode("utf-8"))
+                            #logging.exception()
             except KeyboardInterrupt:
                 logging.error("comstream: caught interrupt")
                 if self.kbInterrupt():
@@ -181,6 +186,9 @@ class xmlstream:
                 else:
                     return
                 return
+            except:
+                logging.critical("exception:")
+                print_exc()
                 
         logging.warn("main loop stopped. goodbye!")
     def kbInterrupt(self):

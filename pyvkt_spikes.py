@@ -103,7 +103,7 @@ class reqQueue(threading.Thread):
                         reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
                     except:
                         logging.error(format_exc())
-                except pyvkt.noVclientError:
+                except pyvkt.NoVclientError:
                     logging.error("err: no vClient (%s)"%repr(self.user.bjid))
                 except HTTPError,e:
                     logging.error("http error: "+str(e).replace('\n',', '))
@@ -111,6 +111,8 @@ class reqQueue(threading.Thread):
                     logging.error('userapi sid error (%s)'%self.user.bjid)
                 except Exception, exc:
                     logging.error(format_exc())
+                    logging.error('task traceback:')
+                    [logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
                     #print "Caught exception"
                     #print_exc()
                     #print "thread is alive!"

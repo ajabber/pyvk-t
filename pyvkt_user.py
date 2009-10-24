@@ -35,6 +35,7 @@ import lxml.etree as xml
 import time,logging
 class UnregisteredError (Exception):
     pass
+
 class user:
     #lock=1
     #active=0
@@ -61,7 +62,7 @@ class user:
         self.VkStatus=u""   #status which is set on web
         self.status=u"Подождите..."     #status which is show in jabber
         self.feed = None    #feed
-
+        self.uapiStates={}      # userapi states (ts)
         self.refreshDone=True
         self.rosterStatusTimer=0
         #deprecated?
@@ -318,10 +319,15 @@ class user:
         try:
             self.readData()
         except UnregisteredError:
+            logging.warning("login attempt from unregistered user %s"%self.bjid)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
+            return
         defer.execute(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
     def loginCallback(self,stage):
-        self.trans.sendPresence(self.trans.jid,self.bjid,status=u'Подключаюсь [%s]... '%stage,show="away")
+        try:
+            self.trans.sendPresence(self.trans.jid,self.bjid,status=u'Подключаюсь [%s]... '%stage,show="away")
+        except:
+            pass
     def login1(self,data=None):
         #if (data):
             #try:
@@ -414,6 +420,35 @@ class user:
             return 1
         #nothing
         return 0
+    def checkWallUpdate(self):
+        try:
+            ts=self.uapiStates['wall']
+        except:
+            print_exc()
+            logging.warning("requesting wall ts...")
+            self.uapiStates['wall']=self.vclient.getWallState()
+            #self.trans.sendMessage(self.trans.jid,self.bjid,body=u'Текущее состояние стены сохранено')
+        else:
+            msgs=self.vclient.getWallHistory(ts)
+            if (msgs==False):
+                logging.warning("bad reply. possible wrong ts. re-requesting...")
+                self.uapiStates['wall']=self.vclient.getWallState()
+                return
+            #print msgs
+            for t,a,m in msgs:
+                
+                #src='%s@%s'%(m['from'][0],self.trans.jid)
+                if (a=='add'):
+                    src='%s@%s'%(m['from'][0],self.trans.jid)
+                    text=m['text'][0]
+                    #print 'sending wall notify from ',src
+                    self.trans.sendMessage(src,self.bjid,body=u"Пользователь оставил сообщение на Вашей стене:\n '%s'"% text)
+                if (a=='del'):
+                    src=self.trans.jid
+                    self.trans.sendMessage(src,self.bjid,body=u"Сообщение с вашей стены было удалено")
+                #logging.warning("new ts: %s"%t)
+                self.uapiStates['wall']=t
+                    
     def refreshData(self):
         """
         refresh online list and statuses
@@ -442,6 +477,11 @@ class user:
             self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
             self.tonline=self.onlineList
         #FIXME online status
+        if (self.getConfig("wall_notify")):
+            try:
+                self.checkWallUpdate()
+            except:
+                logging.exception('')
         self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
         if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
             self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
@@ -543,6 +583,9 @@ class user:
                     pass
                 except:
                     print_exc()
+        states=xml.SubElement(root,"states")
+        for i in self.uapiStates.keys():
+            xml.SubElement(states,i).set('ts',str(self.uapiStates[i]))
         dat=xml.tostring(root,pretty_print=True)
         if (len(dat)==0):
             print "ERROR: empty file creation prevented!"
@@ -560,7 +603,11 @@ class user:
             if (err.errno==2):
                 logging.warning('readData for unregistered: %s'%self.bjid)
                 raise UnregisteredError
-        tree=xml.parse(cfile)
+        try:
+            tree=xml.parse(cfile)
+        except xml.XMLSyntaxError:
+            logging.error ("broken xml file: %s"%fname)
+            raise
         self.email= tree.xpath('//email/text()')[0]
         self.password=tree.xpath('//password/text()')[0]        
         self.config={}
@@ -591,6 +638,10 @@ class user:
                 else:
                     t[j.tag]=j.text
             self.roster[i.get('jid')]=t
+        self.uapiStates={}
+        for i in  tree.xpath('//states/*'):
+            self.uapiStates[i.tag]=i.get('ts')
+        #print '1111111',self.uapiStates
         #print "data file successfully parsed"
         cfile.close()
 
@@ -604,6 +655,10 @@ class user:
         except AttributeError:
             logging.warn("user without config\nstate=%s"%(self.state))
             return pyvkt.userConfigFields[fieldName]["default"]
+    def __getattr__(self,name):
+        if (name=='vclient'):
+            raise pyvkt.NoVclientError(self.bjid)
+        raise AttributeError("user [%s] instance has no attribute '%s'"%(self.bjid,name))
     #def __getattr__(self,name):
         ##print "getattr",name
         ##print "state = ",self.state
