@@ -39,7 +39,7 @@ from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
 
-from pyvkt_user import user
+from pyvkt_user import user,UnregisteredError
 import pyvkt_global as pyvkt
 import pyvkt_user,pyvkt_commands
 from libvkontakte import *
@@ -196,7 +196,7 @@ class pyvk_t(comstream.xmlstream):
 .setstatus для изменения статуса на сайте""")
                 else:
                     #print cmd
-                    logging.warn("TEXTCMD '%s' from %s to %s"%(cmd,src,dest))
+                    logging.warn("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
                     if (self.hasUser(bjid)):
                         d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=src,text=cmd,v_id=v_id)
                         cb=lambda (x):self.sendMessage(dest,src,x)
@@ -330,8 +330,12 @@ class pyvk_t(comstream.xmlstream):
         else:
             src=self.jid
         #msg=domish.Element((None,"message"))
-        msg=createElement("message",{'to':jid,'from':src,'id':msg_id})
-        #if res!=0:
+        if (msg_id):
+            msg=createElement("message",{'to':jid,'from':src,'id':msg_id})
+        else:
+            logging.warning('receipt request without id. %s -> %s'%(src,jid))
+            msg=createElement("message",{'to':jid,'from':src})
+            #if res!=0:
         #    if body:
         #        msg.addElement("body").addContent(body)
         #    if subject:
@@ -345,20 +349,11 @@ class pyvk_t(comstream.xmlstream):
             return #no reciepts needed and no errors
         elif res == 2:
             err=addChild(msg,'error',attrs={'type':'wait','code':'500'})
-            #err = msg.addElement("error")
-            #err.attributes["type"]="wait"
-            #err.attributes["code"]="500"
             addChild(err,"resource-constraint","urn:ietf:params:xml:ns:xmpp-stanzas")
             addChild(err,"too-many-stanzas","urn:xmpp:errors")
             addChild(err,"text","urn:ietf:params:xml:ns:xmpp-stanzas").text=u"Слишком часто посылаете сообщения. Подождите немного."
-            #err.addElement("resource-constraint","urn:ietf:params:xml:ns:xmpp-stanzas")
-            #err.addElement("too-many-stanzas","urn:xmpp:errors")
-            #err.addElement("text","urn:ietf:params:xml:ns:xmpp-stanzas").addContent(u"Слишком часто посылаете сообщения. Подождите немного.")
         else:
             err=addChild(msg,'error',attrs={'type':'cancel','code':'500'})
-            #err = msg.addElement("error")
-            #err.attributes["type"]="cancel"
-            #err.attributes["code"]="500"
             addChild(err,"undefined-condition","urn:ietf:params:xml:ns:xmpp-stanzas")
             addChild(err,"text","urn:ietf:params:xml:ns:xmpp-stanzas").text=u"Капча на сайте или ошибка сервера"
 
@@ -377,7 +372,7 @@ class pyvk_t(comstream.xmlstream):
         src=iq.get("from")
         dest=iq.get("to")
         bjid=pyvkt.bareJid(src)
-        ans=self.createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
+        ans=createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
         #logging.warning(iq.get('type'))
         logging.info("RECV: iq (%s) %s -> %s"%(iq.get('type'),src,dest))
         if (iq.get('type')=='get'):
@@ -491,6 +486,8 @@ class pyvk_t(comstream.xmlstream):
                         pass
                     else:
                         print_exc()
+                except UnregisteredError:
+                    pass
                 except:
                     print_exc()
                 addChild(a,"password")
@@ -518,7 +515,7 @@ class pyvk_t(comstream.xmlstream):
                         return
                             #err.addElement("too-many-stanzas","urn:xmpp:errors")
                 else:
-                    ans=self.createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
+                    ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
                     q=etree.SubElement(ans,"{vcard-temp}vCard")
                     #q=ans.addElement("vCard","vcard-temp")
                     addChild(q,"FN").text=self.name
@@ -535,7 +532,8 @@ class pyvk_t(comstream.xmlstream):
                         except:
                             logging.warning('cannot load avatar')
                             print_exc()
-                    self.send(ans)                
+                    self.send(ans)
+                    return
             #TODO search and jabber:iq:gateway
         if (iq.get("type")=="set"):
             #query=iq.query
@@ -843,7 +841,7 @@ class pyvk_t(comstream.xmlstream):
                         return
                             #err.addElement("too-many-stanzas","urn:xmpp:errors")
                 else:
-                    ans=self.createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
+                    ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
                     q=etree.SubElement(ans,"{vcard-temp}vCard")
                     #q=ans.addElement("vCard","vcard-temp")
                     addChild(q,"FN").text="vkontakte.ru transport"
@@ -1000,7 +998,7 @@ class pyvk_t(comstream.xmlstream):
             os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
         except OSError:
             pass
-        ans=self.createElement("iq",{'type':'result','to':jid,'from':self.jid,'id':iq_id})
+        ans=createElement("iq",{'type':'result','to':jid,'from':self.jid,'id':iq_id})
         #ans=xmlstream.IQ(self.xmlstream,"result")
         #ans["to"]=jid
         #ans["from"]=self.jid
@@ -1129,7 +1127,7 @@ class pyvk_t(comstream.xmlstream):
 
         #log.msg(card)
         #ans=xmlstream.IQ(self.xmlstream,"result")
-        ans=self.createElement("iq",{'type':'result','to':jid,'from':"%s@%s"%(v_id,self.jid),'id':iq_id})
+        ans=createElement("iq",{'type':'result','to':jid,'from':"%s@%s"%(v_id,self.jid),'id':iq_id})
         #ans["to"]=jid
         #ans["from"]="%s@%s"%(v_id,self.jid)
         #ans["id"]=iq_id

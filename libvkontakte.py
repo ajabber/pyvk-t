@@ -74,7 +74,34 @@ class authError(Exception):
 class UserapiSidError(Exception):
     pass
 class HTTPError(Exception):
+    def __init__(self,err,url):
+        self.err=err
+        self.url=url
+    def __str__(self):
+        return '%s [%s]'%(self.err,self.url)
     pass
+class RedirectHandler(urllib2.HTTPRedirectHandler):
+    #def http_error_301(self, req, fp, code, msg, headers):
+        #result = urllib2.HTTPRedirectHandler.http_error_301(
+        #self, req, fp, code, msg, headers)
+        #result.status = code
+        #print 301
+        #print headers.dict
+        #return result
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        result = urllib2.HTTPRedirectHandler.http_error_302(
+        self, req, fp, code, msg, headers)
+        result.status = code
+        redirUrl=headers.dict['location']
+        print redirUrl
+        p=redirUrl.find('sid=')
+        result.sid=int(redirUrl[p+4:])
+        #print sid
+        
+        #print 302
+        #print headers.dict
+        return result
 class client():
     oldFeed=""
     #onlineList={}
@@ -85,7 +112,7 @@ class client():
     iterationsNumber = 999999
     # true if there is no loopInternal's in user queue
     tonline={}
-    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None):
+    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False):
         #threading.Thread.__init__(self,target=self.loop)
         #self.daemon=True
         self.bytesIn = 0
@@ -109,13 +136,19 @@ class client():
             print "cant read cookie"
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
         #cjar.clear()
-        self.user.loginCallback(u"проверка cookies")
+        try:
+            self.user.loginCallback(u"проверка cookies")
+        except:
+            pass
+        if (ua):
+            return self.userapiLogin(email,passw,captcha_sid, captcha_key)
         self.v_id=self.getSelfId()
         if (self.v_id==-1):
             #print "bad cookie..."
             cjar.clear()
             #authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
             #first, check for captcha
+            
             self.user.loginCallback(u"проверка captcha")
             if (captcha_key and captcha_sid):
                 tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt','captcha_key':captcha_key,'captcha_sid':captcha_sid})
@@ -140,6 +173,7 @@ class client():
                 return
                 
             #return
+            #authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
             authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
             if (captcha_key and captcha_sid):
                 authData['captcha_key']=captcha_key
@@ -148,8 +182,8 @@ class client():
             self.user.loginCallback(u"проверка логина и пароля")
             
             tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
-            i=tpage.find("value='")
-            i+=7
+            i=tpage.find("id='s' value='")
+            i+=14
             p=tpage.find("'",i+1)
             self.user.loginCallback(u"вход на сайт")
             self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':tpage[i:p]})
@@ -185,6 +219,43 @@ class client():
             
         #f=self.getFeed()
         #if (f["user"]["id"]==-1):
+    def genCaptchaSid(self):
+        ret=''
+        for i in os.urandom(10):
+            ret='%s%s'%(ret,ord(i)%100)
+        return ret
+    def userapiLogin(self,email,passw,captcha_sid=None, captcha_key=None):
+        #TODO use cookies
+        #d={'email':email,'pass':passw}
+        d={'login':'force','site':'2','email':email,'pass':passw}
+        if (captcha_key and captcha_sid):
+            d['fcsid']=captcha_sid
+            d['fccode']=captcha_key
+        print d
+        dat=urllib.urlencode(d)
+        op=urllib2.build_opener(RedirectHandler())
+        url='http://login.userapi.com/auth?%s​'%dat
+        req=urllib2.Request(url)
+        print url
+        f=op.open(req)
+        try:
+            self.sid=f.sid
+        except:
+            print f
+            print f.read()
+            print f.headers
+        logging.warning('userapi login: got sid=%s'%self.sid)
+        # -1 - wrong auth
+        # -2 - wrong captcha
+        # -3 - wrong auth, captcha request
+        # -4 - wrong auth, no captcha
+        if (self.sid in (-2,-3)):
+            logging.warning('captcha request')
+            csid=self.genCaptchaSid()
+            url='http://userapi.com/data?act=captcha&csid=%s'%csid
+            print url
+        
+        #print f
     def getHttpPage(self,url,params=None,cjar=None):
         """ get contents of web page
             returns u'' if some of errors took place
@@ -203,22 +274,22 @@ class client():
 
         try:
             res=self.opener.open(req)
+            #print res.url
             page=res.read()
         except urllib2.HTTPError, err:
-            raise HTTPError("HTTP error %s.\nURL:%s"%(err.code,req.get_full_url()))
+            raise HTTPError(err.code,req.get_full_url())
             #return ''
         except IOError, e:
             msg="IO Error"
             if hasattr(e, 'reason'):
-                msg=msg+"\nReason: %s.\nURL:%s"%(e.reason,req.get_full_url())
+                msg=msg+"\nReason: %s."%(e.reason)
             elif hasattr(e, 'code'):
-                msg=msg+"\nCode: %s.\nURL:%s"%(e.code,req.get_full_url())
-            raise HTTPError(msg)
-            return ''
+                msg=msg+"\nCode: %s."%(e.code)
+            raise HTTPError(msg,req.get_full_url())
         except httplib.BadStatusLine, err:
-            raise HTTPError("HTTP bad status line error.\nURL:%s"%(req.get_full_url()))
+            raise HTTPError("HTTP bad status line error",req.get_full_url())
         except httplib.HTTPException, err:
-            raise HTTPError("HTTP exception.\n URL: %s"%(req.get_full_url()))
+            raise HTTPError("HTTP exception.",req.get_full_url())
         self.bytesIn += len(page)
         if (cjar):
             cjar.make_cookies(res,req)
@@ -962,6 +1033,8 @@ class client():
     def getStatusList(self):
         try:
             return self.getStatusList2()
+        except HTTPError,e:
+            logging.warning('userapi: http error '+str(e).replace('\n',', '))
         except:
             logging.warning(format_exc())
             print "getStatusList: userapi request failed"
@@ -1146,6 +1219,54 @@ class client():
         return ret
         #print ret
         #print dat
+
+    def readWallMsg(self,msg):
+        ret={'id':msg[0]}
+        msgtime=msg[1]
+        ret['text']=msg[2]
+        ret['from']=(msg[3][0],msg[3][1])
+        ret['to']=(msg[4][0],None)
+        #print msg
+        return ret
+    def getWallState(self):
+        dat=self.userapiRequest(act='wall',id=self.v_id,to=0)
+        #print dat
+        return dat['h']
+    def getWallHistory(self,ts):
+        ret=[]
+        dat=self.userapiRequest(act='wall',id=self.v_id,ts=ts)
+        #logging.warning(ts)
+        #logging.warning(self.getWallState())
+        #logging.warning(dat['h'])
+        try:
+            for i in dat['h']:
+                act=i[1]
+                #print 'ts: %s, act=%s' %(i[0],i[1])
+                #print i
+                if (act=='add'):
+                    ret.append((i[0],'add',self.readWallMsg(i[2])))
+                    #print self.readWallMsg(i[2])
+                if (act=='del'):
+                    ret.append((i[0],'del',None))
+                    pass
+            return ret
+        except TypeError:
+            #logging.warning("wallhistory: bad format\n"+repr(dat))
+            return False
+        #print dat
+    def getWallFast(self,v_id,num=10):
+        #h=63000002
+
+        #TODO history 
+        dat=self.userapiRequest(act='wall',id=v_id,to=num)
+        
+        msgs=dat['d']
+        for i in msgs:
+            msgid,stime,txt,snd,rcv=i
+            try:
+                print "id%s -> id%s: %s '%s'"%(snd[0],rcv[0],txt[0],txt[2])
+            except:
+                print "id%s -> id%s: '%s'"%(snd[0],rcv[0],txt[0])
     def userapiRequest(self,**kw):
         #import simplejson as json
         nkw=kw
@@ -1157,7 +1278,10 @@ class client():
         for k in nkw:
             url="%s%s=%s&"%(url,k,nkw[k])
         #print url
-        page=self.getHttpPage(url)
+        try:
+            page=self.getHttpPage(url)
+        except HTTPError, e:
+            raise HTTPError (e.err,'userapi: %s'%str(kw))
         #print page
         if (page=='{"ok": -2}'):
             raise captchaError
