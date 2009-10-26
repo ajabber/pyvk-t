@@ -28,7 +28,7 @@ import Queue
 import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
 from libvkontakte import authFormError,HTTPError,UserapiSidError
-import pyvkt_global as pyvkt
+import pyvkt.general as gen
 class pseudoXml:
     def __init__(self):
         self.items={}
@@ -103,7 +103,7 @@ class reqQueue(threading.Thread):
                         reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
                     except:
                         logging.error(format_exc())
-                except pyvkt.NoVclientError:
+                except gen.NoVclientError:
                     if (self.user):
                         logging.error("err: no vClient (%s)"%repr(self.user.bjid))
                     else:
@@ -171,7 +171,7 @@ class pollManager(threading.Thread):
                             self.trans.users[u].vclient
                             self.trans.users[u].refreshDone=False
                             self.trans.users[u].pool.call(self.trans.users[u].refreshData)
-                    except pyvkt.noVclientError:
+                    except gen.noVclientError:
                         print "user w/o client. skipping"
                     except:
                         logging.error(format_exc())
