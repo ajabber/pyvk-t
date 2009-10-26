@@ -5,7 +5,7 @@ import socket,hashlib
 from lxml import etree
 from threading import Thread
 from Queue import Queue,Empty
-from traceback import format_exc
+from traceback import format_exc,extract_stack,format_list
 import logging,time
 def addChild(node,name,ns=None,attrs=None):
     if(ns):
@@ -101,7 +101,7 @@ class xmlstream:
                 #print_exc()
     def sendLoop(self):
         while(1):
-            task=self.sendQueue.get(True)
+            task,st=self.sendQueue.get(True)
             try:
                 try:
                     s=etree.tostring(task,encoding='utf-8')
@@ -110,6 +110,7 @@ class xmlstream:
                     s=task.toXml()
             except:
                 logging.error("can't serialize\n"+format_exc())
+                logging.error("bad packet came from\n%s"%''.join(format_list(st)))
             else:
                 if (type(s)==unicode):
                     s=s.encode("utf-8")
@@ -123,7 +124,9 @@ class xmlstream:
                     self.connect(self.host,self.port,self.secret)
                     
     def send(self,packet):
-        self.sendQueue.put(packet)
+        #TODO check for debug mode 
+        st=extract_stack(limit=2)
+        self.sendQueue.put((packet,st))
     def revert(self,packet):
         f=packet.get("from")
         t=packet.get("to")

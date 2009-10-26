@@ -60,12 +60,13 @@ class authFormError(Exception):
         return 'unexpected auth form'
 class captchaError(Exception):
     sid=None
-    def __init__(self,sid=None):
+    def __init__(self,sid=None, bjid=None):
         self.sid=sid
+        self.bjid=bjid
         pass
     def __str__(self):
         url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
-        return 'got captcha request (sid = "%s", url=%s)'%(self.sid,url)
+        return 'got captcha request (jid = "%s", sid = "%s", url=%s)'%(self.bjid,self.sid,url)
 class authError(Exception):
     def __init__(self):
         pass
@@ -169,7 +170,7 @@ class client():
                 self.error=1
                 #self.client.threadError(self.bjid,"auth error: got captha request")
                 self.alive=0
-                raise captchaError(sid=sid)
+                raise captchaError(sid=sid, bjid=self.bjid)
                 return
                 
             #return
@@ -200,6 +201,8 @@ class client():
                     print "ERR: can't save cookie"
                     print_exc()
             self.error=0
+            if (captcha_key and captcha_sid):
+                logging.warning('captcha defeated by %s'%self.bjid)
             self.alive=1
         else:
             #print "cookie accepted!"

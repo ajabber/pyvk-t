@@ -22,19 +22,19 @@
  ***************************************************************************/
  """
 #TODO clean up this import hell!!
-import twisted
+#import twisted
 #from twisted.application import internet, service
 from twisted.internet import interfaces, defer, reactor,threads
-from twisted.python import log
-from twisted.words.xish import domish
-from twisted.words.protocols.jabber.xmlstream import IQ
+#from twisted.python import log
+#from twisted.words.xish import domish
+#from twisted.words.protocols.jabber.xmlstream import IQ
 #from twisted.enterprise import adbapi 
-from twisted.enterprise.adbapi import safe 
-from twisted.words.protocols.jabber.ijabber import IService
+#from twisted.enterprise.adbapi import safe 
+#from twisted.words.protocols.jabber.ijabber import IService
 #from twisted.words.protocols.jabber import component,xmlstream,jid
 
 from base64 import b64encode,b64decode
-from zope.interface import Interface, implements
+#from zope.interface import Interface, implements
 from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
@@ -176,7 +176,7 @@ class pyvk_t(comstream.xmlstream):
             logging.info("RECV: msg %s -> %s '%s'"%(src,dest,body))
             #return
             bjid=pyvkt.bareJid(src)
-            if body[0:1]=='.' or (body[0:1]=="/" and body[:4]!="/me "):
+            if body[0:1]=='.':
                 req=msg.find('{urn:xmpp:receipts}request')
                 if (req!=None):
                     self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
@@ -358,7 +358,7 @@ class pyvk_t(comstream.xmlstream):
             addChild(err,"text","urn:ietf:params:xml:ns:xmpp-stanzas").text=u"Капча на сайте или ошибка сервера"
 
         self.send(msg)
-    def onIq_new(self,iq):
+    def onIq(self,iq):
         #return False
         def getQuery(iq,ans,ns):
             #print etree.tostring(iq)
@@ -371,6 +371,11 @@ class pyvk_t(comstream.xmlstream):
             return (r,a)
         src=iq.get("from")
         dest=iq.get("to")
+        iq_id=iq.get('id')
+        if (not iq_id):
+            #TODO error stranza
+            logging.warning('iq stranza without id: %s -> %s'%(src,dest))
+            return
         bjid=pyvkt.bareJid(src)
         ans=createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
         #logging.warning(iq.get('type'))
@@ -429,6 +434,7 @@ class pyvk_t(comstream.xmlstream):
                         #FIXME 'not found' stranza
                     elif (node=="http://jabber.org/protocol/commands"):
                         self.send(self.commands.onDiscoItems(iq))
+                        return
                         
                 else:
                     addChild(a,'item',attrs={"node":"http://jabber.org/protocol/commands",'name':'Pyvk-t commands','jid':self.jid})
@@ -548,6 +554,14 @@ class pyvk_t(comstream.xmlstream):
                     except OSError:
                         pass
                     return
+                if (r.find("{jabber:iq:register}remove")!=None):
+                    logging.warning ("FIXME namespace in register/remove")
+                    try:
+                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
+                    except OSError:
+                        pass
+                    return
+                    
                 logging.warning("new user: %s"%bjid)
                 try:
                     email=q.find("{jabber:iq:register}email").text
@@ -613,12 +627,12 @@ class pyvk_t(comstream.xmlstream):
                 #else:
                     #d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 #return
-        logging.warning("not implemented: \n"+etree.tostring(iq))
+        logging.warning("not implemented: %s -> %s\t%s"%(src,dest,etree.tostring(iq[0])))
         iq = createElement("iq",{'type':'error','to':src,'from':dest,'id':iq.get("id")})
         addChild(iq,"feature-not-implemented",'urn:ietf:params:xml:ns:xmpp-stanzas')
         self.send(iq)                        
         return False
-    def onIq(self, iq):
+    def onIq_legacy(self, iq):
         """
         Act on the iq stanza that has just been received.
         """
@@ -1026,7 +1040,18 @@ class pyvk_t(comstream.xmlstream):
         if self.hasUser(bjid):
             for f in fl:
                 src="%s@%s"%(f,self.jid)
-                x=self.users[bjid].askSubscibtion(src,nick=u"%s %s"%(fl[f]["first"],fl[f]["last"]))
+                try:
+                    nick=u"%s %s"%(fl[f]["first"],fl[f]["last"])
+                except KeyError:
+                    logging.warning('id%s: something wrong with nick'%f)
+                    try:
+                        nick=fl[f]["first"]
+                    except:
+                        try:
+                            nick=fl[f]["last"]
+                        except:
+                            nick=u'<pyvk-t: internal error>'
+                x=self.users[bjid].askSubscibtion(src,nick=nick)
                 if x: 
                     n+=1
             #self.sendPresence(src,jid,"subscribed")
@@ -1116,25 +1141,18 @@ class pyvk_t(comstream.xmlstream):
         """
         get vCard (user info) from vkontakte.ru and send it
         """
-        #log.msg(jid)
-        #log.msg(v_id)
         bjid=pyvkt.bareJid(jid)
-        #try:
+        if (not self.hasUser(bjid)):
+            #TODO error stranza
+            logging.warning("unauthorised vcard request. TODO error stranza")
+            return
         card=self.users[bjid].vclient.getVcard(v_id, self.show_avatars)
-        #except:
-            #log.msg("some fcky error")
-            #card = None
-
-        #log.msg(card)
-        #ans=xmlstream.IQ(self.xmlstream,"result")
+        if (not card):
+            logging.warning('can\'t get vcard: id%s -> %s'%(v_id,jid))
+            #FIXME error stranza
+            return
         ans=createElement("iq",{'type':'result','to':jid,'from':"%s@%s"%(v_id,self.jid),'id':iq_id})
-        #ans["to"]=jid
-        #ans["from"]="%s@%s"%(v_id,self.jid)
-        #ans["id"]=iq_id
-        #vc=SubElement(ans,"{vcard-temp}vCard",nsmap={None:'vcard-temp'})
         vc=addChild(ans,'vCard','vcard-temp')
-        #vc=ans.addElement("vCard","vcard-temp")
-        #if some card set
         def addField(name,key):
             try:
                 SubElement(vc,name).text=card[key]
@@ -1170,8 +1188,8 @@ class pyvk_t(comstream.xmlstream):
         descr=descr.strip()
         try:
             SubElement(vc,"DESC").text=descr
-        except ValueError:
-            logging.error('vcard: bad descr: '+repr(descr))
+        except ValueError,e:
+            logging.error('vcard: bad descr: (%s) \n%s'%(e,descr))
         if self.show_avatars:
             #TODO roster 
             p=None
@@ -1211,103 +1229,6 @@ class pyvk_t(comstream.xmlstream):
                 SubElement(photo,"BINVAL").text=p.replace("\n","")
         self.send(ans)
         return
-        if (card):
-            #convert to unicode if needed
-            for i in card:
-                if (type(card[i])==type('')):
-                    card[i]=card[i].decode("utf-8")
-            if card.has_key("NICKNAME"):
-                vc.addElement("NICKNAME").addContent(card["NICKNAME"])
-            if card.has_key("FAMILY") or card.has_key("GIVEN"):
-                n=vc.addElement("N")
-                if card.has_key("FAMILY"):
-                    n.addElement("FAMILY").addContent(card["FAMILY"])
-                if card.has_key("GIVEN"):
-                    n.addElement("GIVEN").addContent(card["GIVEN"])
-            if card.has_key("FN"):
-                vc.addElement("FN").addContent(card["FN"])
-            if card.has_key(u'Веб-сайт:'):
-                vc.addElement("URL").addContent(card[u"Веб-сайт:"])
-            if card.has_key(u'День рождения:'):
-                vc.addElement("BDAY").addContent(card[u"День рождения:"])
-            #description
-            descr=u""
-            for x in (u"Семейное положение:",
-                      u"Деятельность:",
-                      u"Интересы:",
-                      u"Любимая музыка:",
-                      u"Любимые фильмы:",
-                      u"Любимые телешоу:",
-                      u"Любимые книги:",
-                      u"Любимые игры:",
-                      u"Любимые цитаты:"):
-                if card.has_key(x):
-                    descr+=x+u'\n'
-                    descr+=card[x]
-                    descr+=u"\n\n"
-            if card.has_key(u'О себе:'):
-                if descr: descr+=u"О себе:\n"
-                descr+=card[u"О себе:"]
-                descr+=u"\n\n"
-            descr+="http://vkontakte.ru/id%s"%v_id
-            descr=descr.strip()
-            if descr:
-                vc.addElement("DESC").addContent(descr)
-            #phone numbers
-            if card.has_key(u'Дом. телефон:'):
-                tel = vc.addElement("TEL")
-                tel.addElement("HOME")
-                tel.addElement("NUMBER").addContent(card[u"Дом. телефон:"])
-            if card.has_key(u'Моб. телефон:'):
-                tel = vc.addElement(u"TEL")
-                tel.addElement("CELL")
-                tel.addElement("NUMBER").addContent(card[u"Моб. телефон:"])
-            #avatar
-            if self.show_avatars:
-                #TODO roster 
-                p=None
-                if ans["from"] in self.users[bjid].roster:
-                    if not self.users[bjid].roster[ans["from"]]:
-                        self.users[bjid].roster[ans["from"]]={}
-                    try:
-                        oldurl=self.users[bjid].roster[ans["from"]]["avatar_url"]
-                    except KeyError:
-                        oldurl=u''
-                    try:
-                        oldhash=self.users[jid].roster[ans["from"]]["avatar_hash"]
-                    except KeyError:
-                        oldhash=u"nohash"
-                    if "PHOTO" in card and card["PHOTO"]!=oldurl:
-                        self.users[bjid].roster[ans["from"]]["avatar_url"]=card["PHOTO"]
-                        print "card['PHOTO']=%s"%card["PHOTO"]
-                        oldurl=card["PHOTO"]
-                        if card["PHOTO"]:
-                            oldhash="nohash"
-                        else:
-                            oldhash=""
-                            self.users[bjid].roster[ans["from"]]["avatar_hash"]=""
-                    if oldhash=="nohash" and oldurl:
-                        h=self.users[bjid].vclient.getAvatar(oldurl,v_id,1)
-                        if h:
-                            p,self.users[bjid].roster[ans["from"]]["avatar_hash"]=h
-                        else:
-                            print "Error: no avatar"
-                    elif oldurl:
-                        p=self.users[bjid].vclient.getAvatar(oldurl,v_id)
-                elif "PHOTO" in card:
-                    p=self.vclient.getAvatar(card["PHOTO"],v_id)
-                if p:
-                    photo=vc.addElement(u"PHOTO")
-                    photo.addElement("TYPE").addContent("image/jpeg")
-                    photo.addElement("BINVAL").addContent(p.replace("\n",""))
-            #adress
-            if card.has_key(u'Город:'):
-                vc.addElement(u"ADR").addElement("LOCALITY").addContent(card[u"Город:"])
-        else:
-            vc.addElement("DESC").addContent("http://vkontakte.ru/id%s"%v_id)
-        self.send(ans)
-            #log.msg(ans.toXml())
-
     def requestMessage(self,jid,msgid):
         #print "msg request"
         bjid=jid
@@ -1386,11 +1307,13 @@ class pyvk_t(comstream.xmlstream):
         if(ptype):
             if ptype=="unavailable" and self.hasUser(bjid) and (dest==self.jid or self.users[bjid].subscribed(dest) or not self.roster_management):
                 self.delResource(src,dest)
-                pr=domish.Element(('',"presence"))
-                pr["type"]="unavailable"
-                pr["to"]=src
-                pr["from"]=self.jid
-                self.send(pr)
+                self.sendPresence(dest,src,t='unavailable')
+                
+                #pr=domish.Element(('',"presence"))
+                #pr["type"]="unavailable"
+                #pr["to"]=src
+                #pr["from"]=self.jid
+                #self.send(pr)
             elif(ptype=="subscribe"):
                 if self.hasUser(src):
                     self.users[bjid].subscribe(pyvkt.bareJid(dest))
@@ -1462,13 +1385,30 @@ class pyvk_t(comstream.xmlstream):
                 self.sendMessage(self.jid,jid,ret.strip())
             try:
                 #FIXME wtf 'null' in items?
-                if feed['friends']['items']:
-                    for i in feed["friends"]["items"]:
-                        if not (oldfeed and ("friends" in oldfeed) and ("items" in oldfeed["friends"]) and i in oldfeed["friends"]["items"]):
-                            text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
-                            self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
-            except KeyError:
-                pass
+                #FIXME oldfeed?
+                try:
+                    nfl=feed['friends']['items']
+                    nfl[0]
+                except (KeyError,TypeError),e:
+                    pass
+                    #warning ('feed: no new friends? '+str(e))
+                else:
+                    for i in nfl:
+                        try:
+                            if i in oldfeed["friends"]["items"]:
+                                continue
+                        except (KeyError, TypeError):
+                            logging.warning('feed error defeated! =)')
+                        text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
+                        self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
+                            
+                            #old friendlist
+                            
+                        #if (not (oldfeed and ("friends" in oldfeed) and ("items" in oldfeed["friends"]) and i in oldfeed["friends"]["items"])) or (not oldfeed["friends"]["items"]):
+                            #text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
+                            #self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
+            #except KeyError:
+                #pass
             except:
                 logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())
                 
