@@ -27,7 +27,7 @@
 #except:
 
 from traceback import print_stack, print_exc
-import pyvkt_global as pyvkt
+import pyvkt.general as gen
 import time,string,logging
 from comstream import createElement,addChild,createReply
 from lxml.etree import tostring
@@ -53,7 +53,7 @@ class cmdManager:
         self.admin=trans.admin
     def makeCmdList(self,s_jid,v_id):
         ret={}
-        bjid=pyvkt.bareJid(s_jid)
+        bjid=gen.bareJid(s_jid)
         #print bjid,v_id
         for i in self.globalCmdList:
             ret[i]=self.globalCmdList[i]
@@ -104,7 +104,7 @@ class cmdManager:
         URI='http://jabber.org/protocol/commands'
         iqcmd=iq.find('{http://jabber.org/protocol/commands}command')
         node=iqcmd.get("node")[4:]
-        v_id=pyvkt.jidToId(iq.get("to"))
+        v_id=gen.jidToId(iq.get("to"))
         cmdList=self.makeCmdList(iq.get("from"),v_id)
         #logging.warning(tostring(iq))
         #cmdList=self.transportCmdList
@@ -229,7 +229,7 @@ class cmdManager:
         #logging.warning('xdata: '+str(ret))
         return ret
     def onDiscoInfo(self,iq):
-        v_id=pyvkt.jidToId(iq.get("to"))
+        v_id=gen.jidToId(iq.get("to"))
         cmdList=self.makeCmdList(iq.get("to"),v_id)
         resp=createReply(iq)
         resp.set("type","result")
@@ -261,7 +261,7 @@ class cmdManager:
         cmdList={}
         #if (iq["to"]==self.trans.jid):
             #cmdList=self.transportCmdList
-        v_id=pyvkt.jidToId(iq.get("to"))
+        v_id=gen.jidToId(iq.get("to"))
         cmdList=self.makeCmdList(iq.get("from"),v_id)
         #resp=xmlstream.toResponse(iq)
         resp=createReply(iq)
@@ -349,7 +349,7 @@ class setStatusCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (args.has_key("text")):
             #FIXME "too fast" safe!!!
             if (self.trans.hasUser(bjid)):
@@ -369,7 +369,7 @@ class loginCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         #print "login"
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
         if (self.trans.hasUser(bjid)):
@@ -390,7 +390,7 @@ class logoutCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if(self.trans.hasUser(bjid)):
             self.trans.users[bjid].logout()
         return {"status":"completed","title":u"Отключение",'message':u'Производится отключение...'}
@@ -401,7 +401,7 @@ class getHistioryCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
@@ -417,7 +417,7 @@ class sendWallMessageCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (to_id==0):
             print "where is id???"
             return {"status":"completed","title":self.name,'message':u'ПукЪ'}
@@ -450,7 +450,7 @@ class addNoteCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         print(args)
         if (args.has_key("text")):
             #FIXME "too fast" safe!!!
@@ -474,9 +474,9 @@ class setConfigCmd(basicCommand):
             return {}
         return {args[0]:args[1]}
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         #print(args)
-        cf=pyvkt.userConfigFields
+        cf=gen.userConfigFields
         try:
             user=self.trans.users[bjid]
         except KeyError:
@@ -526,7 +526,7 @@ class addDelFriendCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         try:
             user=self.trans.users[bjid]
         except KeyError:
@@ -573,7 +573,7 @@ class checkBdays(basicCommand):
         d=time.gmtime().tm_mday
         delta=5
         
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if self.trans.hasUser(bjid):
             user=self.trans.users[bjid]
             cal=user.vclient.getCalendar(month=m,year=y)
@@ -611,7 +611,7 @@ class getWall(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)            
     def run(self,jid,args,sessid="0",to_id=0):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if self.trans.hasUser(bjid):
             user=self.trans.users[bjid]
             wm=user.vclient.getWall(to_id)
@@ -628,7 +628,7 @@ class getWall(basicCommand):
                     msg="%s\n\n- %s"%(msg,temp[m['type']].safe_substitute(m,tjid=self.trans.jid))
                 except KeyError:
                     msg="%s\n\n- %s"%(msg,temp['unknown'].substitute(m,tjid=self.trans.jid))
-            msg=pyvkt.unescape(msg.replace('<br>','\n')).strip()
+            msg=gen.unescape(msg.replace('<br>','\n')).strip()
             return {"status":"completed","title":self.name,'message':msg}
                     
             

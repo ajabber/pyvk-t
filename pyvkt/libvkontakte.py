@@ -24,7 +24,7 @@ import urllib2
 import urllib
 from urllib import urlencode
 import httplib
-import pyvkt_global as pyvkt
+import pyvkt.general as pyvkt
 #from BaseHTTPServer import BaseHTTPRequestHandler as http
 import demjson
 import cookielib
@@ -39,9 +39,8 @@ import re
 import base64,copy
 import ConfigParser,os,string
 from traceback import print_stack, print_exc,format_exc
-import pyvkt_global as pyvkt
 import logging
-import pyvkt_config as conf
+import pyvkt.config as conf
 #import StringIO
 
 #user-agent used to request web pages

@@ -39,19 +39,19 @@ from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
 
-from pyvkt_user import user,UnregisteredError
-import pyvkt_global as pyvkt
-import pyvkt_user,pyvkt_commands
+from pyvkt.user import user,UnregisteredError
+import pyvkt.general as gen
+import pyvkt.user,pyvkt.commands
 from libvkontakte import *
-from pyvkt_spikes import pollManager,pseudoXml
-import comstream
-from comstream import addChild,createElement
+from pyvkt.spikes import pollManager,pseudoXml
+import pyvkt.comstream
+from pyvkt.comstream import addChild,createElement
 import lxml.etree
 from lxml import etree
 from lxml.etree import SubElement
 from threading import Lock
 import gc,inspect
-import pyvkt_config as conf
+import pyvkt.config as conf
 def create_reply(elem):
     """ switch the 'to' and 'from' attributes to reply to this element """
     # NOTE - see domish.Element class to view more methods 
@@ -119,14 +119,14 @@ def create_reply(elem):
         #for i in ol:oc+=i[1]
         #return (ic,oc)
         
-class pyvk_t(comstream.xmlstream):
+class pyvk_t(pyvkt.comstream.xmlstream):
 
     startTime = time.time()
     logger=None
     terminating=False
     isActive=1
     def __init__(self,jid):
-        comstream.xmlstream.__init__(self,jid)
+        pyvkt.comstream.xmlstream.__init__(self,jid)
         self.httpIn = 0
         self.sync_status = 1
         self.show_avatars=conf.get('features','avatars')
@@ -149,7 +149,7 @@ class pyvk_t(comstream.xmlstream):
             p=s.find(":")
             ver=s[p+1:-1]
             self.revision="notwisted-branch-rev.%s"%ver
-        self.commands=pyvkt_commands.cmdManager(self)
+        self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
         self.usrLock=Lock()
         self.unregisteredList=[]
@@ -164,7 +164,7 @@ class pyvk_t(comstream.xmlstream):
     def onMsg(self,msg):
         src=msg.get("from")
         dest=msg.get("to")
-        v_id=pyvkt.jidToId(dest)
+        v_id=gen.jidToId(dest)
         if (msg.get("type")=='error'):
             return None
         if (v_id==-1):
@@ -175,7 +175,7 @@ class pyvk_t(comstream.xmlstream):
             body=body.text
             logging.info("RECV: msg %s -> %s '%s'"%(src,dest,body))
             #return
-            bjid=pyvkt.bareJid(src)
+            bjid=gen.bareJid(src)
             if body[0:1]=='.':
                 req=msg.find('{urn:xmpp:receipts}request')
                 if (req!=None):
@@ -189,11 +189,7 @@ class pyvk_t(comstream.xmlstream):
                     else:
                         self.sendMessage(self.jid,src,u"Сначала необходимо подключиться")
                 elif (cmd=="help"):
-                    self.sendMessage(self.jid,src,u""".get roster для получения списка
-.login для подключения
-.logout для отключения
-.config для изменения настроек
-.setstatus для изменения статуса на сайте""")
+                    self.sendMessage(self.jid,src,u""".get roster - запрос списка контактов\n.list - список остальных команд""")
                 else:
                     #print cmd
                     logging.warn("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
@@ -213,7 +209,7 @@ class pyvk_t(comstream.xmlstream):
                     # admin commands
                 cmd=body[1:]
                 
-                log.msg("admin command: '%s'"%cmd)
+                logging.warning("admin command: '%s'"%cmd)
                 if (cmd[:4]=="stop"):
                     self.isActive=0
                     if (cmd=="stop"):
@@ -376,7 +372,7 @@ class pyvk_t(comstream.xmlstream):
             #TODO error stranza
             logging.warning('iq stranza without id: %s -> %s'%(src,dest))
             return
-        bjid=pyvkt.bareJid(src)
+        bjid=gen.bareJid(src)
         ans=createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
         #logging.warning(iq.get('type'))
         logging.info("RECV: iq (%s) %s -> %s"%(iq.get('type'),src,dest))
@@ -506,7 +502,7 @@ class pyvk_t(comstream.xmlstream):
                         #log.msg("id: %s"%v_id)
                     if (self.hasUser(bjid)):
                         #self.users[bjid].pool.callInThread(time.sleep(1))
-                        v_id=pyvkt.jidToId(dest)
+                        v_id=gen.jidToId(dest)
                         self.users[bjid].pool.call(self.getsendVcard,jid=src,v_id=v_id,iq_id=iq.get("id"))
                         return
                         pass
@@ -547,7 +543,7 @@ class pyvk_t(comstream.xmlstream):
             if (r!=None):
                 q=r
                 #FIXME rename q -> r
-                bjid=pyvkt.bareJid(src)
+                bjid=gen.bareJid(src)
                 if (r.find("remove")!=None):
                     try:
                         os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
@@ -579,7 +575,7 @@ class pyvk_t(comstream.xmlstream):
                 if (not (email and pw)):
                     logging.warning("register: empty email or password")
                 #FIXME asynchronous!!
-                u=user(self,pyvkt.bareJid(src))
+                u=user(self,gen.bareJid(src))
                 try:
                     u.readData()
                 except:
@@ -588,7 +584,11 @@ class pyvk_t(comstream.xmlstream):
                 u.email=email
                 u.password=pw
                 u.saveData()
-                self.register2(bjid,iq.get('id'))
+                ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get('id')})
+                self.send(ans)
+                self.sendPresence(self.jid,src,"subscribe")
+                self.sendPresence(self.jid,src,"subscribed")
+                self.sendMessage(self.jid,src,u".get roster для получения списка\n.login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
                 return True
                 #if (query.uri=="jabber:iq:gateway"):
                     #for prompt in query.elements():
@@ -632,318 +632,6 @@ class pyvk_t(comstream.xmlstream):
         addChild(iq,"feature-not-implemented",'urn:ietf:params:xml:ns:xmpp-stanzas')
         self.send(iq)                        
         return False
-    def onIq_legacy(self, iq):
-        """
-        Act on the iq stanza that has just been received.
-        """
-        #log.msg(iq["type"])
-        #log.msg(iq.firstChildElement().toXml().encode("utf-8"))
-        return self.onIq_new(iq)
-        if (self.onIq_new(iq)):
-            #logging.warning("new onIq")
-            return
-        aaaaaaaaaaaaaaaaaaaaaaaaaaaa
-        src=iq.get("from")
-        dest=iq.get("to")
-        bjid=pyvkt.bareJid(src)
-        logging.info(etree.tostring(iq))
-        if (0 and iq.get("type")=="get"):
-            
-            query=None
-            for i in iq:
-                if (i.tag.find("query")):
-                    #FIXME костылиииищщщщщщеее!!11
-                    query=pseudoXml()
-                    realQuery=i
-                    query.attrs["uri"]=i.tag[1:i.tag.find("}")]
-                    #logging.warn("uri = "+query.uri)
-            #return
-            #print "111"
-            if (query):
-                #ans=xmlstream.IQ(self.xmlstream,"result")
-                ans=domish.Element(("","iq"))
-                ans["type"]='result'
-                ans["to"]=src
-                ans["from"]=dest
-                ans["id"]=iq.get("id")
-                if (realQuery.get("node")):
-                    query.items["node"]=realQuery.get("node")
-                q=ans.addElement("query",query.uri)
-                if (query.uri=="http://jabber.org/protocol/disco#info"):
-                    try:
-                        node=realQuery.get("node","")
-                    except KeyError:
-                        node=u''
-                    #print node
-                    #if (node=='http://jabber.org/protocol/commands' or node[:4]=="cmd:"):
-                        #self.send(self.commands.onDiscoInfo(iq))
-                        #return
-                    if(node==''):
-                        if (dest==self.jid):
-                            q.addElement("identity").attributes={"category":"gateway","type":"vkontakte.ru","name":self.name}
-                            if (self.isActive):
-                                q.addElement("feature")["var"]="jabber:iq:register"
-                            q.addElement("feature")["var"]="jabber:iq:gateway"
-                            q.addElement("feature")["var"]="jabber:iq:version"
-                            #if (self.hasUser(bjid)):
-                                #q.addElement("feature")["var"]="jabber:iq:search"
-                            q.addElement("feature")["var"]="jabber:iq:last"
-                            #q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-                            q.addElement("feature")["var"]='http://jabber.org/protocol/stats'
-                            #q.addElement("feature")["var"]="stringprep"
-                            #q.addElement("feature")["var"]="urn:xmpp:receipts"
-                        else:
-                            q.addElement("identity").attributes={"category":"pubsub","type":"pep"}
-                            #q.addElement("feature")["var"]="stringprep"
-                            #q.addElement("feature")["var"]='http://jabber.org/protocol/commands'
-                            q.addElement("feature")["var"]="urn:xmpp:receipts"
-                            q.addElement("feature")["var"]="jabber:iq:version"
-                            #if(self.cachePath):
-                                #q.addElement("feature")["var"]="jabber:iq:avatar"
-                    else:
-                        err=ans.addElement("error")
-                        err["type"]="cancel"
-                        err.addElement('item-not-found','urn:ietf:params:xml:ns:xmpp-stanzas')
-                    #ans.send()
-                    self.send(ans)
-                    return
-                elif (query.uri=="http://jabber.org/protocol/disco#items"):
-                    node=realQuery.get("node","")
-                    if (query.hasAttribute("node")):
-                        q["node"]=node
-                        if (node=="http://jabber.org/protocol/commands"):
-                            self.send(self.commands.onDiscoItems(iq))
-                            return
-                        elif(node=="friendsonline"):
-                            if (self.hasUser(bjid)):
-                                for i in self.users[bjid].onlineList:
-                                    cname=u'%s %s'%(self.users[bjid].onlineList[i]["first"],self.users[bjid].onlineList[i]["last"])
-                                    q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)}
-                    else:
-                        q.addElement("item").attributes={"node":"http://jabber.org/protocol/commands",'name':'Pyvk-t commands','jid':self.jid}
-                        if (self.hasUser(bjid)):
-                            q.addElement("item").attributes={"node":"friendsonline",'name':'Friends online','jid':self.jid}
-                    self.send(ans)
-                    return
-                elif (query.uri=="jabber:iq:register"):
-                    #TODO asynchronous?
-                    self.sendRegistrationForm(ans,q)
-                    return
-                elif (query.uri=="http://jabber.org/protocol/stats") and (dest==self.jid): #statistic gathering
-                    usersTotal = None
-                    if not len(realQuery):
-                        q.addElement("stat")["name"] = "time/uptime"
-                        q.addElement("stat")["name"] = "users/online"
-                        #q.addElement("stat")["name"] = "users/total"
-                        if self.logger:
-                            #q.addElement("stat")["name"] = "bandwidth/packets-in"
-                            #q.addElement("stat")["name"] = "bandwidth/packets-out"
-                            q.addElement("stat")["name"] = "bandwidth/bytes-out"
-                            q.addElement("stat")["name"] = "bandwidth/bytes-in"                            
-                            q.addElement("stat")["name"] = "bandwidth/bytes-out-1min"
-                            q.addElement("stat")["name"] = "bandwidth/bytes-in-1min" 
-                    else:
-                        for i in realQuery:
-                            #print type(i)
-                            #if (type(i)==unicode):
-                                #continue
-                            t=q.addElement("stat")
-                            t['name']=i.get('name')
-                            if i.get('name')=='time/uptime':
-                                t['units']='seconds'
-                                t['value']=str(int(time.time()-self.startTime))
-                            elif i.get('name')=='users/online':
-                                t['units']='users'
-                                t['value']=str(len(self.users))
-                            #elif i["name"]=='users/total':
-                                #t['units']='users'
-                                #t['value']=len(self.users)
-                                #usersTotal = t
-                            #elif i["name"]=="bandwidth/packets-in" and self.logger:
-                                #t['units']='packets'
-                                #t['value']= str(self.logger.packetsIn)
-                            #elif i["name"]=="bandwidth/packets-out" and self.logger:
-                                #t['units']='packets'
-                                #t['value']=str(self.logger.packetsOut)
-                            #elif i["name"]=="bandwidth/bytes-in" and self.logger:
-                                #t['units']='bytes'
-                                #t['value']= str(self.logger.bytesIn)
-                            #elif i["name"]=="bandwidth/bytes-out" and self.logger:
-                                #t['units']='bytes'
-                                #t['value']=str(self.logger.bytesOut)
-                            #elif i["name"]=="bandwidth/bytes-in-1min" and self.logger:
-                                #t['units']='bytes'
-                                #t['value']= str(self.logger.getTraffic(60)[0])
-                            #elif i["name"]=="bandwidth/bytes-out-1min" and self.logger:
-                                #t['units']='bytes'
-                                #t['value']= str(self.logger.getTraffic(60)[1])
-                                
-                                
-                            else:
-                                e=t.addElement("error","Service Unavailable")
-                                e["code"]="503"
-                    #if usersTotal:
-                        #qq=self.dbpool.runQuery("SELECT count(jid) FROM users;")
-                        #qq.addCallback(self.sendTotalStats,ans,usersTotal)
-                    #else:
-                    #self.sendTotlalStats()
-                    self.send(ans)
-                    #print ans
-                    return
-                elif query.uri=="jabber:iq:last" and (dest==self.jid):
-                    q["seconds"]=str(int(time.time()-self.startTime))
-                    self.send(ans)
-                    return
-
-                elif (query.uri=="jabber:iq:version"):
-                    q.addElement("name").addContent("pyvk-t")
-                    q.addElement("version").addContent(self.revision)
-                    q.addElement("os").addContent(platform.system()+" "+platform.release()+" "+platform.machine())
-                    self.send(ans)
-                    return
-                elif (query.uri=="jabber:iq:gateway"):
-                    q.addElement("desc").addContent(u"Пожалуйста, введите id пользователя на сайте вконтакте.ру.\nУзнать, какой ID у пользователя Вконтакте можно, например, так:\nЗайдите на его страницу. В адресной строке будет http://vkontakte.ru/profile.php?id=0000000\nЗначит его ID - 0000000")
-                    q.addElement("prompt").addContent("Vkontakte ID")
-                    self.send(ans)
-                    return
-                elif (query.uri=="jabber:iq:search" and self.hasUser(bjid)):
-                    q.addElement("instructions").addContent(u"Use the enclosed form to search. If your Jabber client does not support Data Forms, visit http://shakespeare.lit/")
-                    x=q.addElement("x","jabber:x:data")
-                    x['type']='form'
-                    x.addElement("instructions").addContent(u"Введите произвольный текст по которому будет произведен поиск")
-                    hidden=x.addElement("field")
-                    hidden['type']='hidden'
-                    hidden['var']='FORM_TYPE'
-                    hidden.addElement('value').addContent(u'jabber:iq:search')
-                    text=x.addElement("field")
-                    text['type']='text-single'
-                    text['label']=u'Текст'
-                    text['var']='text'
-                    self.send(ans)
-                    return
-            vcard=iq.find("{vcard-temp}vCard")
-            #logging.warn(vcard)
-            if (vcard!=None):
-                dogpos=dest.find("@")
-                if(dogpos!=-1):
-                        #log.msg("id: %s"%v_id)
-                    if (self.hasUser(bjid)):
-                        #self.users[bjid].pool.callInThread(time.sleep(1))
-                        v_id=pyvkt.jidToId(dest)
-                        self.users[bjid].pool.call(self.getsendVcard,jid=src,v_id=v_id,iq_id=iq.get("id"))
-                        return
-                        pass
-                    else:
-                        #ans=xmlstream.IQ(self.xmlstream,"result")
-                        ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
-                        #ans["to"]=src
-                        #ans["from"]=dest
-                        #ans["id"]=iq.get("id")
-                        err=addChild(ans,"error",attrs={'type':'auth','code':'400'})
-                        #err = ans.addElement("error")
-                        #err.set("type","auth")
-                        #err.attributes["type"]="auth"
-                        #err.attributes["code"]="400"
-                        #etree.SubElement(err,"{urn:ietf:params:xml:ns:xmpp-stanzas}not-authorized")
-                        #err.addElement("not-authorized","urn:ietf:params:xml:ns:xmpp-stanzas")
-                        #t=err.addElement("text",'urn:ietf:params:xml:ns:xmpp-stanzas')
-                        addChild(err,"non-authorized",'urn:ietf:params:xml:ns:xmpp-stanzas')
-                        t=addChild(err,"text",'urn:ietf:params:xml:ns:xmpp-stanzas')
-                        #t.set("xml:lang","ru")
-                        t.text=u"Для запроса vCard необходимо подключиться.\nДля подключения отправьте /login или используйте ad-hoc."
-                        self.send(ans)
-                        return
-                            #err.addElement("too-many-stanzas","urn:xmpp:errors")
-                else:
-                    ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get("id")})
-                    q=etree.SubElement(ans,"{vcard-temp}vCard")
-                    #q=ans.addElement("vCard","vcard-temp")
-                    addChild(q,"FN").text="vkontakte.ru transport"
-                    addChild(q,"URL").text="http://pyvk-t.googlecode.com"
-                    addChild(q,"DESC").text="Vkontakte.ru jabber transport\nVersion: %s"%self.revision
-                    #print etree.tostring(ans)
-                    if self.show_avatars:
-                        try:
-                            req=open("avatar.png")
-                            photo=base64.encodestring(req.read())
-                            p=etree.SubElement(ans,"PHOTO")
-                            etree.SubElement(q,"TYPE").text="image/png"
-                            etree.SubElement(q,"BINVAL").text=photo.replace("\n","")
-                        except:
-                            logging.warning('cannot load avatar')
-                            print_exc()
-                    self.send(ans)
-                    return
-        if (0 and iq.get("type")=="set"):
-            #query=iq.query
-            q=iq.find("{jabber:iq:register}query")
-            if (q!=None):
-                bjid=pyvkt.bareJid(src)
-                if (q.find("remove")!=None):
-                    try:
-                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
-                    except OSError:
-                        pass
-                    return
-                logging.warning("new user: %s"%bjid)
-                try:
-                    email=q.find("{jabber:iq:register}email").text
-                    pw=q.find("{jabber:iq:register}password").text
-                except AttributeError:
-                    logging.warning("iq:register: can't fing email or pass. TODO: error message")
-                    iq.set('type','error')
-                    iq.set('to',src)
-                    iq.set('from',dest)
-                    e=addChild(iq,'error',attrs={'code':'406','type':'modify'})
-                    addChild(e,'non-acceptable','urn:ietf:params:xml:ns:xmpp-stanzas')
-                    logging.warn(etree.tostring(iq))
-                    self.send(iq)
-                    return
-                #FIXME asynchronous!!
-                u=user(self,pyvkt.bareJid(src))
-                try:
-                    u.readData()
-                except:
-                    #logging.info("registration: cant read data. possible new user")
-                    u.config={}
-                u.email=email
-                u.password=pw
-                u.saveData()
-                self.register2(bjid,iq.get('id'))
-                return
-                #if (query.uri=="jabber:iq:gateway"):
-                    #for prompt in query.elements():
-                        #if prompt.name=="prompt":
-                            #ans=xmlstream.IQ(self.xmlstream,"result")
-                            #ans["to"]=src
-                            #ans["from"]=dest
-                            #ans["id"]=iq["id"]
-                            #q=ans.addElement("query",query.uri)
-                            #q.addElement("jid").addContent("%s@%s"%(prompt,dest))
-                            #self.send(ans)
-                            #return
-                #elif (query.uri=="jabber:iq:search") and (self.hasUser(bjid)):
-                        #time.sleep(1)
-                        #self.users[bjid].pool.call(self.getSearchResult,jid=src,q=query,iq_id=iq["id"])
-                        #return
-
-            #cmd=iq.command
-            #if (cmd):
-                #if (self.hasUser(bjid)):
-                    #d=self.users[bjid].pool.defer(f=self.commands.onIqSet,iq=iq)
-                #else:
-                    #d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
-                #d.addCallback(self.send)
-                #d.addErrback(self.errorback)
-                #return
-        iq = createElement("iq",{'type':'error','to':src,'from':dest,'id':iq.get("id")})
-        addChild(iq,"feature-not-implemented",'urn:ietf:params:xml:ns:xmpp-stanzas')
-        self.send(iq)
-    def createElement(self,tag,attrs):
-        ret=etree.Element(tag)
-        for i in attrs.keys():
-            ret.set(i,attrs[i])
-        return ret
     def sendRegistrationForm(self,ans,q):
         """Sends registration form with old email if registered before
            'ans' parameter is stanza to be sent,
@@ -976,9 +664,6 @@ class pyvk_t(comstream.xmlstream):
         self.send(ans)
 
     def sendStatsMessage(self,to):
-        total=0
-        #FIXME
-        #ret=u"%s из %s пользователей в сети\n%s секунд аптайм\n%s входящих, %s исходящих пакетов\nxmpp траффик %sK/%sK"%(len(self.users),str(total),int(time.time()-self.startTime),self.logger.packetsIn,self.logger.packetsOut,self.logger.bytesIn/1024,self.logger.bytesOut/1024)
         ret=u"%s пользователей в сети\n%s секунд аптайм\n%s threads active"%(len(self.users),int(time.time()-self.startTime),len(threading.enumerate()))
         self.sendMessage(self.jid,to,ret)
 
@@ -1009,33 +694,20 @@ class pyvk_t(comstream.xmlstream):
     def register2(self,jid,iq_id,success=0):
         #FIXME failed registration
         try:
-            os.remove("%s/%s"%(self.cookPath,pyvkt.bareJid(jid)))
+            os.remove("%s/%s"%(self.cookPath,gen.bareJid(jid)))
         except OSError:
             pass
         ans=createElement("iq",{'type':'result','to':jid,'from':self.jid,'id':iq_id})
-        #ans=xmlstream.IQ(self.xmlstream,"result")
-        #ans["to"]=jid
-        #ans["from"]=self.jid
-        #ans["id"]=iq_id
+
         self.send(ans)
         self.sendPresence(self.jid,jid,"subscribe")
         self.sendPresence(self.jid,jid,"subscribed")
-        #pr=domish.Element(('',"presence"))
-        #pr["type"]="subscribe"
-        #pr["to"]=jid
-        #pr["from"]=self.jid
-        #self.xmlstream.send(pr)
-        #pr=domish.Element(('',"presence"))
-        #pr["type"]="subscribed"
-        #pr["to"]=jid
-        #pr["from"]=self.jid
-        #self.xmlstream.send(pr)
+
         self.sendMessage(self.jid,jid,u".get roster для получения списка\n.login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
 
     def sendFriendlist(self,fl,jid):
-        #log.msg("fiendlist ",jid)
-        #log.msg(fl)
-        bjid=pyvkt.bareJid(jid)
+
+        bjid=gen.bareJid(jid)
         n=0
         if self.hasUser(bjid):
             for f in fl:
@@ -1089,7 +761,7 @@ class pyvk_t(comstream.xmlstream):
                 text=u''
             else:
                 break
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         try:
             if text: 
                 items=self.users[bjid].vclient.searchUsers(text)
@@ -1132,7 +804,7 @@ class pyvk_t(comstream.xmlstream):
                         field['var']='url'
                         field.addElement("value").addContent(u"http://vkontakte.ru/id%s"%i)
         except:
-            log.msg("some fcky error when searching")
+            logging.warning("some fcky error when searching")
         #log.msg(card)
         self.send(ans)
 
@@ -1141,7 +813,7 @@ class pyvk_t(comstream.xmlstream):
         """
         get vCard (user info) from vkontakte.ru and send it
         """
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (not self.hasUser(bjid)):
             #TODO error stranza
             logging.warning("unauthorised vcard request. TODO error stranza")
@@ -1235,7 +907,7 @@ class pyvk_t(comstream.xmlstream):
         msg=self.users[bjid].vclient.getMessage(msgid)
         #log.msg(msg)
         #print msg
-        self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,pyvkt.unescape(msg["text"]),msg["title"])
+        self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,gen.unescape(msg["text"]),msg["title"])
 
     def submitMessage(self,jid,v_id,body,title):
         #log.msg((jid,v_id,body,title))
@@ -1277,7 +949,7 @@ class pyvk_t(comstream.xmlstream):
         return 0
     def addResource(self,jid,prs=None,captcha_key=None):
         #print "addRes"
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         #if (self.hasUser(bjid)==0):
         self.usrLock.acquire()
         if (not self.users.has_key(bjid)):
@@ -1288,7 +960,7 @@ class pyvk_t(comstream.xmlstream):
 
     def delResource(self,jid,to=None):
         #print "delResource %s"%jid
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         if (self.hasUser(bjid)):
             #TODO resource magic
             self.users[bjid].delResource(jid)
@@ -1303,7 +975,7 @@ class pyvk_t(comstream.xmlstream):
         src=prs.get("from")
         dest=prs.get("to")
         logging.info("RECV: prs %s -> %s type=%s"%(src,dest,ptype))
-        bjid=pyvkt.bareJid(src)
+        bjid=gen.bareJid(src)
         if(ptype):
             if ptype=="unavailable" and self.hasUser(bjid) and (dest==self.jid or self.users[bjid].subscribed(dest) or not self.roster_management):
                 self.delResource(src,dest)
@@ -1316,27 +988,27 @@ class pyvk_t(comstream.xmlstream):
                 #self.send(pr)
             elif(ptype=="subscribe"):
                 if self.hasUser(src):
-                    self.users[bjid].subscribe(pyvkt.bareJid(dest))
+                    self.users[bjid].subscribe(gen.bareJid(dest))
             elif(ptype=="subscribed"):
                 if self.hasUser(src):
-                    self.users[bjid].onSubscribed(pyvkt.bareJid(dest))
+                    self.users[bjid].onSubscribed(gen.bareJid(dest))
             elif(ptype=="unsubscribe"):
                 if self.hasUser(src):
-                    self.users[bjid].unsubscribe(pyvkt.bareJid(dest))
+                    self.users[bjid].unsubscribe(gen.bareJid(dest))
             elif(ptype=="unsubscribed"):
                 if self.hasUser(src):
-                    self.users[bjid].onUnsubscribed(pyvkt.bareJid(dest))
+                    self.users[bjid].onUnsubscribed(gen.bareJid(dest))
             return
         if (self.isActive or bjid==self.admin):
             self.addResource(src,prs)
 
     def updateFeed(self,jid,feed):
         ret=""
-        if (not self.hasUser(pyvkt.bareJid(jid))):
+        if (not self.hasUser(gen.bareJid(jid))):
             return
         for k in feed.keys():
-            if (k in pyvkt.feedInfo) and ("count" in feed[k]) and feed[k]["count"]:
-                ret=ret+u"Новых %s - %s\n"%(pyvkt.feedInfo[k]["message"],feed[k]["count"])
+            if (k in gen.feedInfo) and ("count" in feed[k]) and feed[k]["count"]:
+                ret=ret+u"Новых %s - %s\n"%(gen.feedInfo[k]["message"],feed[k]["count"])
         ret = ret.strip()
         s=conf.get('features/status')
         if (s):
@@ -1357,16 +1029,16 @@ class pyvk_t(comstream.xmlstream):
             logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())        
         oldfeed = self.users[jid].feed
         if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
-            for j in pyvkt.feedInfo:
+            for j in gen.feedInfo:
                 if j!="friends" and j in feed and "items" in feed[j] and feed[j]['items']:
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
                         if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             #it is a vkontakte.ru bug, when it stores null inside items. (e.g when there are invitaions to deleted groups)
-                            if pyvkt.feedInfo[j]["url"] and feed[j]["items"]!="null":
+                            if gen.feedInfo[j]["url"] and feed[j]["items"]!="null":
                                 try:
-                                    gr+="\n  "+pyvkt.unescape(feed[j]["items"][i])+" [ "+pyvkt.feedInfo[j]["url"]%i + " ]"
+                                    gr+="\n  "+gen.unescape(feed[j]["items"][i])+" [ "+gen.feedInfo[j]["url"]%i + " ]"
                                 except TypeError:
                                     print_exc()
                                     print repr(feed)
@@ -1377,10 +1049,10 @@ class pyvk_t(comstream.xmlstream):
                                         pass
                             gc+=1
                     if gc:
-                        if pyvkt.feedInfo[j]["url"]:
-                            ret+=u"Новых %s - %s:%s\n"%(pyvkt.feedInfo[j]["message"],gc,gr)
+                        if gen.feedInfo[j]["url"]:
+                            ret+=u"Новых %s - %s:%s\n"%(gen.feedInfo[j]["message"],gc,gr)
                         else:
-                            ret+=u"Новых %s - %s\n"%(pyvkt.feedInfo[j]["message"],gc)
+                            ret+=u"Новых %s - %s\n"%(gen.feedInfo[j]["message"],gc)
             if ret:
                 self.sendMessage(self.jid,jid,ret.strip())
             try:
@@ -1399,13 +1071,13 @@ class pyvk_t(comstream.xmlstream):
                                 continue
                         except (KeyError, TypeError):
                             logging.warning('feed error defeated! =)')
-                        text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
+                        text = u"Пользователь %s хочет добавить вас в друзья."%gen.unescape(feed["friends"]["items"][i])
                         self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
                             
                             #old friendlist
                             
                         #if (not (oldfeed and ("friends" in oldfeed) and ("items" in oldfeed["friends"]) and i in oldfeed["friends"]["items"])) or (not oldfeed["friends"]["items"]):
-                            #text = u"Пользователь %s хочет добавить вас в друзья."%pyvkt.unescape(feed["friends"]["items"][i])
+                            #text = u"Пользователь %s хочет добавить вас в друзья."%gen.unescape(feed["friends"]["items"][i])
                             #self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
             #except KeyError:
                 #pass
@@ -1421,7 +1093,7 @@ class pyvk_t(comstream.xmlstream):
         elif(err=="auth"):
             self.sendMessage(self.jid,jid,u"Ошибка входа. Возможно, неправильный логин/пароль.")
         try:
-            self.users[pyvkt.bareJid(jid)].logout()
+            self.users[gen.bareJid(jid)].logout()
         except:
             pass
         self.sendPresence(self.jid,jid,"unavailable")

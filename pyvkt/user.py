@@ -22,9 +22,9 @@
  """
 import libvkontakte
 #from twisted.python.threadpool import ThreadPool
-from pyvkt_spikes import reqQueue
+from spikes import reqQueue
 #from twisted.enterprise.adbapi import safe 
-import pyvkt_global as pyvkt
+import general as gen
 from twisted.internet import defer,reactor
 import sys,os,cPickle
 from base64 import b64encode,b64decode
@@ -40,7 +40,7 @@ class user:
     #lock=1
     #active=0
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
         #print "user constructor: %s"%bjid
         self.loginTime=int(time.time())
@@ -154,7 +154,7 @@ class user:
         if not bjid in self.roster:
             self.roster[bjid]={"subscribe":0,"subscribed":0}
         self.trans.sendPresence(bjid, self.bjid, "subscribed",nick=self.getName(bjid))
-        if not self.roster[bjid]["subscribe"] and pyvkt.jidToId(bjid) in self.onlineList:
+        if not self.roster[bjid]["subscribe"] and gen.jidToId(bjid) in self.onlineList:
             self.trans.sendPresence(bjid,self.bjid,nick=self.getName(bjid))
         self.roster[bjid]["subscribe"] = 1
         self.askSubscibtion(bjid)
@@ -257,7 +257,7 @@ class user:
 
     def createThread(self,jid,email,pw):
         #print "createThread %s"%self.bjid
-        jid=pyvkt.bareJid(jid)
+        jid=gen.bareJid(jid)
         # TODO self.jid
         try:
             del self.vclient
@@ -283,9 +283,9 @@ class user:
                 self.saveData()
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: captcha request.",show="unavailable")
             url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%exc.sid
-            #print url
+            #print ur
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
-                body=u"Ошибка подключения, стребуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '/login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
+                body=u"Ошибка подключения, стребуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '.login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
             self.state=4
             return
         except libvkontakte.authError:
@@ -411,7 +411,7 @@ class user:
         return 1 if resource is available
         otherwise returns 0 
         """
-        bjid=pyvkt.bareJid(jid)
+        bjid=gen.bareJid(jid)
         #barejid - just check if any resources available
         if jid==bjid and self.resources:
             return 1
@@ -624,7 +624,7 @@ class user:
         for i in  tree.xpath('//config/*'):
             n,v=i.get('name'),i.get('value')
             try:
-                if (pyvkt.userConfigFields[n]['type']=='boolean'):
+                if (gen.userConfigFields[n]['type']=='boolean'):
                     if (v=='True'):
                         v=True
                     else:
@@ -652,18 +652,18 @@ class user:
         cfile.close()
 
     def getConfig(self,fieldName):
-        if (not fieldName in pyvkt.userConfigFields):
+        if (not fieldName in gen.userConfigFields):
             raise KeyError("user config: no such field (%s)"%fieldName)
         try:
             return self.config[fieldName]
         except KeyError:
-            return pyvkt.userConfigFields[fieldName]["default"]
+            return gen.userConfigFields[fieldName]["default"]
         except AttributeError:
             logging.warn("user without config\nstate=%s"%(self.state))
-            return pyvkt.userConfigFields[fieldName]["default"]
+            return gen.userConfigFields[fieldName]["default"]
     def __getattr__(self,name):
         if (name=='vclient'):
-            raise pyvkt.NoVclientError(self.bjid)
+            raise gen.NoVclientError(self.bjid)
         raise AttributeError("user [%s] instance has no attribute '%s'"%(self.bjid,name))
     #def __getattr__(self,name):
         ##print "getattr",name
@@ -688,7 +688,7 @@ class user:
             #print_stack(limit=2)
             #return self.vclient
         #if (name=='vclient'):
-            #raise pyvkt.noVclientError(self.bjid)
+            #raise gen.noVclientError(self.bjid)
         #raise AttributeError("user instance without '%s'"%name)
         #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
     #def __setattr__(self,name,val):
