@@ -20,10 +20,10 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-from twisted.python import failure
+#from twisted.python import failure
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
-from twisted.python import log, runtime, context, failure
+#from twisted.python import log, runtime, context, failure
 import Queue
 import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
@@ -104,7 +104,11 @@ class reqQueue(threading.Thread):
                     except:
                         logging.error(format_exc())
                 except pyvkt.NoVclientError:
-                    logging.error("err: no vClient (%s)"%repr(self.user.bjid))
+                    if (self.user):
+                        logging.error("err: no vClient (%s)"%repr(self.user.bjid))
+                    else:
+                        logging.warning("loop: self.user==None. aborting")
+                        return
                 except HTTPError,e:
                     logging.error("http error: "+str(e).replace('\n',', '))
                 except UserapiSidError:

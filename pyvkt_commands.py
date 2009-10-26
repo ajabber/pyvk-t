@@ -20,8 +20,8 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-from twisted.words.protocols.jabber import jid, xmlstream
-from twisted.internet.defer import waitForDeferred
+#from twisted.words.protocols.jabber import jid, xmlstream
+#from twisted.internet.defer import waitForDeferred
 #try:
     #from twisted.internet.threads import deferToThreadPool
 #except:
@@ -211,13 +211,7 @@ class cmdManager:
             pass
         
     def getXdata(self,x):
-        #print("xdata")
-        #print(x.toXml().encode("ascii","replace"))
-        #x=elem.x
         ret={}
-        #if (x==None):
-            ##print "none"
-            #return ret
         #TODO check namespace
         #logging.error(tostring(x))
         #logging.error(x.findall('{jabber:x:data}field'))
@@ -232,25 +226,7 @@ class cmdManager:
                 else:
                     val=v.text
             ret[i.get('var')]=val
-        logging.warning('xdata: '+str(ret))
-        return ret
-                
-        for f in x.children:
-            if (type(f)!=unicode and f.name=='field'):
-                ret[f["var"]]=""
-                data=0
-                #TODO check types
-                for v in f.children:
-                    if type(v)!=unicode and v.name=="value":
-                        if v.children:
-                            if data:
-                                ret[f['var']]+=u'\n'+v.children[0]
-                            else:
-                                ret[f['var']]=v.children[0]
-                        elif data:
-                            ret[f["var"]]+='\n'
-                        data=1#some data already found
-        #print "got ",ret
+        #logging.warning('xdata: '+str(ret))
         return ret
     def onDiscoInfo(self,iq):
         v_id=pyvkt.jidToId(iq.get("to"))

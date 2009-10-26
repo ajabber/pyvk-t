@@ -23,7 +23,7 @@
 import libvkontakte
 #from twisted.python.threadpool import ThreadPool
 from pyvkt_spikes import reqQueue
-from twisted.enterprise.adbapi import safe 
+#from twisted.enterprise.adbapi import safe 
 import pyvkt_global as pyvkt
 from twisted.internet import defer,reactor
 import sys,os,cPickle
@@ -425,13 +425,13 @@ class user:
             ts=self.uapiStates['wall']
         except:
             print_exc()
-            logging.warning("requesting wall ts...")
+            logging.warning("wall status (%s): no wall ts. requesting..."%self.bjid)
             self.uapiStates['wall']=self.vclient.getWallState()
             #self.trans.sendMessage(self.trans.jid,self.bjid,body=u'Текущее состояние стены сохранено')
         else:
             msgs=self.vclient.getWallHistory(ts)
             if (msgs==False):
-                logging.warning("bad reply. possible wrong ts. re-requesting...")
+                logging.warning("wall status (%s): bad reply. re-requesting ts..."%self.bjid)
                 self.uapiStates['wall']=self.vclient.getWallState()
                 return
             #print msgs
@@ -608,8 +608,14 @@ class user:
         except xml.XMLSyntaxError:
             logging.error ("broken xml file: %s"%fname)
             raise
-        self.email= tree.xpath('//email/text()')[0]
-        self.password=tree.xpath('//password/text()')[0]        
+        try:
+            self.email= tree.xpath('//email/text()')[0]
+            self.password=tree.xpath('//password/text()')[0]
+        except IndexError:
+            logging.error('readData(%s): can\'t find email/password'%self.bjid)
+            self.email=''
+            self.password=''
+            #FIXME error message
         self.config={}
         try:
             self.captcha_sid=tree.xpath('//captcha_sid/text()')[0]
