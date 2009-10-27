@@ -861,7 +861,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         try:
             SubElement(vc,"DESC").text=descr
         except ValueError,e:
-            logging.error('vcard: bad descr: (%s) \n%s'%(e,descr))
+            SubElement(vc,"DESC").text='[invalid data]'
+            logging.error('vcard: bad descr: (%s)'%(e))
         if self.show_avatars:
             #TODO roster 
             p=None
