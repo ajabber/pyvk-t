@@ -37,7 +37,9 @@ def createReply(iq,t='result'):
     return ret
     
 class xmlstream:
+    "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
+    connectionFailure=False
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
@@ -51,7 +53,7 @@ class xmlstream:
         self.secret=secret
         sock=socket.create_connection((host,port))
         #FIXME connecting
-        sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%host)
+        sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%self.jid)
         sock.recv(len("<?xml version='1.0'?>"))
         fil=sock.makefile(bufsize=1)
         rep= sock.recv(1000)
@@ -61,6 +63,7 @@ class xmlstream:
         hsh=hashlib.sha1(str(sid)+secret).hexdigest()
         resp="<handshake>%s</handshake>"%hsh
         sock.send(resp)
+        sock.settimeout(0)
         self.sock=sock
         if (self.getPacket()=='<handshake/>'):
             return True
@@ -69,11 +72,21 @@ class xmlstream:
     def getPacket(self):
         sn=""
         while (1):
-            c=self.sock.recv(1)
-            sn=sn+c
-            #print sn
-            if (c=='>'):
-                break
+            try:
+                if (self.connectionFailure):
+                    return
+                c=self.sock.recv(1)
+                sn=sn+c
+                #print sn
+                if (c=='>'):
+                    break
+            except socket.error,e:
+                if (e.errno==11):
+                    time.sleep(1)
+                else:
+                    self.connectionFailure=True
+                    logging.exception('recvLoop failure')
+                    raise
         if (sn[-2:]=='/>'):
             logging.debug("received %s"%sn)
             return sn
@@ -81,7 +94,18 @@ class xmlstream:
         les=len(es)
         while(sn[-les:]!=es):
             #print sn
-            sn=sn+self.sock.recv(1)
+            try:
+                if (self.connectionFailure):
+                    return                
+                sn=sn+self.sock.recv(1)
+            except socket.error,e:
+                if (e.errno==11):
+                    time.sleep(1)
+                else:
+                    self.connectionFalure=True
+                    logging.exception('recvLoop failure')
+                    raise
+
         #print
         logging.debug("received %s"%sn)
         return sn
@@ -93,7 +117,8 @@ class xmlstream:
                 s=self.getPacket()
             except:
                 logging.critical("stream error\n"+format_exc())
-                time.sleep(1)
+                time.sleep(15)
+                logging.warning ('recvLoop: respawn')
             try:
                 self.recvQueue.put(etree.fromstring(s))
             except:
@@ -101,13 +126,13 @@ class xmlstream:
                 #print_exc()
     def sendLoop(self):
         while(1):
-            task,st=self.sendQueue.get(True)
             try:
-                try:
-                    s=etree.tostring(task,encoding='utf-8')
-                except TypeError:
-                    logging.info("deprecated domish!")
-                    s=task.toXml()
+                task,st=self.sendQueue.get(True,10)
+            except Empty:
+                task=createElement('iq',{'from':self.jid,'to':self.jid,'id':'keepalive'})
+                logging.info('sending keepalive')
+            try:
+                s=etree.tostring(task,encoding='utf-8')
             except:
                 logging.error("can't serialize\n"+format_exc())
                 logging.error("bad packet came from\n%s"%''.join(format_list(st)))
@@ -120,7 +145,13 @@ class xmlstream:
                 except:
                     logging.error("can't send()\n"+format_exc())
                     logging.error("trying to reconnect...")
-                    self.sock.close()
+                    #FIXME restart recvloop
+                    #self.sock.shutdown(socket.SHUT_RDWR)
+                    try:
+                        self.sock.close()
+                        del self.sock
+                    except:
+                        logging.exception('')
                     self.connect(self.host,self.port,self.secret)
                     
     def send(self,packet):
@@ -190,8 +221,8 @@ class xmlstream:
                     return
                 return
             except:
-                logging.critical("exception:")
-                print_exc()
+                logging.critical("exception in main loop:")
+                logging.exception('')
                 
         logging.warn("main loop stopped. goodbye!")
     def kbInterrupt(self):

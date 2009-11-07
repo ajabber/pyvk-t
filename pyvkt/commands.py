@@ -47,7 +47,8 @@ class cmdManager:
                 "getwall":getWall(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),
                 "wall":sendWallMessageCmd(trans),
-                "friend":addDelFriendCmd(trans),
+                #"friend":addDelFriendCmd(trans),
+                #FIXME 'friend' command
                 "getwall":getWall(trans)}
         self.adminCmdList={}
         self.admin=trans.admin
@@ -106,8 +107,6 @@ class cmdManager:
         node=iqcmd.get("node")[4:]
         v_id=gen.jidToId(iq.get("to"))
         cmdList=self.makeCmdList(iq.get("from"),v_id)
-        #logging.warning(tostring(iq))
-        #cmdList=self.transportCmdList
         if (cmdList.has_key(node)):
             #FIXME different actions
             act=iqcmd.get('action')
@@ -115,62 +114,32 @@ class cmdManager:
             if act=="cancel":
                 ans=createReply(iq,'result')
                 q=addChild(ans,'command',URI,{'status':'cancelled','node':node})
-                #q=ans.addElement("command",iq.command.uri)
-                #q=addChild()
                 sid=iqcmd.get('sessionid',None)
                 if sid:
                     q.set("sessionid",sid)
-                #q["status"]="canceled"
-                #q["node"]=node
                 return ans
             x=iqcmd.find('{jabber:x:data}x')
-            #logging.error(x)
             if (x!=None):
-                #logging.warning('xdata')
                 args=self.getXdata(x)
             else:
-                #print "empty "
                 args={}
             cmd=cmdList[node]
-            
             res=cmd.run(iq.get("from"),args,to_id=v_id)
             resp=createReply(iq,'result')
-            #resp=xmlstream.toResponse(iq)
-            #resp["type"]="result"
             c=addChild(resp,'command',URI,{'node':'cmd:%s'%node,'status':res['status'],'sessionid':'0'})
-            
-            #c=resp.addElement("command",'http://jabber.org/protocol/commands')
-            #c["node"]=node
-            #c["status"]=res["status"]
-            #c["sessionid"]='0'
-            #when command completed we do not have form usually
-            #it does not work in psi correctly
-            #if res["status"]=="completed":
-            #    note = c.addElement("note")
-            #    note["type"]="info"
-            #    note.addContent(res["message"])
-            #    return resp
-            #if not completed we prepare form for sending
-            #x=c.addElement("x",'jabber:x:data')
             x=addChild(c,'x','jabber:x:data')
             if (res.has_key("form")):
                 act=addChild(c,'actions',attrs={'execute':'next'})
-                #act=c.addElement("actions")
-                #act["execute"]="next"
                 addChild(act,'next')
-                #act.addElement("next")
                 x.set('type','form')
-                #x["type"]="form"
             else:
                 x.set('type','result')
             try:
                 addChild(x,'title').text=res["title"]
             except KeyError:
                 addChild(x,'title','result')
-                #x.addElement("title").addContent(u"result")
             try:
                 addChild(x,'instructions').text=res["message"]
-                #x.addElement("instructions").addContent(res["message"])
             except KeyError:
                 pass
             try:
@@ -206,7 +175,10 @@ class cmdManager:
                 pass
             return resp
         else:
+            err=createReply(iq,'error')
+            addChild(err,'{urn:ietf:params:xml:ns:xmpp-stanzas}item-not-found')
             logging.warning('cant find command %s'%node)
+            return err
             #FIXME error strnza
             pass
         

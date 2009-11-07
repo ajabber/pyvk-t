@@ -27,8 +27,9 @@ from twisted.internet.defer import Deferred
 import Queue
 import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
-from libvkontakte import authFormError,HTTPError,UserapiSidError
+from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError
 import pyvkt.general as gen
+import cProfile as prof
 class pseudoXml:
     def __init__(self):
         self.items={}
@@ -84,6 +85,7 @@ class reqQueue(threading.Thread):
         self.user=None
     def dummy(self):
         return
+
     def loop(self):
         while(self.alive):
             try:
@@ -113,6 +115,8 @@ class reqQueue(threading.Thread):
                     logging.error("http error: "+str(e).replace('\n',', '))
                 except UserapiSidError:
                     logging.error('userapi sid error (%s)'%self.user.bjid)
+                except tooFastError:
+                    logging.warning('FIXME "too fast" error stranza')
                 except Exception, exc:
                     logging.error(format_exc())
                     logging.error('task traceback:')

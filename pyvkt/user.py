@@ -20,7 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-import libvkontakte
+import pyvkt.libvkontakte as libvkontakte
 #from twisted.python.threadpool import ThreadPool
 from spikes import reqQueue
 #from twisted.enterprise.adbapi import safe 
@@ -544,7 +544,7 @@ class user:
         fname=dirname+"/"+self.bjid
         #print dirname
         if (not os.path.exists(dirname)):
-            print "creating dir %s"%dirname
+            #print "creating dir %s"%dirname
             os.mkdir(dirname)
         root=xml.Element("userdata",{'version':'0.1'})
         # versions:
