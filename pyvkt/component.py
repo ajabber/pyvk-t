@@ -48,7 +48,7 @@ import pyvkt.comstream
 from pyvkt.comstream import addChild,createElement
 import lxml.etree
 from lxml import etree
-from lxml.etree import SubElement
+from lxml.etree import SubElement,tostring
 from threading import Lock
 import gc,inspect
 import pyvkt.config as conf
@@ -154,13 +154,15 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.usrLock=Lock()
         self.unregisteredList=[]
         signal.signal(signal.SIGUSR1,self.signalHandler)
+        signal.signal(signal.SIGUSR2,self.signalHandler)
     def handlePacket(self,st):
         if (st.tag=="message"):
-            self.onMsg(st)
+            return self.onMsg(st)
         if (st.tag=="iq"):
-            self.onIq(st)
+            return self.onIq(st)
         if (st.tag=="presence"):
-            self.onPresence(st)
+            return self.onPresence(st)
+        logging.warning('unexpected stranza: "%s"'%st.tag)
     def onMsg(self,msg):
         src=msg.get("from")
         dest=msg.get("to")
@@ -170,150 +172,153 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         if (v_id==-1):
             return None
         body=msg.find("body")
-        if (body!=None):
-            msgid=msg.get("id")
-            body=body.text
-            logging.info("RECV: msg %s -> %s '%s'"%(src,dest,body))
-            #return
-            bjid=gen.bareJid(src)
-            if body[0:1]=='.':
-                req=msg.find('{urn:xmpp:receipts}request')
-                if (req!=None):
-                    self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
-                cmd=body[1:].rstrip()
-                #if (self.users.has_key(bjid) and self.users[bjid].vclient and cmd=="get roster"):
-                if (cmd=="get roster"):
-                    if (self.hasUser(bjid)):
-                        d=self.users[bjid].pool.defer(self.users[bjid].vclient.getFriendList)
-                        d.addCallback(self.sendFriendlist,jid=bjid)
-                    else:
-                        self.sendMessage(self.jid,src,u"Сначала необходимо подключиться")
-                elif (cmd=="help"):
-                    self.sendMessage(self.jid,src,u""".get roster - запрос списка контактов\n.list - список остальных команд""")
+        logging.info("RECV: msg %s -> %s '%s'"%(src,dest,body))
+        
+        if (body==None or body.text==None):
+            #logging.warning('strange message: %s'%tostring(msg))
+            return
+        body=body.text
+        
+        msgid=msg.get("id")
+        bjid=gen.bareJid(src)
+        if body[0:1]=='.':
+            req=msg.find('{urn:xmpp:receipts}request')
+            if (req!=None):
+                self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
+            cmd=body[1:].rstrip()
+            #if (self.users.has_key(bjid) and self.users[bjid].vclient and cmd=="get roster"):
+            if (cmd=="get roster"):
+                if (self.hasUser(bjid)):
+                    d=self.users[bjid].pool.defer(self.users[bjid].vclient.getFriendList)
+                    d.addCallback(self.sendFriendlist,jid=bjid)
                 else:
-                    #print cmd
-                    logging.warn("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
-                    if (self.hasUser(bjid)):
-                        d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=src,text=cmd,v_id=v_id)
-                        cb=lambda (x):self.sendMessage(dest,src,x)
-                        d.addCallback(cb)
-                        d.addErrback(self.errorback)
-                    else:
-                        self.sendMessage(dest,src,self.commands.onMsg(jid=src,text=cmd,v_id=v_id))
-                return
+                    self.sendMessage(self.jid,src,u"Сначала необходимо подключиться")
+            elif (cmd=="help"):
+                self.sendMessage(self.jid,src,u""".get roster - запрос списка контактов\n.list - список остальных команд""")
+            else:
+                #print cmd
+                logging.warning("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
+                if (self.hasUser(bjid)):
+                    d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=src,text=cmd,v_id=v_id)
+                    cb=lambda (x):self.sendMessage(dest,src,x)
+                    d.addCallback(cb)
+                    d.addErrback(self.errorback)
+                else:
+                    self.sendMessage(dest,src,self.commands.onMsg(jid=src,text=cmd,v_id=v_id))
+            return
 
-            if (body[0:1]=="#" and bjid==self.admin and dest==self.jid):
-                req=msg.find('{urn:xmpp:receipts}request')
-                if (req!=None):
-                    self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
-                    # admin commands
-                cmd=body[1:]
-                
-                logging.warning("admin command: '%s'"%cmd)
-                if (cmd[:4]=="stop"):
-                    self.isActive=0
-                    if (cmd=="stop"):
-                        self.stopService(suspend=True)
-                    else:
-                        self.stopService(suspend=True,msg=cmd[5:])
-                    self.sendMessage(self.jid,src,"'%s' done"%cmd)
-                elif (cmd=="start"):
-                    self.isActive=1
-                elif (cmd=="sendprobes"):
-                    threads.deferToThread(self.sendProbes,src)
-                elif (cmd=="collect"):
-                    gc.collect()
-                elif (cmd[:4]=="eval"):
-                    try:
-                        logging.warning("eval: "+repr(eval(cmd[5:])))
-                    except:
-                        logging.error("exec failed"+format_exc())
-                elif (cmd[:4]=="exec"):
-                    try:
-                        execfile("inject.py")
-                    except:
-                        logging.error("exec failed"+format_exc())
-                elif (cmd=="users"):
-                    count = 0
-                    ret = u''
-                    for i in self.users.keys():
-                        if (self.hasUser(i)):
-                            ret=ret+u"\nxmpp:%s"%(i)
-                            count+=1
-                    ret=u"%s user(s) online"%count + ret
-                    self.sendMessage(self.jid,src,ret)
-                elif (cmd=="stats"):
-                    #TODO async request
-                    self.sendStatsMessage(src)
+        if (body[0:1]=="#" and bjid==self.admin and dest==self.jid):
+            req=msg.find('{urn:xmpp:receipts}request')
+            if (req!=None):
+                self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
+                # admin commands
+            cmd=body[1:]
 
-                #elif (cmd=="resources"):
-                    #count = 0
-                    #rcount = 0
-                    #ret = u''
-                    #for i in self.users.keys():
-                        #if (self.hasUser(i)):
-                            #for j in self.users[i].resources.keys():
-                                #ret=ret+u"\nxmpp:%s %s(%s)[%s]"%(j,self.users[i].resources[j]["show"],self.users[i].resources[j]["status"],self.users[i].resources[j]["priority"])
-                                #rcount +=1
-                            #ret=ret+u"\n"
-                            #count+=1
-                    #ret=u"%s(%s) user(s) online"%(count,rcount) + ret
-                    #self.sendMessage(self.jid,src,ret)
-                #elif (cmd[:6]=="roster"):#Получение информации о ростере человека
-                    #logging.error("fixme")
-                    #j=cmd[7:]
-                    #if not j:
-                            #j=src
-                    #j=pyvkt.bareJid(j)
-                    #ret=u'Ростер %s:\n'%j
-                    #if self.hasUser(j):
-                        #ret = ret + u'\tКоличество контактов: %s\n'%len(self.users[j].roster)
-                        #ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster,2)))
-                    #else:
-                        #ret = u'Пользователь %s не в сети, можете посмотреть его ростер в базе'%j
-                    #self.sendMessage(self.jid,msg["from"],ret)
-                #elif(cmd=="stats2"):
-                    #for i in self.users.keys():
-                        #try:
-                            #print i
-                            ##print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
-                        #except:
-                            #pass
-                elif (cmd[:4]=="wall"):
-                    for i in self.users:
-                        self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
-                    self.sendMessage(self.jid,src,"'%s' done"%cmd)
-                #elif (cmd[:7]=='traffic'):
+            logging.warning("admin command: '%s'"%cmd)
+            if (cmd[:4]=="stop"):
+                self.isActive=0
+                if (cmd=="stop"):
+                    self.stopService(suspend=True)
+                else:
+                    self.stopService(suspend=True,msg=cmd[5:])
+                self.sendMessage(self.jid,src,"'%s' done"%cmd)
+            elif (cmd=="start"):
+                self.isActive=1
+            elif (cmd=="sendprobes"):
+                threads.deferToThread(self.sendProbes,src)
+            elif (cmd=="collect"):
+                gc.collect()
+            elif (cmd[:4]=="eval"):
+                try:
+                    logging.warning("eval: "+repr(eval(cmd[5:])))
+                except:
+                    logging.error("exec failed"+format_exc())
+            elif (cmd[:4]=="exec"):
+                try:
+                    execfile("inject.py")
+                except:
+                    logging.error("exec failed"+format_exc())
+            elif (cmd=="users"):
+                count = 0
+                ret = u''
+                for i in self.users.keys():
+                    if (self.hasUser(i)):
+                        ret=ret+u"\nxmpp:%s"%(i)
+                        count+=1
+                ret=u"%s user(s) online"%count + ret
+                self.sendMessage(self.jid,src,ret)
+            elif (cmd=="stats"):
+                #TODO async request
+                self.sendStatsMessage(src)
+
+            #elif (cmd=="resources"):
+                #count = 0
+                #rcount = 0
+                #ret = u''
+                #for i in self.users.keys():
+                    #if (self.hasUser(i)):
+                        #for j in self.users[i].resources.keys():
+                            #ret=ret+u"\nxmpp:%s %s(%s)[%s]"%(j,self.users[i].resources[j]["show"],self.users[i].resources[j]["status"],self.users[i].resources[j]["priority"])
+                            #rcount +=1
+                        #ret=ret+u"\n"
+                        #count+=1
+                #ret=u"%s(%s) user(s) online"%(count,rcount) + ret
+                #self.sendMessage(self.jid,src,ret)
+            #elif (cmd[:6]=="roster"):#Получение информации о ростере человека
+                #logging.error("fixme")
+                #j=cmd[7:]
+                #if not j:
+                        #j=src
+                #j=pyvkt.bareJid(j)
+                #ret=u'Ростер %s:\n'%j
+                #if self.hasUser(j):
+                    #ret = ret + u'\tКоличество контактов: %s\n'%len(self.users[j].roster)
+                    #ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster,2)))
+                #else:
+                    #ret = u'Пользователь %s не в сети, можете посмотреть его ростер в базе'%j
+                #self.sendMessage(self.jid,msg["from"],ret)
+            #elif(cmd=="stats2"):
+                #for i in self.users.keys():
                     #try:
-                        #self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
+                        #print i
+                        ##print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
                     #except:
-                        #print_exc()
-                        
-                    
-                else:
-                    self.sendMessage(self.jid,src,"unknown command: '%s'"%cmd)
-                return
+                        #pass
+            elif (cmd[:4]=="wall"):
+                for i in self.users:
+                    self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
+                self.sendMessage(self.jid,src,"'%s' done"%cmd)
+            #elif (cmd[:7]=='traffic'):
+                #try:
+                    #self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
+                #except:
+                    #print_exc()
+
+
+            else:
+                self.sendMessage(self.jid,src,"unknown command: '%s'"%cmd)
+            return
             #logging.error("fixme: sending messages")op
             #return
-            if(src!=self.jid and self.hasUser(bjid) and v_id):
-                if self.users[bjid].getConfig("jid_in_subject"):
-                    title = "xmpp:%s"%bjid
-                else:
-                    title = '...'
-                try:
-                    title=msg.find("subject").text
-                except:
-                    pass
-                s=self.users[bjid].getConfig("signature")
-                if s:
-                    body = body + u"\n--------\n" + s
-                d=self.users[bjid].pool.defer(f=self.users[bjid].vclient.sendMessage,to_id=v_id,body=body,title=title)
-                req=msg.find('{urn:xmpp:receipts}request')
-                if (req!=None):        
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,receipt=1,body=body,subject=title)
-                else:
-                    d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,body=body,subject=title)
-                d.addErrback(self.errorback)
+        if(src!=self.jid and self.hasUser(bjid) and v_id):
+            if self.users[bjid].getConfig("jid_in_subject"):
+                title = "xmpp:%s"%bjid
+            else:
+                title = '...'
+            try:
+                title=msg.find("subject").text
+            except:
+                pass
+            s=self.users[bjid].getConfig("signature")
+            if s:
+                body = body + u"\n--------\n" + s
+            d=self.users[bjid].pool.defer(f=self.users[bjid].vclient.sendMessage,to_id=v_id,body=body,title=title)
+            req=msg.find('{urn:xmpp:receipts}request')
+            if (req!=None):
+                d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,receipt=1,body=body,subject=title)
+            else:
+                d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,body=body,subject=title)
+            d.addErrback(self.errorback)
     def startPoll(self):
         self.pollMgr.start()        
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
@@ -627,7 +632,18 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 #else:
                     #d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
                 #return
-        logging.warning("not implemented: %s -> %s\t%s"%(src,dest,etree.tostring(iq[0])))
+        if (iq.find('{urn:xmpp:time}time')!=None):
+            pass
+        elif(iq.find('{http://jabber.org/protocol/pubsub}pubsub')!=None):
+            pass
+        else:
+            if (len(iq)):
+                logging.warning("not implemented: %s -> %s\t%s"%(src,dest,etree.tostring(iq[0])))
+            else:
+                if (src==dest):
+                    logging.info ('keepalive received')
+                return
+                
         iq = createElement("iq",{'type':'error','to':src,'from':dest,'id':iq.get("id")})
         addChild(iq,"feature-not-implemented",'urn:ietf:params:xml:ns:xmpp-stanzas')
         self.send(iq)                        
@@ -1170,7 +1186,12 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         if(show):
             SubElement(pr,'show').text=show
         if(status):
-            SubElement(pr,'status').text=status
+            try:
+                SubElement(pr,'status').text=status
+            except ValueError:
+                SubElement(pr,'status').text=status.replace('\0','')
+                logging.warning('null byte in status: fixed')
+                
         #if contact goes offline we should not send extra information to supress traffic
         if (t!="unavailable"):
             addChild(pr,'c',ns="http://jabber.org/protocol/caps",attrs={"node":"http://pyvk-t.googlecode.com/caps","ver":self.revision})
@@ -1214,6 +1235,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             #print "caught SIGTUSR1, stopping transport"
             #self.stopService()
             self.alive=False
+        elif (sig==signal.SIGUSR2):
+            logging.error('got SIGUSR2. executing hook...')
+            try:
+                execfile("inject.py")
+            except:
+                logging.error("exec failed"+format_exc())
+
     def kbInterrupt(self):
         print "threads:"
         for i in threading.enumerate():
