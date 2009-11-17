@@ -91,6 +91,25 @@ class reqQueue(threading.Thread):
             try:
                 elem=self.queue.get(block=True,timeout=10)
             except Queue.Empty:
+                try:
+                    self.user.trans
+                except Exception,e:
+                    logging.warning ('can\'t get reference to transport. abort loop? (%s)'%str(e))
+                else:
+                    try:
+                        j=self.user.bjid
+                        if self.user.trans.users.has_key(self.user.bjid):
+                            if self.user.trans.users[self.user.bjid]!=self.user:
+                                logging.error('bad loop (%s). aborting.'%j)
+                                del self.user
+                                return
+                        else:
+                            #pass
+                            logging.warning('queue for offline user? aborting.')
+                            del self.user
+                            return
+                    except:
+                        logging.exception('can\'t check user')
                 pass
             else:
                 f=elem["foo"]

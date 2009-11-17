@@ -44,6 +44,7 @@ class cmdManager:
                 "config":setConfigCmd(trans),
                 "addnote":addNoteCmd(trans),
                 "bdays":checkBdays(trans),
+                #"wall":sendWallMessageCmd(trans),
                 "getwall":getWall(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),
                 "wall":sendWallMessageCmd(trans),
@@ -70,24 +71,53 @@ class cmdManager:
                 ret[i]=self.contactCmdList[i]
         #print ret
         return ret
+    def parseTextArgs(self,txt):
+        if (txt.find('=')==-1):
+            return {'default':txt}
+        else:
+            ret={}
+            opList=txt.split('/')
+            for i in opList:
+                kv=[a.strip() for a in i.split('=')]
+                if (len(kv)!=2):
+                    return None
+                    #TODO syntax error
+                else:
+                    ret[kv[0]]=kv[1]
+            return ret        
     def onMsg(self,jid,text,v_id=0):
         logging.info("text command '%s' from %s"%(text,jid))
         cmdList=self.makeCmdList(jid,v_id)
         cl=text.find(" ")
         if (cl==-1):
-            args=[]
+            #args=[]
+            argText=None
             node=text
         else:
-            args=text[cl+1:].split(",")
+            #args=text[cl+1:].split(",")
+            argText=text[cl+1:]
             node=text[:cl]
-        ret="command: '%s', args: %s"%(node,repr(args))
+        #ret="command: '%s', args: %s"%(node,repr(args))
         if (cmdList.has_key(node)):
             cmd=cmdList[node]
-            ar=cmd.assignArgs(args)
+            #ar=cmd.assignArgs(args)
+            if (argText):
+                argv=self.parseTextArgs(argText)
+                if (argv==None):
+                    return u'Синтаксическая ошибка в команде'
+                try:
+                    defname=cmd.args[0]
+                    argv[defname]=argv['default']
+                except KeyError:
+                    pass
+                except:
+                    logging.exception('textcmd error')
+            else:
+                argv={}
             #print jid
             #print "command: '%s', args: %s"%(node,repr(ar))
             
-            res=cmd.run(jid,ar,to_id=v_id)
+            res=cmd.run(jid,argv,to_id=v_id)
             try:
                 txt=res["message"]
             except:
@@ -276,6 +306,11 @@ class basicCommand:
             except IndexError:
                 print "initial value isn't set"
                 val=''
+            try:
+                if (self.args[0]==i):
+                    i='(*) %s'%i
+            except:
+                logging.exception('')
             #fe=u'%s: %s - %s'%(i,ft,fd)
             fe=u"%s='%s': %s"%(i,val,fd)
             ret="%s\n%s"%(ret,fe)
@@ -304,8 +339,6 @@ class echoCmd(basicCommand):
     def __init__(self,trans):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
-        print("echo from %s"%jid)
-        print(args)
         try:
             self.trans.sendMessage(self.trans.jid,jid,args["text"])
         except KeyError:
@@ -328,7 +361,7 @@ class setStatusCmd(basicCommand):
                 self.trans.users[bjid].vclient.setStatus(args["text"])
             else:
                 #print ("done")
-                return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+                return {"status":"completed","title":u"Установка статуса",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда .login)'}
         else:
             return {"status":"executing","title":u"Установка статуса","form":{"fields":{"text":('text-single',u'Статус')}},'message':u'Введите статус'}
         self.trans.users[bjid].VkStatus = args["text"]
@@ -341,20 +374,24 @@ class loginCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         #print "login"
+        print args
+        #return 'test'
         bjid=gen.bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
             return {"status":"completed","title":u"Подключение",'message':u"В настоящий момент транспорт неактивен, попробуйте подключиться позже"}
         if (self.trans.hasUser(bjid)):
             return {"status":"completed","title":u"Подключение",'message':u'Вы уже подключены'}
         captcha_key=None
+        msg=u'Производится подключение...'
         try:
-            print args['key']
+            #print args['key']
             captcha_key=args['key']
+            msg=u'Производится подключение [капча "%s"]...'%captcha_key
         except KeyError:
             pass
         self.trans.addResource(jid,captcha_key=captcha_key)
         #print "resources: ",self.trans.users[bjid].resources
-        return {"status":"completed","title":u"Подключение",'message':u'Производится подключение...'}
+        return {"status":"completed","title":u"Подключение",'message':msg}
 
 class logoutCmd(basicCommand):
     name=u"Отключиться"
@@ -410,7 +447,7 @@ class sendWallMessageCmd(basicCommand):
                 #print ("done")
             else:
                 #print ("done")
-                return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+                return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда .login)'}
             #print ("done")
         else:
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
@@ -431,7 +468,7 @@ class addNoteCmd(basicCommand):
                 if res!=0:
                     return {"status":"completed","title":u"Отправка заметки",'message':u'Ошибка.'}
             else:
-                return {"status":"completed","title":u"Отправка заметки",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда /login)'}
+                return {"status":"completed","title":u"Отправка заметки",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда .login)'}
         else:
             return {"status":"executing","title":u"Отправка заметки","form":{"fields":{"title":('text-single',u'Заголовок',''),"text":('text-multi',u'Текст','')}},'message':u'Введите текст заметки и название'}
         return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, заметка отправлена'}
@@ -481,7 +518,7 @@ class setConfigCmd(basicCommand):
             #except KeyError:
                 #print "keyError"
                 #nc="[void]"
-            return {"status":"completed","title":self.name,'message':u'Видимо, настройки сохранились'}
+            return {"status":"completed","title":self.name,'message':u'Настройки сохранены'}
             
         else:
             fl={}

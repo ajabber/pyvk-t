@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-import socket,hashlib
+import socket,errno,hashlib
 #from xml.dom import minidom
 #from xml.dom.minidom import Element
 from lxml import etree
+import threading
 from threading import Thread
 from Queue import Queue,Empty
 from traceback import format_exc,extract_stack,format_list
@@ -39,11 +40,12 @@ def createReply(iq,t='result'):
 class xmlstream:
     "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
-    connectionFailure=False
+    connFailure=False
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
         self.recvQueue=Queue()
+        self.connected=threading.Condition()
         #print fil.read(10)
         #d=minidom.parseString("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:component:accept' id='1002154109' from='ratatoskr' />")
 
@@ -65,28 +67,39 @@ class xmlstream:
         sock.send(resp)
         sock.settimeout(0)
         self.sock=sock
-        if (self.getPacket()=='<handshake/>'):
+
+        if (self.getPacket(True)=='<handshake/>'):
+            self.connFailure=False
+            self.connected.acquire()
+            self.connected.notifyAll()
+            self.connected.release()            
             return True
         return False
 
-    def getPacket(self):
+    def getPacket(self, ignoreFail=False):
+        #TODO use cStringIO?
         sn=""
-        while (1):
+        buf=[]
+        c=None
+        while (c!='>'):
             try:
-                if (self.connectionFailure):
-                    return
+                
+                if (self.connFailure and not ignoreFail):
+                    raise Exception('connection failure')
                 c=self.sock.recv(1)
-                sn=sn+c
+                buf.append(c)
+                #sn=sn+c
                 #print sn
-                if (c=='>'):
-                    break
+                #if (c=='>'):
+                    #break
             except socket.error,e:
-                if (e.errno==11):
+                if (e.errno == errno.EAGAIN):
                     time.sleep(1)
                 else:
                     self.connectionFailure=True
                     logging.exception('recvLoop failure')
                     raise
+        sn=''.join(buf)
         if (sn[-2:]=='/>'):
             logging.debug("received %s"%sn)
             return sn
@@ -95,11 +108,17 @@ class xmlstream:
         while(sn[-les:]!=es):
             #print sn
             try:
-                if (self.connectionFailure):
-                    return                
-                sn=sn+self.sock.recv(1)
+                buf=[sn]
+                c=None
+                while(c!='>'):
+                    if (self.connFailure and not ignoreFail):
+                        raise Exception('connection failure')                
+                    c=self.sock.recv(1)
+                    buf.append(c)
+                sn=''.join(buf)    
+                #sn=sn+self.sock.recv(1)
             except socket.error,e:
-                if (e.errno==11):
+                if (e.errno == errno.EAGAIN):
                     time.sleep(1)
                 else:
                     self.connectionFalure=True
@@ -115,10 +134,14 @@ class xmlstream:
             try:
                 s=None
                 s=self.getPacket()
-            except:
-                logging.critical("stream error\n"+format_exc())
-                time.sleep(15)
-                logging.warning ('recvLoop: respawn')
+            except Exception ,e:
+                logging.critical("recv loop: stream error\n"+str(e))
+                self.connFailure=True
+                self.connected.acquire()
+                self.connected.wait()
+                self.connected.release()
+                logging.warning ('recvLoop: respawned')
+                continue
             try:
                 self.recvQueue.put(etree.fromstring(s))
             except:
@@ -142,17 +165,20 @@ class xmlstream:
                 logging.debug("sending %s"%s.decode('utf-8'))
                 try:
                     self.sock.send(s)
-                except:
-                    logging.error("can't send()\n"+format_exc())
-                    logging.error("trying to reconnect...")
-                    #FIXME restart recvloop
-                    #self.sock.shutdown(socket.SHUT_RDWR)
-                    try:
-                        self.sock.close()
-                        del self.sock
-                    except:
-                        logging.exception('')
-                    self.connect(self.host,self.port,self.secret)
+                except Exception, e:
+                    logging.critical("send loop: stream error\n"+str(e))
+                    self.connFailure=True
+                    self.connected.acquire()
+                    self.connected.wait()
+                    self.connected.release()                    
+                    logging.warning("send loop respawned")
+                    self.send(task)
+                    #try:
+                        #self.sock.close()
+                        #del self.sock
+                    #except:
+                        #logging.exception('')
+                    #self.connect(self.host,self.port,self.secret)
                     
     def send(self,packet):
         #TODO check for debug mode 
@@ -193,7 +219,7 @@ class xmlstream:
         self.st.daemon=True
         self.st.start()
         self.loops=[]
-        for i in range(0):
+        for i in range(1):
             logging.info("starting mainloop-%s"%i)
             t=Thread(target=self.loop,name="mainloop-%s"%i)
             
@@ -203,8 +229,18 @@ class xmlstream:
         while(self.alive):
             try:
                 try:
-                    st=self.recvQueue.get(True,100)
+                    st=self.recvQueue.get(True,10)
                 except Empty:
+                    if (self.connFailure):
+                        logging.error('connection failure detected. Trying to reconnect')
+                        self.sock.close()
+                        del self.sock
+                        if self.connect(host=self.host, port=self.port, secret=self.secret):
+                            logging.error('connection established siccessfully')
+                        else:
+                            logging.error('can\'t re-establish connection. aborting.')
+                            return
+                            # maybe, sys.exit()?
                     pass
                 else:
                     if (st.get("to").find(self.jid)!=-1):

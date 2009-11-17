@@ -25,13 +25,17 @@ fields={
     "debug":
         {
             'dump_path':(unicode,None,False)
+        },
+    "workarounds":
+        {
+            'stranza_namespaces':(bool,False,False)
         }
     }
 conf={}
 cp=None
-def read(self):
+def read(filename):
     cp=ConfigParser.ConfigParser()
-    cp.read("pyvkt.cfg")
+    cp.read(filename)
     for s in fields.keys():
         conf[s]={}
         for o in fields[s].keys():
@@ -45,7 +49,8 @@ def read(self):
                     conf[s][o]=cp.get(s,o).decode('utf-8')
             except (ConfigParser.NoSectionError,ConfigParser.NoOptionError):
                 if r:
-                    logging.critical("can't get required field '%s/%s'. Check your config."%(s,o))
+                    
+                    logging.critical("can't get required field '%s/%s'. Check your config file ('%s')."%(s,o,filename))
                     raise Exception
     print conf
 def get(sect,opt=None):
