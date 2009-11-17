@@ -65,7 +65,7 @@ class captchaError(Exception):
         pass
     def __str__(self):
         url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
-        return 'got captcha request (jid = "%s", sid = "%s", url=%s)'%(repr(self.bjid),self.sid,url)
+        return 'got captcha request (jid = "%s", sid = "%s", url=%s )'%(repr(self.bjid),self.sid,url)
             
 class authError(Exception):
     def __init__(self):
@@ -246,6 +246,7 @@ class client():
                 print_exc()
             self.error=1
             self.alive=0
+            #print 'captcha'
             raise captchaError(sid=sid, bjid=self.bjid)
             return
         authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
@@ -255,11 +256,14 @@ class client():
         self.user.loginCallback(u"проверка логина и пароля")
         
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
+        #print tpage
         i=tpage.find("id='s' value='")
         i+=14
         p=tpage.find("'",i+1)
+        s=tpage[i:p]
+        #print s
         self.user.loginCallback(u"вход на сайт")
-        self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':tpage[i:p]})
+        self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':s})
         
     def genCaptchaSid(self):
         ret=''
@@ -521,6 +525,10 @@ class client():
     def cutPage(self,page):
         st=page.find('<div id="rightColumn">')
         end=page.find('<div id="wall" ')
+        end2=page.find('<div id="education" class="flexOpen">')
+        if (end2!=-1):
+            end=end2
+        
         #end=page.rfind('</div>',st,end)
         #end=page.rfind('</div>',st,end)
         #print st,end
@@ -531,8 +539,11 @@ class client():
         #print np.decode('cp1251').encode('utf-8')
         #print
         return np
-    def getVcard_new(self,v_id, show_avatars=0):
-        opage = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
+    def getVcard_new(self,v_id, show_avatars=0,page=None):
+        if (not page):
+            opage = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
+        else:
+            opage=page
         time.sleep(0.5)
         if not opage:
             return {"FN":u""}

@@ -52,73 +52,7 @@ from lxml.etree import SubElement,tostring
 from threading import Lock
 import gc,inspect
 import pyvkt.config as conf
-def create_reply(elem):
-    """ switch the 'to' and 'from' attributes to reply to this element """
-    # NOTE - see domish.Element class to view more methods 
-    frm = elem['from']
-    elem['from'] = elem['to']
-    elem['to']   = frm
-
-    return elem
-
-#class LogService(component.Service):
-    #"""
-    #A service to log incoming and outgoing xml to and from our XMPP component.
-
-    #"""
-    #packetsIn = 0
-    #packetsOut = 0
-    #bytesIn = 0
-    #bytesOut = 0
-    #logIn=[]
-    #logOut=[]
-    #def transportConnected(self, xmlstream):
-        #xmlstream.rawDataInFn = self.rawDataIn
-        #xmlstream.rawDataOutFn = self.rawDataOut
-
-    #def rawDataIn(self, buf):
-        #self.packetsIn += 1
-        #try:
-            #self.logIn.append((time.time(),len(buf)))
-            
-        #except:
-            #print_exc()
-        #try:
-            #self.bytesIn += len(buf)
-        #except:
-            #pass
-        ##log.msg("%s - RECV: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
-        #pass
-
-    #def rawDataOut(self, buf):
-        #self.packetsOut += 1
-        #try:
-            #self.logOut.append((time.time(),len(buf)))
-            #pass
-        #except:
-            #print_exc()
-        #try:
-            #self.bytesOut += len(buf)
-        #except:
-            #pass
-        ##log.msg("%s - SEND: %s" % (str(time.time()), unicode(buf, 'utf-8').encode('ascii', 'replace')))
-        #pass
-    #def getTraffic(self,t):
-        #ct=time.time()
-        #bt=ct-t
-        #dt=ct-600
-        
-        ##print self.logIn
-        #self.logIn=filter(lambda x:x[0]>dt,self.logIn,)
-        #self.logOut=filter(lambda x:x[0]>dt,self.logOut)
-        #il=filter(lambda x:x[0]>bt,self.logIn)
-        #ol=filter(lambda x:x[0]>bt,self.logOut)
-        #oc=0
-        #ic=0
-        #for i in il:ic+=i[1]
-        #for i in ol:oc+=i[1]
-        #return (ic,oc)
-        
+      
 class pyvk_t(pyvkt.comstream.xmlstream):
 
     startTime = time.time()
@@ -155,13 +89,19 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.unregisteredList=[]
         signal.signal(signal.SIGUSR1,self.signalHandler)
         signal.signal(signal.SIGUSR2,self.signalHandler)
-    def handlePacket(self,st):
+    def handlePacket(self,st,tryNS=True):
         if (st.tag=="message"):
             return self.onMsg(st)
         if (st.tag=="iq"):
             return self.onIq(st)
         if (st.tag=="presence"):
             return self.onPresence(st)
+        if (tryNS):
+            #FIXME
+            if (st.tag.find('{jabber:client}')):
+                st.tag=st.tag.replace('{jabber:client}','')
+                logging.warning('namespace fixed')
+                return self.handlePacket(st,tryNS=False)
         logging.warning('unexpected stranza: "%s"'%st.tag)
     def onMsg(self,msg):
         src=msg.get("from")
@@ -416,7 +356,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     addChild(a,'identity',attrs={"name":u'Друзья в сети',"category":"automation","type":"command-node"})
                 elif (node=="http://jabber.org/protocol/commands" or node[:4]=='cmd:'):
                     self.send(self.commands.onDiscoInfo(iq))
-                    
+                    return True
                 else:
                     ans.set('type','error')
                     addChild(ans,'item-not-found','urn:ietf:params:xml:ns:xmpp-stanzas',{'type':'cancel'})
@@ -613,8 +553,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             #r,a=getQuery(iq,ans,'jabber:iq:register')
             c=iq.find('{http://jabber.org/protocol/commands}command')
             if (c!=None):
-                #logging.warning('command')
-                
                 if (self.hasUser(bjid)):
                     d=self.users[bjid].pool.defer(f=self.commands.onIqSet,iq=iq)
                     d.addCallback(self.send)
@@ -622,16 +560,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 else:
                     self.send(self.commands.onIqSet(iq))
                     return True
-                    #d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
-                    #d.addCallback(self.send)
-                    #d.addErrback(self.errorback)
-            #cmd=iq.command
-            #if (cmd):
-                #if (self.hasUser(bjid)):
-                    #d=self.users[bjid].pool.defer(f=self.commands.onIqSet,iq=iq)
-                #else:
-                    #d=threads.deferToThread(f=self.commands.onIqSet,iq=iq)
-                #return
         if (iq.find('{urn:xmpp:time}time')!=None):
             pass
         elif(iq.find('{http://jabber.org/protocol/pubsub}pubsub')!=None):
@@ -1241,6 +1169,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 execfile("inject.py")
             except:
                 logging.error("exec failed"+format_exc())
+        #elif (sig==signal.SUGHUP):
+            #logging.error ('caught SIGHUP. reloading config...')
+            #logging.
 
     def kbInterrupt(self):
         print "threads:"
