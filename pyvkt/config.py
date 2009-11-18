@@ -28,7 +28,7 @@ fields={
         },
     "workarounds":
         {
-            'stranza_namespaces':(bool,False,False)
+            'fix_namespaces':(bool,False,False)
         }
     }
 conf={}
@@ -49,9 +49,9 @@ def read(filename):
                     conf[s][o]=cp.get(s,o).decode('utf-8')
             except (ConfigParser.NoSectionError,ConfigParser.NoOptionError):
                 if r:
-                    
                     logging.critical("can't get required field '%s/%s'. Check your config file ('%s')."%(s,o,filename))
                     raise Exception
+                conf[s][o]=d
     print conf
 def get(sect,opt=None):
     if (not opt):

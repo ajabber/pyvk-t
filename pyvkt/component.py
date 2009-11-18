@@ -52,7 +52,7 @@ from lxml.etree import SubElement,tostring
 from threading import Lock
 import gc,inspect
 import pyvkt.config as conf
-      
+
 class pyvk_t(pyvkt.comstream.xmlstream):
 
     startTime = time.time()
@@ -90,11 +90,11 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         signal.signal(signal.SIGUSR1,self.signalHandler)
         signal.signal(signal.SIGUSR2,self.signalHandler)
     def handlePacket(self,st,tryNS=True):
-        if (st.tag=="message"):
+        if (st.tag.endswith("message")):
             return self.onMsg(st)
-        if (st.tag=="iq"):
+        if (st.tag.endswith("iq")):
             return self.onIq(st)
-        if (st.tag=="presence"):
+        if (st.tag.endswith("presence")):
             return self.onPresence(st)
         if (tryNS):
             #FIXME
