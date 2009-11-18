@@ -8,6 +8,8 @@ from threading import Thread
 from Queue import Queue,Empty
 from traceback import format_exc,extract_stack,format_list
 import logging,time
+import pyvkt.config as conf
+fixNs=False
 def addChild(node,name,ns=None,attrs=None):
     if(ns):
         name='{%s}%s'%(ns,name)
@@ -20,7 +22,11 @@ def addChild(node,name,ns=None,attrs=None):
             ret.set(i,attrs[i])
     return ret
 def createElement(tag,attrs=None):
-    ret=etree.Element(tag)
+    if (fixNs):
+        nsmap={None:'{jabber:iq:stream}'}
+    else:
+        nsmap=None
+    ret=etree.Element(tag, nsmap=nsmap)
     if (attrs):
         for i in attrs.keys():
             try:
@@ -41,11 +47,15 @@ class xmlstream:
     "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
     connFailure=False
+    fixNs=False
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
         self.recvQueue=Queue()
         self.connected=threading.Condition()
+        if (conf.get('workarounds/fix_namespaces')):
+            logging.warning('namespace workaround enabled')
+            fixNs=True
         #print fil.read(10)
         #d=minidom.parseString("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:component:accept' id='1002154109' from='ratatoskr' />")
 
@@ -182,6 +192,8 @@ class xmlstream:
                     
     def send(self,packet):
         #TODO check for debug mode 
+        if (fixNs):
+            packet.tag='{jabber:iq:stream}%s'%packet.tag
         st=extract_stack(limit=2)
         self.sendQueue.put((packet,st))
     def revert(self,packet):
