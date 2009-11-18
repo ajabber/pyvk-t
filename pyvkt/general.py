@@ -21,13 +21,6 @@
  ***************************************************************************/
  """
 import re, htmlentitydefs,ConfigParser
-class noVclientError(AttributeError):
-    def __init__(self,bjid=""):
-        AttributeError(self,"user instance without vclient")
-        self.bjid=bjid
-        pass
-    def __str__(self):
-        return 'user without vclient (%s)'%bjid
 class config:
     fields={'genegal':{1:1}}
     def __init__(cfile='pyvk-t_new.conf'):
@@ -37,7 +30,12 @@ class config:
     def __getitem__(self,key):
         pass
         
-
+class NoVclientError (Exception):
+    def __init__(self,jid):
+        self.jid=jid
+    def __str__(self):
+        return "no vclient (%s)"%self.jid
+    pass
         
 
         
@@ -96,6 +94,7 @@ userConfigFields={
     ,"show_onlines":{"type":"boolean", "default":True, "desc":u"Показывать, кто в сети ('online' на сайте)"}
     ,"jid_in_subject":{"type":"boolean","default":True, "desc":u"JID в теме сообщений, если не указана"}
     ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
+    ,"wall_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых сообщениях на стене"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
     ,"save_cookies":{"type":"boolean", "default":True, "desc":u"Сохранять cookies на сервере. Поможет уберечься от капчи"}
     ,"signature":{"type":"text-single", "default":"", "desc":u"Подпись в сообщении"}
