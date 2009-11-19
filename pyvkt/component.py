@@ -66,7 +66,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.show_avatars=conf.get('features','avatars')
         self.datadir=conf.get ('storage','datadir')
         self.roster_management= 1
-        self.feed_notify= 1
         self.cachePath=conf.get('storage','cache')
         self.cookPath=conf.get('storage','cookies')
         self.name=conf.get('general','service_name')
@@ -112,6 +111,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         if (v_id==-1):
             return None
         body=msg.find("body")
+        if (body==None):
+            body=msg.find("{jabber:client}body")
+            if (body!=None):
+                logging.warning('need to fix namespace!')
         logging.info("RECV: msg %s -> %s '%s'"%(src,dest,body))
         
         if (body==None or body.text==None):
@@ -389,7 +392,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 if (len(r)):
                     values={
                         'time/uptime':('seconds',str(int(time.time()-self.startTime))),
-                        'users/online':('users',str(len(self.users)))
+                        'users/online':('users',str(len(self.users))),
+                        'bandwith/packets-in':('packets', str(self.stranzasIn)),
+                        'bandwith/packets-out':('packets', str(self.stranzasOut))
                         }
                     for i in r:
                         name=i.get('name')
@@ -400,7 +405,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             s=addChild(a,'stat',attrs={'name':name})
                             addChild(s,'error',attrs={'code':'404'})
                 else:
-                    values=['time/uptime','users/online']
+                    values=['time/uptime','users/online','bandwith/packets-in','bandwith/packets-out']
                     for i in values:
                         addChild(a,'stat',attrs={'name':i})
                 self.send(ans)
@@ -854,13 +859,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #print msg
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,gen.unescape(msg["text"]),msg["title"])
 
-    def submitMessage(self,jid,v_id,body,title):
-        #log.msg((jid,v_id,body,title))
-        bjid=jid
-        try:
-            self.users[bjid].vclient.sendMessage(to_id=v_id,body=body,title=title)
-        except:
-            print "submit failed"
+    #def submitMessage(self,jid,v_id,body,title):
+        ##log.msg((jid,v_id,body,title))
+        #bjid=jid
+        #try:
+            #self.users[bjid].vclient.sendMessage(to_id=v_id,body=body,title=title)
+        #except:
+            #print "submit failed"
 
     def updateStatus(self, bjid, text):
         """
@@ -958,7 +963,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         s=conf.get('features/status')
         if (s):
             ret=ret+'\n{%s}'%s
-        if self.hasUser(jid) and ret!=self.users[jid].status:
+        if ret!=self.users[jid].status:
             self.users[jid].status = ret
             self.sendPresence(self.jid,jid,status=ret)
         ret=""
@@ -973,26 +978,32 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         except:
             logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())        
         oldfeed = self.users[jid].feed
-        if self.hasUser(jid) and feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))) and self.feed_notify:
+        if feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))):
             for j in gen.feedInfo:
                 if j!="friends" and j in feed and "items" in feed[j] and feed[j]['items']:
                     gr=""
                     gc=0
                     for i in feed[j]["items"]:
-                        if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
+                        try:
+                            if (i in oldfeed[j]['items']):
+                                continue
+                        except KeyError:
+                            pass
+                        #if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             #it is a vkontakte.ru bug, when it stores null inside items. (e.g when there are invitaions to deleted groups)
-                            if gen.feedInfo[j]["url"] and feed[j]["items"]!="null":
-                                try:
-                                    gr+="\n  "+gen.unescape(feed[j]["items"][i])+" [ "+gen.feedInfo[j]["url"]%i + " ]"
-                                except TypeError:
-                                    print_exc()
-                                    print repr(feed)
-                                    print 'j:',j,'i:',i
-                                    try:
-                                        print 'feed[j]\n',repr(feed[j])
-                                    except:
-                                        pass
-                            gc+=1
+                        if gen.feedInfo[j]["url"] and feed[j]["items"]!="null":
+                            try:
+                                gr+="\n  "+gen.unescape(feed[j]["items"][i])+" [ "+gen.feedInfo[j]["url"]%i + " ]"
+                            except TypeError:
+                                logging.exception('')
+                                #print_exc()
+                                #print repr(feed)
+                                #print 'j:',j,'i:',i
+                                #try:
+                                    #print 'feed[j]\n',repr(feed[j])
+                                #except:
+                                    #pass
+                        gc+=1
                     if gc:
                         if gen.feedInfo[j]["url"]:
                             ret+=u"Новых %s - %s:%s\n"%(gen.feedInfo[j]["message"],gc,gr)
@@ -1000,24 +1011,24 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             ret+=u"Новых %s - %s\n"%(gen.feedInfo[j]["message"],gc)
             if ret:
                 self.sendMessage(self.jid,jid,ret.strip())
-            try:
+            #try:
                 #FIXME wtf 'null' in items?
                 #FIXME oldfeed?
-                try:
-                    nfl=feed['friends']['items']
-                    nfl[0]
-                except (KeyError,TypeError),e:
-                    pass
-                    #warning ('feed: no new friends? '+str(e))
-                else:
-                    for i in nfl:
-                        try:
-                            if i in oldfeed["friends"]["items"]:
-                                continue
-                        except (KeyError, TypeError):
-                            logging.warning('feed error defeated! =)')
-                        text = u"Пользователь %s хочет добавить вас в друзья."%gen.unescape(feed["friends"]["items"][i])
-                        self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
+            try:
+                nfl=feed['friends']['items']
+                nfl[0]
+            except (KeyError,TypeError),e:
+                pass
+                #warning ('feed: no new friends? '+str(e))
+            else:
+                for i in nfl:
+                    try:
+                        if i in oldfeed["friends"]["items"]:
+                            continue
+                    except (KeyError, TypeError):
+                        logging.warning('feed error defeated! =)')
+                    text = u"Пользователь %s хочет добавить вас в друзья."%gen.unescape(feed["friends"]["items"][i])
+                    self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
                             
                             #old friendlist
                             
@@ -1026,8 +1037,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             #self.sendMessage("%s@%s"%(i,self.jid), jid, text, u"У вас новый друг!")
             #except KeyError:
                 #pass
-            except:
-                logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())
+            #except:
+                #logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())
                 
         self.users[jid].feed = feed
 

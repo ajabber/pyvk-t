@@ -23,7 +23,7 @@ def addChild(node,name,ns=None,attrs=None):
     return ret
 def createElement(tag,attrs=None):
     if (fixNs):
-        nsmap={None:'{jabber:iq:stream}'}
+        nsmap={None:'{jabber:client}'}
     else:
         nsmap=None
     ret=etree.Element(tag, nsmap=nsmap)
@@ -48,6 +48,8 @@ class xmlstream:
     alive=True
     connFailure=False
     fixNs=False
+    stranzasIn=0
+    stranzasOut=0
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
@@ -154,6 +156,7 @@ class xmlstream:
                 continue
             try:
                 self.recvQueue.put(etree.fromstring(s))
+                self.stranzasIn+=1
             except:
                 logging.error("queue error\n"+format_exc())
                 #print_exc()
@@ -175,6 +178,7 @@ class xmlstream:
                 logging.debug("sending %s"%s.decode('utf-8'))
                 try:
                     self.sock.send(s)
+                    self.stranzasOut+=1
                 except Exception, e:
                     logging.critical("send loop: stream error\n"+str(e))
                     self.connFailure=True
@@ -193,7 +197,7 @@ class xmlstream:
     def send(self,packet):
         #TODO check for debug mode 
         if (fixNs):
-            packet.tag='{jabber:iq:stream}%s'%packet.tag
+            packet.tag='{jabber:client}%s'%packet.tag
         st=extract_stack(limit=2)
         self.sendQueue.put((packet,st))
     def revert(self,packet):

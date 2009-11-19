@@ -218,8 +218,8 @@ class client():
         try:
             self.cjar.clear()
             self.cjar.load()
-        except IOError:
-            print "cant read cookie"
+        except IOError,e :
+            logging.warning("cant read cookie (%s)"%str(e))
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
     def saveCookies(self):
         if self.user.getConfig("save_cookies"):

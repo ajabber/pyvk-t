@@ -374,7 +374,7 @@ class loginCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         #print "login"
-        print args
+        #print args
         #return 'test'
         bjid=gen.bareJid(jid)
         if (self.trans.isActive==0 and bjid!=self.trans.admin):
