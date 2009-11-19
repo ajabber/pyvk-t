@@ -39,6 +39,7 @@ class UnregisteredError (Exception):
 class user:
     #lock=1
     #active=0
+    feed={}
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
