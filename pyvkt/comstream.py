@@ -68,9 +68,10 @@ class xmlstream:
         sock=socket.create_connection((host,port))
         #FIXME connecting
         sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%self.jid)
-        sock.recv(len("<?xml version='1.0'?>"))
         fil=sock.makefile(bufsize=1)
-        rep= sock.recv(1000)
+        rep=sock.recv(1000)
+        rep=rep.replace("<?xml version='1.0'?>", "") # Replacing sock.recv(len("<?xml version='1.0'?>"))
+        logging.debug('Received server auth answer: %s'%rep)
         ids=rep.find("id='")
         ide=rep.find("'",ids+5)
         sid=rep[ids+4:ide]
@@ -79,12 +80,14 @@ class xmlstream:
         sock.send(resp)
         sock.settimeout(0)
         self.sock=sock
-
-        if (self.getPacket(True)=='<handshake/>'):
+        handshake_answer=self.getPacket(True)
+        logging.debug('Received handshake answer: %s'%handshake_answer)
+        #FIXME Namespaces
+        if (handshake_answer=='<handshake/>'):
             self.connFailure=False
             self.connected.acquire()
             self.connected.notifyAll()
-            self.connected.release()            
+            self.connected.release()
             return True
         return False
 
@@ -95,15 +98,10 @@ class xmlstream:
         c=None
         while (c!='>'):
             try:
-                
                 if (self.connFailure and not ignoreFail):
                     raise Exception('connection failure')
                 c=self.sock.recv(1)
                 buf.append(c)
-                #sn=sn+c
-                #print sn
-                #if (c=='>'):
-                    #break
             except socket.error,e:
                 if (e.errno == errno.EAGAIN):
                     time.sleep(1)
@@ -136,8 +134,6 @@ class xmlstream:
                     self.connectionFalure=True
                     logging.exception('recvLoop failure')
                     raise
-
-        #print
         logging.debug("received %s"%sn)
         return sn
     def recvLoop(self):

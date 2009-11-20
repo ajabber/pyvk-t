@@ -253,7 +253,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             except:
                 pass
             s=self.users[bjid].getConfig("signature")
-            if s:
+            if s!=None and s!="":
                 body = body + u"\n--------\n" + s
             d=self.users[bjid].pool.defer(f=self.users[bjid].vclient.sendMessage,to_id=v_id,body=body,title=title)
             req=msg.find('{urn:xmpp:receipts}request')
