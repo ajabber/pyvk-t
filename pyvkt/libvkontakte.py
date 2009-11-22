@@ -46,7 +46,7 @@ import pyvkt.config as conf
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
-
+#USERAGENT='User-Agent=Mozilla/5.0 (X11; U; Linux i686; ru; rv:1.9.1.4) Gecko/20091016 Firefox/3.5.4'
 class tooFastError(Exception):
     def __init__(self):
         pass
@@ -63,6 +63,8 @@ class captchaError(Exception):
         self.sid=sid
         self.bjid=bjid
         pass
+    def url(self):
+        return 'http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
     def __str__(self):
         url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
         return 'got captcha request (jid = "%s", sid = "%s", url=%s )'%(repr(self.bjid),self.sid,url)
@@ -97,7 +99,7 @@ class RedirectHandler(urllib2.HTTPRedirectHandler):
         redirUrl=headers.dict['location']
         print redirUrl
         p=redirUrl.find('sid=')
-        result.sid=int(redirUrl[p+4:])
+        result.sid=redirUrl[p+4:]
         #print sid
         
         #print 302
@@ -114,7 +116,7 @@ class client():
     # true if there is no loopInternal's in user queue
     tonline={}
     #opener=None
-    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False,legacy=True):
+    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False,login=True):
         self.bytesIn = 0
         self.alive=0
         self.user=user
@@ -128,7 +130,7 @@ class client():
         self.resolve_links=True
         #FIXME delete 
         
-        if (legacy):
+        if (login):
             self.readCookies()
         #try:
             #cjar.clear()
@@ -230,13 +232,33 @@ class client():
     def setCookies(self,cookieVal):
         cjar.clear()
         #TODO
-    def login(self,email,passw,user,captcha_sid=None, captcha_key=None):
+    def setCookie(self, name, val, site='vkontakte.ru'):
+        #cv={}
+        c=cookielib.Cookie(version=0, name=name, value=val, 
+        port=None, port_specified=False, domain='.%s'%site, 
+        domain_specified=True, domain_initial_dot=True, path='/', 
+        path_specified=True, secure=False, expires=int(time.time()+1e7), 
+        discard=False, comment=None, comment_url=None, rest={}, rfc2109=False)
+        self.cjar.set_cookie(c)
+        #c.name=name
+        #c.value=val
+        #c.
+    def login(self,email,passw,captcha_sid=None, captcha_key=None):
         self.user.loginCallback(u"проверка captcha")
+        #self.cjar.clear()
+        #self.setCookie('remixchk','5')
+        #self.setCookie('remixsid','nonenone')
         data={'op':'a_login_attempt'}
         if (captcha_key and captcha_sid):
             data['captcha_key']=captcha_key
             data['captcha_sid']=captcha_sid
-        tpage=self.getHttpPage('http://vkontakte.ru/login.php',data)
+            #data='op=a_login_attempt&captcha_sid=%s&captcha_key=%s'%(captcha_sid,captcha_key)
+        #self.setCookie('test', 'blah')
+        #for i in self.cjar:
+            #print repr(i)
+        #print data
+        hdrs={'Referer': 'http://vkontakte.ru/index.php', 'X-Requested-With':'XMLHttpRequest'}
+        tpage=self.getHttpPage('http://vkontakte.ru/login.php',data, headers=hdrs)
         if (tpage[:20]=='{"ok":-2,"captcha_si'):
             sid=None
             try:
@@ -250,9 +272,10 @@ class client():
             raise captchaError(sid=sid, bjid=self.bjid)
             return
         authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
-        if (captcha_key and captcha_sid):
-            authData['captcha_key']=captcha_key
-            authData['captcha_sid']=captcha_sid
+        #if (captcha_key and captcha_sid):
+            #authData['captcha_key']=captcha_key
+            #authData['captcha_sid']=captcha_sid
+        
         self.user.loginCallback(u"проверка логина и пароля")
         
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
@@ -273,7 +296,7 @@ class client():
     def userapiLogin(self,email,passw,captcha_sid=None, captcha_key=None):
         #TODO use cookies
         #d={'email':email,'pass':passw}
-        d={'login':'force','site':'2','email':email,'pass':passw}
+        d={'login':'force','site':'2','email':email,'pass':passw, 'id':0, 'fccode':0, 'fcsid':0}
         if (captcha_key and captcha_sid):
             d['fcsid']=captcha_sid
             d['fccode']=captcha_key
@@ -300,9 +323,12 @@ class client():
             csid=self.genCaptchaSid()
             url='http://userapi.com/data?act=captcha&csid=%s'%csid
             print url
-        
+            return 
+        self.readCookies()
+        print self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':self.sid})
+
         #print f
-    def getHttpPage(self,url,params=None,cjar=None):
+    def getHttpPage(self,url,params=None,cjar=None, headers={}):
         """ get contents of web page
             returns u'' if some of errors took place
         """
@@ -317,7 +343,9 @@ class client():
         else:
             req=urllib2.Request(url)
         req.addheaders = [('User-agent', USERAGENT)]
-
+        for i in headers:
+            req.addheaders.append((i,headers[i]))
+        #print repr(req)
         try:
             res=self.opener.open(req)
             #print res.url

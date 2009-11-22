@@ -987,7 +987,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                         try:
                             if (i in oldfeed[j]['items']):
                                 continue
-                        except KeyError:
+                        except (KeyError, TypeError):
                             pass
                         #if not (oldfeed and (j in oldfeed) and ("items" in oldfeed[j]) and (i in oldfeed[j]["items"])):
                             #it is a vkontakte.ru bug, when it stores null inside items. (e.g when there are invitaions to deleted groups)
