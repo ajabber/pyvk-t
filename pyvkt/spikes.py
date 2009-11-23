@@ -20,10 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-#from twisted.python import failure
-from twisted.internet import reactor
 from twisted.internet.defer import Deferred
-#from twisted.python import log, runtime, context, failure
 import Queue
 import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
@@ -44,16 +41,6 @@ class pseudoXml:
     def __nonzero__(self):
         return True
         
-def deferToThreadPool(reactor, threadpool, f, *args, **kwargs):
-    #WARN "too fast"?
-    print "deprecated deferToThreadPool"
-    print "this in NOT an ERROR!"
-    print_stack(limit=2)
-    return threadpool.defer(f,**kwargs)
-    
-    d = defer.Deferred()
-    threadpool.callInThread(threadpool._runWithCallback,d.callback,d.errback,f,args,kwargs)
-    return d
 class reqQueue(threading.Thread):
     daemon=True
     def __init__(self,user,name=None):
@@ -121,7 +108,7 @@ class reqQueue(threading.Thread):
                     try:
                         self.alive=0
                         self.user.logout()
-                        reactor.callFromThread(self.user.trans.sendMessage,src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
+                        self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
                     except:
                         logging.error(format_exc())
                 except gen.NoVclientError:
@@ -137,9 +124,10 @@ class reqQueue(threading.Thread):
                 except tooFastError:
                     logging.warning('FIXME "too fast" error stranza')
                 except Exception, exc:
-                    logging.error(format_exc())
-                    logging.error('task traceback:')
-                    [logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
+                    logging.exception('')
+                    logging.error('unhandled exception: %s'%e)
+                    logging.error('task traceback:\n -%s'%('\n -'.join(format_list(elem['stack']))))
+                    #[logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
                     #print "Caught exception"
                     #print_exc()
                     #print "thread is alive!"

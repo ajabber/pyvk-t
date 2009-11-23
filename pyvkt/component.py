@@ -21,32 +21,19 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-#TODO clean up this import hell!!
-#import twisted
-#from twisted.application import internet, service
-from twisted.internet import interfaces, defer, reactor,threads
-#from twisted.python import log
-#from twisted.words.xish import domish
-#from twisted.words.protocols.jabber.xmlstream import IQ
-#from twisted.enterprise import adbapi 
-#from twisted.enterprise.adbapi import safe 
-#from twisted.words.protocols.jabber.ijabber import IService
-#from twisted.words.protocols.jabber import component,xmlstream,jid
 
 from base64 import b64encode,b64decode
-#from zope.interface import Interface, implements
 from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
 
 from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
-import pyvkt.user,pyvkt.commands
+import pyvkt.user,pyvkt.commands, pyvkt.comstream
 from libvkontakte import *
 from pyvkt.spikes import pollManager,pseudoXml
-import pyvkt.comstream
 from pyvkt.comstream import addChild,createElement
-import lxml.etree
+#import lxml.etree
 from lxml import etree
 from lxml.etree import SubElement,tostring
 from threading import Lock
@@ -140,7 +127,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 self.sendMessage(self.jid,src,u""".get roster - запрос списка контактов\n.list - список остальных команд""")
             else:
                 #print cmd
-                logging.warning("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
+                #logging.warning("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
                 if (self.hasUser(bjid)):
                     d=self.users[bjid].pool.defer(f=self.commands.onMsg,jid=src,text=cmd,v_id=v_id)
                     cb=lambda (x):self.sendMessage(dest,src,x)
@@ -168,7 +155,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             elif (cmd=="start"):
                 self.isActive=1
             elif (cmd=="sendprobes"):
-                threads.deferToThread(self.sendProbes,src)
+                self.sendProbes(src)
             elif (cmd=="collect"):
                 gc.collect()
             elif (cmd[:4]=="eval"):
@@ -1096,18 +1083,25 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             except AttributeError:
                 pass
         print "%s logout()'s pending.. now we will wait..'"%len(dl)
-        deflist=defer.DeferredList(dl)
-        defer.waitForDeferred(deflist)
-        time.sleep(15)
-        print "done\ndeleting user objects"
+        time.sleep(5)
+        for i in range(10):
+            names=[i.name for i in threading.enumerate()]
+            pools=[i for i in names if 'pool' in i]
+            if (len(pools)==0):
+                break
+            logging.warning('waiting for pools (%s)'%len(pools))
+            if (len(pools)<5):
+                logging.warning(str(pools))
+            time.sleep(5)
+        #print "done\ndeleting user objects"
         for i in self.users.keys():
             try:
                 del self.users[i]
             except:
                 pass
         if (len(threading.enumerate())):
-            print "warning: some threads are still alive"
-            print threading.enumerate()
+            logging.warning('alive threads\n%s'('\n'.join([str(i) for i in threading.enumerate()])))
+            #print threading.enumerate()
         else:
             print "done"
         return None

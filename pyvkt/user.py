@@ -21,11 +21,8 @@
  ***************************************************************************/
  """
 import pyvkt.libvkontakte as libvkontakte
-#from twisted.python.threadpool import ThreadPool
 from spikes import reqQueue
-#from twisted.enterprise.adbapi import safe 
 import general as gen
-from twisted.internet import defer,reactor
 import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
@@ -87,11 +84,8 @@ class user:
         """
         #if had no resources before and not trying to login now
         if (not self.resources) and self.state==0:
-            #self.state=1
-            #self.lock=1
             self.state=1
             self.trans.sendPresence(self.trans.jid,self.bjid,t="probe")
-            #self.pool.call(self.login)
             self.login()
         #new status of a resource
         if jid in self.resources:
@@ -268,13 +262,36 @@ class user:
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
             #self.vclient=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
+            ck=None
+            cs=None
             if (self.captcha_key and self.captcha_sid):
                 #print "captcha fighting!"
-                self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,
-                    captcha_key=self.captcha_key,captcha_sid=self.captcha_sid)
+                ck=self.captcha_key
+                cs=self.captcha_sid
                 self.captcha_sid=None
+            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs, login=False)
+            self.vclient.readCookies()
+            #FIXME legacy cookies
+            if (self.cookies):
+                self.vclient.cjar.clear()
+                for d,n,v in self.cookies:
+                    self.vclient.setCookie(name=n, val=v, site=d)
+                    if (n=='remixsid'):
+                        self.vclient.sid=v
             else:
-                self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self)
+                logging.warning('legacy cookies')
+                for d,n,v in self.vclient.getCookies():
+                    if (n=='remixsid'):
+                        self.vclient.sid=v
+            if (self.vclient.getSelfId()==-1):
+                self.vclient.login(email,pw,ck,cs)
+                if (self.vclient.getSelfId()==-1):
+                    raise authError
+                #TODO block user
+                for d,n,v in self.vclient.getCookies():
+                    if (n=='remixsid'):
+                        self.vclient.sid=v
+                self.vclient.saveCookies()
         except libvkontakte.captchaError,exc:
             #print "ERR: got captcha request"
             logging.warning(str(exc))
@@ -286,7 +303,7 @@ class user:
             url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%exc.sid
             #print ur
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
-                body=u"Ошибка подключения, стребуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '.login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
+                body=u"Ошибка подключения, требуется ввести код подтверждения.\nДля подключения отправьте транспорту сообщение вида '.login captcha' (без кавычек), вместо слова captcha введите код с картинки по ссылке %s"%url)
             self.state=4
             return
         except libvkontakte.authError:
@@ -299,23 +316,15 @@ class user:
         #self.active=1
         self.state=2
         #self.vclient.start()
-        self.vclient.feedOnly=0
         self.trans.updateStatus(self.bjid,self.VkStatus)
         self.pool.call(self.refreshData)
 
         
     def login(self):
         # TODO bare jid?
-        #self.active=1
-        #self.lock=1
         self.state=1
-        #print "self.bjid:%s"%self.bjid
         if (self.trans.isActive==0 and self.bjid!=self.trans.admin):
-            #print ("isActive==0, login attempt aborted")
-            #self.lock=0
-            #self.active=0
             self.state=4
-            #WARN bjid?
             return
         try:
             self.readData()
@@ -323,36 +332,8 @@ class user:
             logging.warning("login attempt from unregistered user %s"%self.bjid)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
             return
-        defer.execute(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
-    def loginCallback(self,stage):
-        try:
-            self.trans.sendPresence(self.trans.jid,self.bjid,status=u'Подключаюсь [%s]... '%stage,show="away")
-        except:
-            pass
-    def login1(self,data=None):
-        #if (data):
-            #try:
-                #t=data[0]
-            #except IndexError:
-                ##print "FIXME unregistered user: %s ?"%self.bjid
-                #if not self.bjid in self.trans.unregisteredList:
-                    #reactor.callFromThread(self.trans.sendMessage,src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегстрированы на транспорте')
-                    #self.trans.unregisteredList.append(self.bjid)
-                    ##logging.info("unregistered warning sent")
-                ##self.lock=0
-                ##self.active=0
-                #self.state=4
-                #return
-            #self.parseDbData(data)
+        self.pool.call(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
         
-        return
-
-    def loginFailed(self,data):
-        #print data
-        logging.warning ("login failed for %s"%self.bjid)
-        #print "possible database error"
-        self.delThread()
-
     def logout(self):
         #print "logout %s"%self.bjid
         #self.lock=1
@@ -365,25 +346,24 @@ class user:
         #self.config["last_activity"]=int(time.time())
         try:
             self.saveData()
-        except:
-            print "GREPME savedata failed"
-            print_exc()
+        except Exception,e:
+            logging.warning('saveData: %s'%e)
 
         self.trans.sendPresence(src=self.trans.jid,dest=self.bjid,t="unavailable")
         self.contactsOffline(self.onlineList)
         try:
             self.vclient.logout()
-        except:
-            print_exc()
+        except Exception,e:
+            logging.warning('logout: %s'%e)
         try:
             self.pool.stop()
             #self.pool.join()
-        except:
-            print_exc()
+        except Exception,e:
+            logging.warning('stopping pool: %s'%e)
         try:
             self.delThread()
-        except:
-            print_exc()
+        except Exception,e:
+            logging.warning('delThread: %s'%e)
         #TODO separate thread
         self.trans.hasUser(self.bjid)
         return 0
@@ -394,18 +374,20 @@ class user:
         self.state=4
         try:
             self.trans.httpIn += self.vclient.bytesIn
-        except:
-            pass
+        except Exception,e:
+            logging.warning('http traffic count: %s'%e)
             #print_exc()
         try:
             del self.vclient
-        except:
-            pass
+            #TODO check references
+        except Exception,e:
+            logging.warning('deleting vclient: %s'%e)
         try:
             self.pool.stop()
             del self.pool
-        except:
-            pass
+            #TODO check references
+        except Exception,e:
+            logging.warning('stopping pool: %s'%e)
 
     def hasResource(self,jid):
         """
@@ -417,7 +399,7 @@ class user:
         if jid==bjid and self.resources:
             return 1
         #full jid - check for certain resource
-        if jid!=bjid and jid in self.resources:
+        if jid in self.resources:
             return 1
         #nothing
         return 0
@@ -425,14 +407,14 @@ class user:
         try:
             ts=self.uapiStates['wall']
         except:
-            print_exc()
-            logging.warning("wall status (%s): no wall ts. requesting..."%self.bjid)
+            #print_exc()
+            #logging.warning("wall status (%s): no wall ts. requesting..."%self.bjid)
             self.uapiStates['wall']=self.vclient.getWallState()
-            #self.trans.sendMessage(self.trans.jid,self.bjid,body=u'Текущее состояние стены сохранено')
         else:
             msgs=self.vclient.getWallHistory(ts)
             if (msgs==False):
-                logging.warning("wall status (%s): bad reply. re-requesting ts..."%self.bjid)
+                #logging.warning("wall status (%s): bad reply. re-requesting ts..."%self.bjid)
+                #FIXME is it possible to use old ts?
                 self.uapiStates['wall']=self.vclient.getWallState()
                 return
             #print msgs
@@ -494,9 +476,8 @@ class user:
         for i in contacts:
             try:
                 nick=u'%s %s'%(self.onlineList[i]["first"],self.onlineList[i]["last"])
-            except:
-                print_exc()
-                nick=None
+            except Exception,e:
+                logging.warning('bad nick (%s)'%e)
             bjid="%s@%s"%(i,self.trans.jid)
             status = self.getStatus(bjid)
             self.setName(bjid,nick)
@@ -542,6 +523,7 @@ class user:
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
     def saveData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
+        #FIXME config
         fname=dirname+"/"+self.bjid
         #print dirname
         if (not os.path.exists(dirname)):
@@ -561,6 +543,15 @@ class user:
 
         xml.SubElement(root,"email").text=self.email
         xml.SubElement(root,"password").text=self.password
+        try:
+            cook=self.vclient.getCookies()
+            c=xml.SubElement(root,'cookies')
+            for d,n,v in cook:
+                if (d[0]=='.'):
+                    d=d[1:]
+                xml.SubElement(c,'cookie', {'domain':d,'name':n, 'value':v})
+        except Exception,e:
+            logging.error('can\'t save cookie, %s'%e)
         #print self.config
         if (self.captcha_sid):
             xml.SubElement(root,"captcha_sid").text=self.captcha_sid
@@ -597,6 +588,7 @@ class user:
         #print "user %s data successfully saved"%self.bjid
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
+        #FIXME config
         fname=dirname+"/"+self.bjid
         try:
             cfile=open(fname,'r')
@@ -609,6 +601,15 @@ class user:
         except xml.XMLSyntaxError:
             logging.error ("broken xml file: %s"%fname)
             raise
+        try:
+            cook=tree.xpath('//cookies/*')
+            if (len(cook)):
+                self.cookies=[(i.get('domain'),i.get('name'),i.get('value')) for i in cook]
+            else:
+                self.cookies=None
+            #print cook
+        except Exception, e:
+            logging.warning('can\'t read cookies: %s'%e)
         try:
             self.email= tree.xpath('//email/text()')[0]
             self.password=tree.xpath('//password/text()')[0]
@@ -666,54 +667,7 @@ class user:
         if (name=='vclient'):
             raise gen.NoVclientError(self.bjid)
         raise AttributeError("user [%s] instance has no attribute '%s'"%(self.bjid,name))
-    #def __getattr__(self,name):
-        ##print "getattr",name
-        ##print "state = ",self.state
-        #if (name=="lock"):
-            #print "deprecated user.lock!"
-            #print_stack(limit=2)
-            #if (self.state in (1,3)):
-                #return 1
-            #return 0
-            ##return self._lock
-        #if (name=="active"):
-            #print "deprecated user.active!"
-            #print_stack(limit=2)
-            #if (self.state in (1,2)):
-                #return 1
-            #return 0
 
-            ##return self._active
-        #if (name=='thread'):
-            #print "deprecated user.thread!"
-            #print_stack(limit=2)
-            #return self.vclient
-        #if (name=='vclient'):
-            #raise gen.noVclientError(self.bjid)
-        #raise AttributeError("user instance without '%s'"%name)
-        #raise AttributeError("user %s don't  have '%s'"%(self.bjid.encode("utf-8"),name))
-    #def __setattr__(self,name,val):
-        #if (name=="lock"):
-            #print "deprecated user.lock!"
-            #print_stack(limit=2)
-            #if (val):
-                #if self._active: self.state==1
-                #else: self.state==3
-            #else:
-                #if self._active: self.state==2
-                #else: self.state==0
-            ##self._lock=val
-        #if (name=="active"):
-            #print "deprecated user.active!"
-            #print_stack(limit=2)
-            #if (val):
-                #if self._lock: self.state==1
-                #else: self.state==2
-            #else:
-                #if self._lock: self.state==3
-                #else: self.state==0
-            ##self._active=val
-        #self.__dict__[name]=val
 
 
 #TODO destructor
