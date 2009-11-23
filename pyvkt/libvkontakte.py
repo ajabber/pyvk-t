@@ -120,7 +120,6 @@ class client():
         self.bytesIn = 0
         self.alive=0
         self.user=user
-        self.feedOnly=1
         self.bjid=jid
 
         self.dumpPath=conf.get("debug/dump_path")
@@ -130,91 +129,6 @@ class client():
         self.resolve_links=True
         #FIXME delete 
         
-        if (login):
-            self.readCookies()
-        #try:
-            #cjar.clear()
-            #cjar.load()
-        #except IOError:
-            #print "cant read cookie"
-        #self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cjar))
-        #cjar.clear()
-            try:
-                self.user.loginCallback(u"проверка cookies")
-            except:
-                pass
-            if (ua):
-                return self.userapiLogin(email,passw,captcha_sid, captcha_key)
-            self.v_id=self.getSelfId()
-            if (self.v_id==-1):
-                #print "bad cookie..."
-                self.login(email,passw,captcha_sid,captcha_key)
-                #cjar.clear()
-                ##authData={'op':'a_login_attempt','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
-                ##first, check for captcha
-                
-                #self.user.loginCallback(u"проверка captcha")
-                #if (captcha_key and captcha_sid):
-                    #tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt','captcha_key':captcha_key,'captcha_sid':captcha_sid})
-                #else:
-                    #tpage=self.getHttpPage('http://vkontakte.ru/login.php',{'op':'a_login_attempt'})
-                ##print tpage
-                ##print 'captcha test: ',ct
-                #if (tpage[:20]=='{"ok":-2,"captcha_si'):
-                    
-                    ##print "ERR: got captcha request"
-                    #sid=None
-                    #try:
-                        #cdata=demjson.decode(tpage)
-                        ##print "answer: ",cdata
-                        #sid=cdata['captcha_sid']
-                    #except:
-                        #print_exc()
-                    #self.error=1
-                    ##self.client.threadError(self.bjid,"auth error: got captha request")
-                    #self.alive=0
-                    #raise captchaError(sid=sid, bjid=self.bjid)
-                    #return
-                #authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
-                #if (captcha_key and captcha_sid):
-                    #authData['captcha_key']=captcha_key
-                    #authData['captcha_sid']=captcha_sid
-                #self.user.loginCallback(u"проверка логина и пароля")
-                
-                #tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
-                #i=tpage.find("id='s' value='")
-                #i+=14
-                #p=tpage.find("'",i+1)
-                #self.user.loginCallback(u"вход на сайт")
-                #self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':tpage[i:p]})
-                #self.user.loginCallback(u"проверка cookies")
-                self.v_id=self.getSelfId()
-                if (self.v_id==-1):
-                    raise authError
-                self.saveCookies()
-                #if self.user.getConfig("save_cookies"):
-                    #try:
-                        ##print "saving cookie.."
-                        #cjar.save()
-                        ##print "done"
-                    #except:
-                        #print "ERR: can't save cookie"
-                        #print_exc()
-                self.error=0
-                if (captcha_key and captcha_sid):
-                    logging.warning('captcha defeated by %s'%self.bjid)
-                self.alive=1
-            else:
-                #print "cookie accepted!"
-                self.alive=1
-                self.error=0
-            self.sid=None
-            #print cjar.make_cookies()
-            for i in self.cjar:
-                #print i
-                if i.name=='remixsid':
-                    self.sid=i.value
-            self.user.loginCallback(u"подключился")
     def readCookies(self):
         self.cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
         try:
@@ -233,16 +147,16 @@ class client():
         cjar.clear()
         #TODO
     def setCookie(self, name, val, site='vkontakte.ru'):
-        #cv={}
+        #FIXME arg names
         c=cookielib.Cookie(version=0, name=name, value=val, 
         port=None, port_specified=False, domain='.%s'%site, 
         domain_specified=True, domain_initial_dot=True, path='/', 
         path_specified=True, secure=False, expires=int(time.time()+1e7), 
         discard=False, comment=None, comment_url=None, rest={}, rfc2109=False)
         self.cjar.set_cookie(c)
-        #c.name=name
-        #c.value=val
-        #c.
+    def getCookies(self):
+        ret=[(i.domain[1:], i.name,i.value) for i in self.cjar]
+        return ret
     def login(self,email,passw,captcha_sid=None, captcha_key=None):
         self.user.loginCallback(u"проверка captcha")
         #self.cjar.clear()
@@ -1122,6 +1036,8 @@ class client():
     def getSelfId(self):
         feed=self.getFeed()
         try:
+            if feed['user']['id']:
+                self.v_id=feed['user']['id']
             return feed['user']['id']
         except:
             pass

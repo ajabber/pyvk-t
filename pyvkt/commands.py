@@ -20,12 +20,6 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-#from twisted.words.protocols.jabber import jid, xmlstream
-#from twisted.internet.defer import waitForDeferred
-#try:
-    #from twisted.internet.threads import deferToThreadPool
-#except:
-
 from traceback import print_stack, print_exc
 import pyvkt.general as gen
 import time,string,logging
