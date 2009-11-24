@@ -38,8 +38,9 @@ class cmdManager:
                 "config":setConfigCmd(trans),
                 "addnote":addNoteCmd(trans),
                 "bdays":checkBdays(trans),
-                #"wall":sendWallMessageCmd(trans),
-                "getwall":getWall(trans)}
+                "wall":sendWallMessageCmd(trans),
+                "getwall":getWall(trans),
+                "getroster": GetRoster(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),
                 "wall":sendWallMessageCmd(trans),
                 #"friend":addDelFriendCmd(trans),
@@ -421,9 +422,9 @@ class sendWallMessageCmd(basicCommand):
         basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=gen.bareJid(jid)
-        if (to_id==0):
-            print "where is id???"
-            return {"status":"completed","title":self.name,'message':u'ПукЪ'}
+        #if (to_id==0):
+            #print "where is id???"
+            #return {"status":"completed","title":self.name,'message':u'ПукЪ'}
         print(args)
         if (args.has_key("text")):
             #print ("sending wall message...")
@@ -608,7 +609,7 @@ class listCommands(basicCommand):
         return {"status":"completed","title":self.name,'message':msg}
 
 class getWall(basicCommand):
-    name=u"Посмотреть стену"
+    name=u"Просмотр стены"
     args={}
     #args={0:"v_id"}
     def __init__(self,trans):
@@ -637,5 +638,18 @@ class getWall(basicCommand):
             
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
-
-            
+class GetRoster(basicCommand):
+    name=u'Получение списка друзей'
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans) 
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=gen.bareJid(jid)
+        if self.trans.hasUser(bjid):
+            user=self.trans.users[bjid]
+            fl=user.vclient.getFriendList()
+            user.sendFriendList(fl)
+            msg=u'Отправлены запросы авторизации (всего друзей: %s)'%len(fl)
+            return {"status":"completed","title":self.name,'message':msg}
+        else:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}        
