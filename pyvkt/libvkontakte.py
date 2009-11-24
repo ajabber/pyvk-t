@@ -108,8 +108,6 @@ class RedirectHandler(urllib2.HTTPRedirectHandler):
 class client():
     oldFeed=""
     #onlineList={}
-    alive=1
-    error=0
     loopDone=True
     #just counter for loops. use some big number in the beginning
     iterationsNumber = 999999
@@ -118,10 +116,8 @@ class client():
     #opener=None
     def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False,login=True):
         self.bytesIn = 0
-        self.alive=0
-        self.user=user
         self.bjid=jid
-
+        self.user=user
         self.dumpPath=conf.get("debug/dump_path")
         self.cachePath=conf.get('storage','cache')
         self.cookPath=conf.get('storage','cookies')
@@ -158,48 +154,30 @@ class client():
         ret=[(i.domain[1:], i.name,i.value) for i in self.cjar]
         return ret
     def login(self,email,passw,captcha_sid=None, captcha_key=None):
-        self.user.loginCallback(u"проверка captcha")
-        #self.cjar.clear()
-        #self.setCookie('remixchk','5')
-        #self.setCookie('remixsid','nonenone')
         data={'op':'a_login_attempt'}
         if (captcha_key and captcha_sid):
+            logging.warning('ligin with captha: %s/%s'%(captcha_sid, captcha_key))
             data['captcha_key']=captcha_key
             data['captcha_sid']=captcha_sid
-            #data='op=a_login_attempt&captcha_sid=%s&captcha_key=%s'%(captcha_sid,captcha_key)
-        #self.setCookie('test', 'blah')
-        #for i in self.cjar:
-            #print repr(i)
-        #print data
-        hdrs={'Referer': 'http://vkontakte.ru/index.php', 'X-Requested-With':'XMLHttpRequest'}
-        tpage=self.getHttpPage('http://vkontakte.ru/login.php',data, headers=hdrs)
+        #hdrs={'Referer': 'http://vkontakte.ru/index.php', 'X-Requested-With':'XMLHttpRequest'}
+        tpage=self.getHttpPage('http://vkontakte.ru/login.php',data)
         if (tpage[:20]=='{"ok":-2,"captcha_si'):
             sid=None
             try:
                 cdata=demjson.decode(tpage)
                 sid=cdata['captcha_sid']
-            except:
-                print_exc()
-            self.error=1
-            self.alive=0
-            #print 'captcha'
+            except Exception,e:
+                logging.error('decode failed: %s'%e)
+                raise
             raise captchaError(sid=sid, bjid=self.bjid)
             return
         authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
-        #if (captcha_key and captcha_sid):
-            #authData['captcha_key']=captcha_key
-            #authData['captcha_sid']=captcha_sid
-        
-        self.user.loginCallback(u"проверка логина и пароля")
-        
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
         #print tpage
         i=tpage.find("id='s' value='")
         i+=14
         p=tpage.find("'",i+1)
         s=tpage[i:p]
-        #print s
-        self.user.loginCallback(u"вход на сайт")
         self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':s})
         
     def genCaptchaSid(self):
@@ -293,7 +271,6 @@ class client():
         return 
 
     def logout(self):
-        self.alive=0
         #self.client.usersOffline(self.bjid,self.onlineList)
         self.onlineList={}
         if not self.user.getConfig("save_cookies"):
@@ -347,10 +324,8 @@ class client():
             flist=eval(json,gl,{})
             #print flist
             #flist=demjson.decode(json)
-        except:
-
-            print_exc()
-            print "json decode error"
+        except Exception, e:
+            logging.warning('json decode error: %e',e)
             return {}
         ret={}
         for i in flist:
@@ -445,6 +420,8 @@ class client():
         3   - no data
         -1  - unknown error
         """
+        if (v_id==0):
+            v_id=self.v_id
         if not text:
             return 3
         page=self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
@@ -1059,12 +1036,7 @@ class client():
             print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
             return -1
     def exit(self):
-        #self.client.usersOffline(self.bjid,self.onlineList.keys())
         self.logout()
-        #self.alive=0
-        #threading.Thread.exit(self)
-
-        #threading.Thread.exit(self)
 
     def getCalendar(self,month,year):
         #import string

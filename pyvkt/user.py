@@ -272,7 +272,7 @@ class user:
             self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs, login=False)
             self.vclient.readCookies()
             #FIXME legacy cookies
-            if (self.cookies):
+            if (self.cookies!=None):
                 self.vclient.cjar.clear()
                 for d,n,v in self.cookies:
                     self.vclient.setCookie(name=n, val=v, site=d)
@@ -286,7 +286,7 @@ class user:
             if (self.vclient.getSelfId()==-1):
                 self.vclient.login(email,pw,ck,cs)
                 if (self.vclient.getSelfId()==-1):
-                    raise authError
+                    raise libvkontakte.authError
                 #TODO block user
                 for d,n,v in self.vclient.getCookies():
                     if (n=='remixsid'):
@@ -667,6 +667,32 @@ class user:
         if (name=='vclient'):
             raise gen.NoVclientError(self.bjid)
         raise AttributeError("user [%s] instance has no attribute '%s'"%(self.bjid,name))
+    def sendFriendList(self,fl):
+
+        #bjid=gen.bareJid(jid)
+        #n=0
+        #if self.hasUser(bjid):
+        tj=self.trans.jid
+        for f in fl:
+            src="%s@%s"%(f,tj)
+            try:
+                nick=u"%s %s"%(fl[f]["first"],fl[f]["last"])
+            except KeyError:
+                logging.warning('id%s: something wrong with nick'%f)
+                try:
+                    nick=fl[f]["first"]
+                except:
+                    try:
+                        nick=fl[f]["last"]
+                    except:
+                        nick=u'<pyvk-t: internal error>'
+            x=self.askSubscibtion(src,nick=nick)
+            #if x: 
+                #n+=1
+            #self.sendPresence(src,jid,"subscribed")
+            #self.sendPresence(src,jid,"subscribe")
+            #return
+        #self.sendMessage(self.jid,jid,u"Отправлены запросы авторизации.")
 
 
 

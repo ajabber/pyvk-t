@@ -25,7 +25,7 @@
 from base64 import b64encode,b64decode
 from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
-import sys,os,platform,threading,signal,cPickle,sha,time,ConfigParser
+import sys,os,platform,threading,signal,cPickle,time,ConfigParser, hashlib
 
 from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
@@ -118,6 +118,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             cmd=body[1:].rstrip()
             #if (self.users.has_key(bjid) and self.users[bjid].vclient and cmd=="get roster"):
             if (cmd=="get roster"):
+                self.sendMessage(self.jid,src,u"Теперь команда пишется без пробела: .getroster")
+                return
                 if (self.hasUser(bjid)):
                     d=self.users[bjid].pool.defer(self.users[bjid].vclient.getFriendList)
                     d.addCallback(self.sendFriendlist,jid=bjid)
@@ -520,7 +522,12 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     u.config={}
                 u.email=email
                 u.password=pw
+                u.cookies={}
                 u.saveData()
+                try:
+                    os.unlink("%s/%s"%(self.cookPath,bjid))
+                except OSError:
+                    pass
                 ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get('id')})
                 self.send(ans)
                 self.sendPresence(self.jid,src,"subscribe")
@@ -626,20 +633,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #print ret.encode('utf-8')
         
         self.sendMessage(self.jid,to,ret,sepThread=True)
-
-    def register2(self,jid,iq_id,success=0):
-        #FIXME failed registration
-        try:
-            os.remove("%s/%s"%(self.cookPath,gen.bareJid(jid)))
-        except OSError:
-            pass
-        ans=createElement("iq",{'type':'result','to':jid,'from':self.jid,'id':iq_id})
-
-        self.send(ans)
-        self.sendPresence(self.jid,jid,"subscribe")
-        self.sendPresence(self.jid,jid,"subscribed")
-
-        self.sendMessage(self.jid,jid,u".get roster для получения списка\n.login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
 
     def sendFriendlist(self,fl,jid):
 
@@ -1100,7 +1093,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             except:
                 pass
         if (len(threading.enumerate())):
-            logging.warning('alive threads\n%s'('\n'.join([str(i) for i in threading.enumerate()])))
+            logging.warning('alive threads\n%s'%('\n'.join([str(i) for i in threading.enumerate()])))
             #print threading.enumerate()
         else:
             print "done"

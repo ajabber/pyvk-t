@@ -125,7 +125,7 @@ class reqQueue(threading.Thread):
                     logging.warning('FIXME "too fast" error stranza')
                 except Exception, exc:
                     logging.exception('')
-                    logging.error('unhandled exception: %s'%e)
+                    logging.error('unhandled exception: %s'%exc)
                     logging.error('task traceback:\n -%s'%('\n -'.join(format_list(elem['stack']))))
                     #[logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
                     #print "Caught exception"
