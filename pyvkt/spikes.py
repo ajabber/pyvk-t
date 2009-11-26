@@ -123,6 +123,15 @@ class reqQueue(threading.Thread):
                     logging.error('userapi sid error (%s)'%self.user.bjid)
                 except tooFastError:
                     logging.warning('FIXME "too fast" error stranza')
+                except gen.InternalError,e:
+                    logging.error('internal error: %s'%e)
+                    if e.fatal:
+                        logging.error('fatal error')
+                        return
+                    txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
+                    self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,
+                        body=txt)
+                   
                 except Exception, exc:
                     logging.exception('')
                     logging.error('unhandled exception: %s'%exc)
