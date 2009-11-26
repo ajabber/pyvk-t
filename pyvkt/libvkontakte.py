@@ -156,7 +156,7 @@ class client():
     def login(self,email,passw,captcha_sid=None, captcha_key=None):
         data={'op':'a_login_attempt'}
         if (captcha_key and captcha_sid):
-            logging.warning('ligin with captha: %s/%s'%(captcha_sid, captcha_key))
+            logging.warning('login with captha: %s/%s'%(captcha_sid, captcha_key))
             data['captcha_key']=captcha_key
             data['captcha_sid']=captcha_sid
         #hdrs={'Referer': 'http://vkontakte.ru/index.php', 'X-Requested-With':'XMLHttpRequest'}
@@ -281,7 +281,7 @@ class client():
                 pass
         #print "%s: logout"%self.bjid
     def getFeed(self):
-        s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmepvnogq").decode("cp1251").strip()
+        s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmpvnoq").decode("cp1251").strip()
         if not s or s[0]!=u'{':
             return {}
         s=s.replace(u':"',u':u"')

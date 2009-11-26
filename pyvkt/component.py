@@ -523,6 +523,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 u.email=email
                 u.password=pw
                 u.cookies={}
+                u.blocked=False
                 u.saveData()
                 try:
                     os.unlink("%s/%s"%(self.cookPath,bjid))

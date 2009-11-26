@@ -37,7 +37,13 @@ class NoVclientError (Exception):
         return "no vclient (%s)"%self.jid
     pass
         
-
+class InternalError(Exception):
+    def __init__(self,t , s, fatal=False, exc=None):
+        self.s=s
+        self.t=t
+        self.fatal=fatal
+    def __str__(self):
+        return "InternalError (%s)"%self.t
         
 
 def bareJid(jid):

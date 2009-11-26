@@ -37,6 +37,7 @@ class user:
     #lock=1
     #active=0
     feed={}
+    blocked=False
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -258,7 +259,11 @@ class user:
             del self.vclient
         except:
             pass
-
+        if (self.blocked):
+            logging.warning('login attempt from blocked user')
+            self.trans.sendPresence(self.trans.jid,jid,status=u"ERROR: login/password mismatch.",show="unavailable")
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")            
+            return
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
             #self.vclient=libvkontakte.vkonThread(cli=self.trans,jid=jid,email=email,passw=pw,user=self)
@@ -284,9 +289,12 @@ class user:
                     if (n=='remixsid'):
                         self.vclient.sid=v
             if (self.vclient.getSelfId()==-1):
-                self.vclient.login(email,pw,ck,cs)
+                self.vclient.login(email,pw,captcha_key=ck,captcha_sid=cs)
                 if (self.vclient.getSelfId()==-1):
                     raise libvkontakte.authError
+                else:
+                    if (ck and cs):
+                        logging.warning ('captcha defeated!')
                 #TODO block user
                 for d,n,v in self.vclient.getCookies():
                     if (n=='remixsid'):
@@ -307,17 +315,15 @@ class user:
             self.state=4
             return
         except libvkontakte.authError:
-            print "ERR: wrong login/pass"
+            logging.warning('authError')
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: login/password mismatch.",show="unavailable")
-            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body="ERROR: auth error.\nCheck your auth data")
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Неверный email и/или пароль.")
+            self.blocked=True
             self.state=4
             return
-        #self.lock=0
-        #self.active=1
         self.state=2
-        #self.vclient.start()
         self.trans.updateStatus(self.bjid,self.VkStatus)
-        self.pool.call(self.refreshData)
+        self.refreshData()
 
         
     def login(self):
@@ -328,6 +334,15 @@ class user:
             return
         try:
             self.readData()
+        except gen.InternalError,e:
+            logging.error('internal error: %s'%e)
+            if e.fatal:
+                logging.error('fatal error')
+                return
+            txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
+                body=txt)
+            return
         except UnregisteredError:
             logging.warning("login attempt from unregistered user %s"%self.bjid)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
@@ -448,7 +463,6 @@ class user:
             for i in slist:
                 self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
                 #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
-        #self.vclient.loopIntern()
         self.vclient
         tfeed=self.vclient.getFeed()
         #tfeed is epty only on some error. Just ignore it
@@ -540,7 +554,9 @@ class user:
             except UnicodeDecodeError:
                 print "Password is not in Utf8. Trying cp1251"
                 self.password=self.password.decode('cp1251')
-
+        #if (self.blocked):
+            #logging.warning('saving block')
+            #xml.subElement(root,'blocked')
         xml.SubElement(root,"email").text=self.email
         xml.SubElement(root,"password").text=self.password
         try:
@@ -579,8 +595,8 @@ class user:
         for i in self.uapiStates.keys():
             xml.SubElement(states,i).set('ts',str(self.uapiStates[i]))
         dat=xml.tostring(root,pretty_print=True)
-        if (len(dat)==0):
-            print "ERROR: empty file creation prevented!"
+        if (len(dat.strip())==0):
+            logging.error("empty file creation prevented!")
             return
         cfile=open(fname,'w')
         cfile.write(dat)
@@ -594,13 +610,13 @@ class user:
             cfile=open(fname,'r')
         except IOError, err:
             if (err.errno==2):
-                logging.warning('readData for unregistered: %s'%self.bjid)
+                #logging.warning('readData for unregistered: %s'%self.bjid)
                 raise UnregisteredError
         try:
             tree=xml.parse(cfile)
         except xml.XMLSyntaxError:
             logging.error ("broken xml file: %s"%fname)
-            raise
+            raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
         try:
             cook=tree.xpath('//cookies/*')
             if (len(cook)):
@@ -610,6 +626,10 @@ class user:
             #print cook
         except Exception, e:
             logging.warning('can\'t read cookies: %s'%e)
+        #print tree.xpath('//blocked')
+        if (len(tree.xpath('//blocked'))!=0):
+            logging.warning('blocked user')
+            #self.blocked=True
         try:
             self.email= tree.xpath('//email/text()')[0]
             self.password=tree.xpath('//password/text()')[0]
@@ -661,7 +681,7 @@ class user:
         except KeyError:
             return gen.userConfigFields[fieldName]["default"]
         except AttributeError:
-            logging.warn("user without config\nstate=%s"%(self.state))
+            logging.warn("user without config state=%s"%(self.state))
             return gen.userConfigFields[fieldName]["default"]
     def __getattr__(self,name):
         if (name=='vclient'):
