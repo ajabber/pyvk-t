@@ -185,6 +185,23 @@ class client():
         for i in os.urandom(10):
             ret='%s%s'%(ret,ord(i)%100)
         return ret
+    def getInboxMessages(self,ts=None, num=10):
+        ret={}
+        if (ts):
+            d=self.userapiRequest(act='inbox', ts=ts)
+        else:
+            d=self.userapiRequest(act='inbox', to=num)
+            ret['ts']=d['h']
+            ret['messages']=[]
+            for i in d['d']:
+                m={}
+                m['id']=i[0]
+                m['text']=i[2][0].replace('<br>','\n')
+                m['from']=i[3][0]
+                ret['messages'].append(m)
+        return ret
+            
+        
     def userapiLogin(self,email,passw,captcha_sid=None, captcha_key=None):
         #TODO use cookies
         #d={'email':email,'pass':passw}
@@ -945,8 +962,10 @@ class client():
             return 2
         print "Sending message: unknown error"
         return -1
-    def getFriendList2(self):
-        fl=self.userapiRequest(act='friends',id=self.v_id)
+    def getFriendList2(self, v_id=0):
+        if (v_id==0):
+            v_id=self.v_id
+        fl=self.userapiRequest(act='friends',id=v_id)
         ret={}
         for i in fl:
             fn=i[1].split()
@@ -1331,6 +1350,9 @@ class client():
         nkw['from']='0'
         if (not nkw.has_key('to')):
             nkw['to']='1000'
+        #if (nkw.has_key('v_id')):
+            #nkw['id']=nkv['v_id']
+            #del nkv['v_id']
         url='http://userapi.com/data?'
         for k in nkw:
             url="%s%s=%s&"%(url,k,nkw[k])

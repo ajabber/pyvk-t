@@ -30,6 +30,7 @@ from traceback import print_stack, print_exc,format_exc
 import xml.dom.minidom
 import lxml.etree as xml
 import time,logging
+import demjson
 class UnregisteredError (Exception):
     pass
 
@@ -37,7 +38,9 @@ class user:
     #lock=1
     #active=0
     feed={}
+    cookies=[]
     blocked=False
+    refreshCount=0
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -277,7 +280,7 @@ class user:
             self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs, login=False)
             self.vclient.readCookies()
             #FIXME legacy cookies
-            if (self.cookies!=None):
+            if (self.cookies):
                 self.vclient.cjar.clear()
                 for d,n,v in self.cookies:
                     self.vclient.setCookie(name=n, val=v, site=d)
@@ -324,7 +327,6 @@ class user:
         self.state=2
         self.trans.updateStatus(self.bjid,self.VkStatus)
         self.refreshData()
-
         
     def login(self):
         # TODO bare jid?
@@ -353,14 +355,16 @@ class user:
         #print "logout %s"%self.bjid
         #self.lock=1
         #self.active=0
+        
         if (self.state==3):
             print "logout(): state=3, logout canceled"
             return
+        logging.warning('logout')
         self.state=3
         #saving data
         #self.config["last_activity"]=int(time.time())
         try:
-            self.saveData()
+            self.saveJsonData()
         except Exception,e:
             logging.warning('saveData: %s'%e)
 
@@ -454,6 +458,7 @@ class user:
         #self.loopDone=0
         #print self.roster
         #print "r"
+        self.refreshCount+=1
         if (1 and self.rosterStatusTimer):
             self.rosterStatusTimer=self.rosterStatusTimer-1
         else:
@@ -483,6 +488,9 @@ class user:
         if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
             self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
             self.iterationsNumber = 0
+        if ((self.refreshCount%1000)==0):
+            sef.refreshCount=0
+            #self.sendProbe()
         #self.loopDone=True        
         self.refreshDone=True
     def contactsOnline(self,contacts):
@@ -536,6 +544,7 @@ class user:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
     def saveData(self):
+        return self.saveJsonData()
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         #FIXME config
         fname=dirname+"/"+self.bjid
@@ -602,10 +611,92 @@ class user:
         cfile.write(dat)
         cfile.close()
         #print "user %s data successfully saved"%self.bjid
+    def saveJsonData(self):
+
+        data={}
+        try:
+            ad={'email':unicode(self.email), 'password': unicode(self.password), 'captcha_sid':self.captcha_sid}
+            data['auth']=ad
+        except:
+            logging.exception('')
+        try:
+            cook=self.vclient.getCookies()
+        except:
+            cook=self.cookies
+        cd=[]
+        for d,n,v in cook:
+            if (d[0]=='.'):
+                d=d[1:]
+            cd.append({'domain':d,'name':n, 'value':v})
+        data['cookies']=cd
+            #logging.warning('')
+        #conf=[]
+        #for i in self.config:
+            #conf.append({'name':i,'value':unicode(self.config[i])})
+        data['config']=self.config
+        rost=[]
+        for i in self.roster:
+            item={'jid':i}
+            #item=xml.SubElement(rost,'item',{'jid':i})
+            for j in ('status', 'name', 'subscribed', 'subscribe', 'avatar_url', 'avatar_hash'):
+                try:
+                    try:
+                        t=unicode(self.roster[i][j])
+                    except:
+                        #FIXME unicode anywhere!
+                        t=self.roster[i][j].decode("utf-8")
+                    item[j]=t
+                    #xml.SubElement(item,j).text=t
+                except KeyError:
+                    pass
+                except:
+                    logging.exception('')
+            rost.append(item)
+        data['roster']=rost
+        data['uapi_states']=self.uapiStates
+        #print data
+        j=demjson.JSON(compactly=False)
+        dirname=self.trans.datadir+"/"+self.bjid[:1]
+        fname=dirname+"/"+self.bjid+'_json'
+        #print j.encode(data)
+        cfile=open(fname,'w')
+        cfile.write(j.encode(data).encode('utf-8'))
+        cfile.close()
+        #logging.warning('json data saved')
+    def readJsonData(self):
+        dirname=self.trans.datadir+"/"+self.bjid[:1]
+        fname=dirname+"/"+self.bjid+'_json'
+        cfile=open(fname,'r')
+        f=cfile.read()
+        cfile.close()
+        j=demjson.JSON(compactly=False)
+        data=j.decode(f.decode('utf-8'))
+        try:
+            self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
+        except TypeError:
+            self.cookies=data['cookies']
+        #TODO blocked
+        self.email=data['auth']['email']
+        self.password=data['auth']['password']
+        self.captcha_sid=data['auth']['captcha_sid']
+        self.config=data['config']
+        self.roster={}
+        for i in data['roster']:
+            j=i['jid']
+            del i['jid']
+            self.roster[j]=i
+            #print i
+        self.uapiStates=data['uapi_states']
     def readData(self):
+        try:
+            return self.readJsonData()
+        except IOError, err:
+            pass
+            #logging.exception('') 
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         #FIXME config
         fname=dirname+"/"+self.bjid
+        
         try:
             cfile=open(fname,'r')
         except IOError, err:
@@ -622,7 +713,7 @@ class user:
             if (len(cook)):
                 self.cookies=[(i.get('domain'),i.get('name'),i.get('value')) for i in cook]
             else:
-                self.cookies=None
+                self.cookies=[]
             #print cook
         except Exception, e:
             logging.warning('can\'t read cookies: %s'%e)
@@ -672,7 +763,12 @@ class user:
         #print '1111111',self.uapiStates
         #print "data file successfully parsed"
         cfile.close()
-
+    def sendProbe(self):
+        for i in self.roster:
+            if self.roster[i]['subscribed']:
+                self.trans.sendPresence(i,self.bjid,t='probe')
+                logging.warning('probe sent from %s'%i)
+                return
     def getConfig(self,fieldName):
         if (not fieldName in gen.userConfigFields):
             raise KeyError("user config: no such field (%s)"%fieldName)
