@@ -50,6 +50,7 @@ class xmlstream:
     fixNs=False
     stranzasIn=0
     stranzasOut=0
+    enableDump=False
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
@@ -111,7 +112,8 @@ class xmlstream:
                     raise
         sn=''.join(buf)
         if (sn[-2:]=='/>'):
-            logging.debug("received %s"%sn)
+            if (self.enableDump):
+                logging.warning("received %s"%sn)
             return sn
         es='</'+sn.split()[0][1:]+'>'
         les=len(es)
@@ -134,7 +136,8 @@ class xmlstream:
                     self.connectionFalure=True
                     logging.exception('recvLoop failure')
                     raise
-        logging.debug("received %s"%sn)
+        if (self.enableDump):
+            logging.warning("received %s"%sn)
         return sn
     def recvLoop(self):
         while(1):

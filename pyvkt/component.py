@@ -46,6 +46,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
     logger=None
     terminating=False
     isActive=1
+    
     def __init__(self,jid):
         pyvkt.comstream.xmlstream.__init__(self,jid)
         self.httpIn = 0
@@ -82,6 +83,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return self.onIq(st)
         if (st.tag.endswith("presence")):
             return self.onPresence(st)
+        logging.warning('strange packet from %s'%repr(st.get('from')))
         #if (tryNS):
             ##FIXME
             #if (st.tag.find('{jabber:client}')):
@@ -170,6 +172,46 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     execfile("inject.py")
                 except:
                     logging.error("exec failed"+format_exc())
+            elif (cmd=='convertdb'):
+                logging.warning('starting database update')
+                logging.warning('stopping gateway...')
+                self.isActive=0
+                self.stopService(suspend=True, msg='database update')
+                logging.warning('gateway stopped, starting conversion')
+                
+                for i in os.listdir(self.datadir):
+                    p=str(self.datadir)+'/'+i
+                    if not os.path.isdir(p):
+                        continue
+                    if (p in ('.','..')):
+                        continue
+                    for j in os.listdir(p):
+                        if (j in ('..','.')):
+                            continue
+                        if (not j[-5:] in ('_json', '_bckp')):
+                            try:
+                                str(j)
+                                logging.warning('converting %s'%j)
+                            except:
+                                logging.warning('converting %s'%repr(j))
+                            u=user(self,j, noLoop=True)
+                            try:
+                                u.readJsonData()
+                                logging.warning('already in new format')
+                                continue
+                            except:
+                                pass
+                            try:
+                                u.readData()
+                            except Exception, e:
+                                logging.warning('failed')
+                                continue
+                            u.saveJsonData()
+                            logging.warning('done')
+                            os.rename('%s/%s'%(p,j), '%s/%s_bckp'%(p,j))
+                logging.warning('conversion finished.')
+                        
+
             elif (cmd=="users"):
                 count = 0
                 ret = u''
@@ -934,9 +976,11 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             self.addResource(src,prs)
 
     def updateFeed(self,jid,feed):
+        #FIXME bjid?
         ret=""
         if (not self.hasUser(gen.bareJid(jid))):
             return
+        user=self.users[jid]
         for k in feed.keys():
             if (k in gen.feedInfo) and ("count" in feed[k]) and feed[k]["count"]:
                 ret=ret+u"Новых %s - %s\n"%(gen.feedInfo[k]["message"],feed[k]["count"])
@@ -945,14 +989,22 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         if (s):
             ret=ret+'\n{%s}'%s
         if ret!=self.users[jid].status:
-            self.users[jid].status = ret
+            user.status = ret
             self.sendPresence(self.jid,jid,status=ret)
         ret=""
         try:
             if (feed["messages"]["count"]) and feed["messages"]["items"]:
-                for i in feed ["messages"]["items"].keys():
+                idlist=feed ["messages"]["items"].keys()
+                inmsgs=user.vclient.getInboxMessages(num=100)
+                ml=[i for i in inmsgs['messages'] if int(i['id']) in idlist]
+                for i in ml:
+                    self.sendMessage(src='%s@%s'%(i['from'],self.jid), dest=jid, body=i['text'])
+                    user.vclient.getHttpPage('http://vkontakte.ru/mail.php?act=show&id=%s'%i['id'])
+                #for i in feed ["messages"]["items"].keys():
                     #print "requesting message"
-                    self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
+                    #pass
+
+                    #self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
         except KeyError:
             print_exc()
             pass
