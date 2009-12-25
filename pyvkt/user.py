@@ -489,7 +489,7 @@ class user:
             self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
             self.iterationsNumber = 0
         if ((self.refreshCount%1000)==0):
-            sef.refreshCount=0
+            self.refreshCount=0
             #self.sendProbe()
         #self.loopDone=True        
         self.refreshDone=True
