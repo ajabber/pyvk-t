@@ -42,7 +42,34 @@ def createReply(iq,t='result'):
     ret.set('id',iq.get('id'))
     ret.set('type',t)
     return ret
-    
+
+if not hasattr(socket, 'create_connection'):
+    def connect_socket(address):
+        """Connect to *address* and return the socket object.
+
+        Convenience function.  Connect to *address* (a 2-tuple ``(host,
+        port)``) and return the socket object.
+
+        Heavily inspired from the python 2.6 socket.create_connection()
+        function.
+        """
+        msg = "getaddrinfo returns an empty list"
+        host, port = address
+        for res in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = socket.socket(af, socktype, proto)
+                sock.connect(sa)
+                return sock
+
+            except socket.error, msg:
+                if sock is not None:
+                    sock.close()
+        raise socket.error, msg
+else:
+    connect_socket = socket.create_connection
+
 class xmlstream:
     "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
@@ -66,7 +93,8 @@ class xmlstream:
         self.host=host
         self.port=port
         self.secret=secret
-        sock=socket.create_connection((host,port))
+        #sock=socket.create_connection((host,port))
+	sock=connect_socket((host,port))
         #FIXME connecting
         sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%self.jid)
         fil=sock.makefile(bufsize=1)
@@ -104,7 +132,15 @@ class xmlstream:
                 c=self.sock.recv(1)
                 buf.append(c)
             except socket.error,e:
-                if (e.errno == errno.EAGAIN):
+		if getattr(e, 'errno', None) is not None:
+		    e_errno = e.errno
+	        elif type(getattr(e, 'error', None)) is tuple:
+                    e_errno = e.error[0]
+		elif type(getattr(e, 'args', None)) is tuple:
+		    e_errno = e.args[0]
+                else:
+                    e_errno = errno.ESHUTDOWN # any value, but not not EAGAIN
+                if (e_errno == errno.EAGAIN):
                     time.sleep(1)
                 else:
                     self.connectionFailure=True
@@ -130,7 +166,15 @@ class xmlstream:
                 sn=''.join(buf)    
                 #sn=sn+self.sock.recv(1)
             except socket.error,e:
-                if (e.errno == errno.EAGAIN):
+		if getattr(e, 'errno', None) is not None:
+		    e_errno = e.errno
+	        elif type(getattr(e, 'error', None)) is tuple:
+                    e_errno = e.error[0]
+		elif type(getattr(e, 'args', None)) is tuple:
+		    e_errno = e.args[0]
+                else:
+                    e_errno = errno.ESHUTDOWN # any value, but not not EAGAIN
+                if (e_errno == errno.EAGAIN):
                     time.sleep(1)
                 else:
                     self.connectionFalure=True

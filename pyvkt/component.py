@@ -26,6 +26,7 @@ from base64 import b64encode,b64decode
 from base64 import b64encode,b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,time,ConfigParser, hashlib
+import subprocess
 
 from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
@@ -61,15 +62,17 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.users={}
         self.admin=conf.get('general','admin')
         #self.config=config
-        #try:
-        proc=os.popen("svnversion")
-        s=proc.read()
-        if(s=="exported" or s==""):
-            self.revision="alpha"
-        else:
-            p=s.find(":")
-            ver=s[p+1:-1]
-            self.revision="svn-rev.%s"%ver
+        try:
+        	proc=subprocess.Popen("svnversion",stdout=subprocess.PIPE).stdout
+        	s=proc.read()
+        	if(s=="exported" or s==""):
+            		self.revision="alpha"
+        	else:
+            		p=s.find(":")
+            		ver=s[p+1:-1]
+            		self.revision="svn-rev.%s"%ver
+	except OSError:
+		self.revision="alfa"
         self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
         self.usrLock=Lock()
