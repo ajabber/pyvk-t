@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import ConfigParser,logging
+#fields = {section: {option: (type, default, required), ...}, ...}
 fields={
     "features":
         {
@@ -59,5 +60,5 @@ def get(sect,opt=None):
     return conf[sect][opt]
 
     
-__all__=['read','cfg']
+__all__=['read','conf']
     

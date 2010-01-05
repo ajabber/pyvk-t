@@ -41,6 +41,7 @@ import ConfigParser,os,string
 from traceback import print_stack, print_exc,format_exc
 import logging
 import pyvkt.config as conf
+
 #import StringIO
 
 #user-agent used to request web pages
@@ -144,10 +145,10 @@ class client():
         #TODO
     def setCookie(self, name, val, site='vkontakte.ru'):
         #FIXME arg names
-        c=cookielib.Cookie(version=0, name=name, value=val, 
-        port=None, port_specified=False, domain='.%s'%site, 
-        domain_specified=True, domain_initial_dot=True, path='/', 
-        path_specified=True, secure=False, expires=int(time.time()+1e7), 
+        c=cookielib.Cookie(version=0, name=name, value=val,
+        port=None, port_specified=False, domain='.%s'%site,
+        domain_specified=True, domain_initial_dot=True, path='/',
+        path_specified=True, secure=False, expires=int(time.time()+1e7),
         discard=False, comment=None, comment_url=None, rest={}, rfc2109=False)
         self.cjar.set_cookie(c)
     def getCookies(self):
@@ -171,7 +172,7 @@ class client():
                 raise
             raise captchaError(sid=sid, bjid=self.bjid)
             return
-        authData={'vk':'1','email':email.encode('utf-8'), 'pass':passw.encode('utf-8')}
+        authData={'vk':'1','email':email.encode('cp1251'), 'pass':passw.encode('cp1251')}
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
         #print tpage
         i=tpage.find("id='s' value='")
@@ -803,18 +804,29 @@ class client():
         if not res or not res.find(u"аметка добавлена"):
             return 1
         return 0
+
     def getStatus(self):
         dat=self.userapiRequest(act='activity',to=1,id=self.v_id)
         print dat['h']
         return (dat['h'],dat['d'][0][5])
         
+    def setStatus_api(self, text=None, ts=None):
+        """Sets status (aka activity) through userapi request"""
+        if not text:
+            dat=self.userapiRequest(act='clear_activity',ts=ts)
+        else:
+            dat=self.userapiRequest(act='set_activity',text=text.encode("utf-8"),ts=ts)
+        try:
+            return dat['ok']
+        except (KeyError,TypeError):
+            return 0
 
     def setStatus(self,text,ts=None):
         """ Sets status (aka activity) on vk.com site"""
         #if (ts):
-            #res=self.userapiRequest(act='set_activity', text=text,ts=ts)
-            #print res
-        #return
+        res=self.setStatus_api(text,ts)
+        if res:
+            return res
         page = self.getHttpPage("http://pda.vkontakte.ru/status")
         if not page:
             return None
@@ -1354,11 +1366,12 @@ class client():
             #nkw['id']=nkv['v_id']
             #del nkv['v_id']
         url='http://userapi.com/data?'
-        for k in nkw:
-            url="%s%s=%s&"%(url,k,nkw[k])
+        #for k in nkw:
+        #    url="%s%s=%s&"%(url,k,nkw[k])
         #print url
+        dat=urlencode(nkw)
         try:
-            page=self.getHttpPage(url)
+            page=self.getHttpPage(url,dat)
         except HTTPError, e:
             raise HTTPError (e.err,'userapi: %s'%str(kw))
         #print page
