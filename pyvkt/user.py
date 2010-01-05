@@ -194,7 +194,7 @@ class user:
 
     def prsToVkStatus(self,prs):
         """
-        converts stores presence int  a string which can be send to a site
+        converts stored presence into a string which can be send to a site
         """
         st=u""
         if prs["show"]=="away":
@@ -218,9 +218,10 @@ class user:
         if (prs==None):return
         jid=prs.get("from")
         p={"jid":jid,"priority":'0',"status":u"","show":u"","time":time.time()}
-        for i in prs:
-            if len(i) and i.tag in p:
-                p[i.name]=i.text
+        for i in p:
+            t=prs.find(i)
+            if t is not None:
+                p[i]=t.text
         logging.info("presence params: %s"%str(p))
         p["priority"]=int(p["priority"])
         self.resources[jid]=p
@@ -265,7 +266,7 @@ class user:
         if (self.blocked):
             logging.warning('login attempt from blocked user')
             self.trans.sendPresence(self.trans.jid,jid,status=u"ERROR: login/password mismatch.",show="unavailable")
-            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")            
+            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")
             return
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
@@ -520,9 +521,9 @@ class user:
 
             if self.getConfig("show_onlines") and (not self.trans.roster_management or self.subscribed(bjid)):
                 if self.getConfig("vcard_avatar") and self.trans.show_avatars and ("avatar_hash" in self.roster[bjid]):
-                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=self.roster[bjid]["avatar_hash"])       
+                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=self.roster[bjid]["avatar_hash"])
                 else:
-                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status)       
+                    self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status)
 
     def avatarHashCalculated(self,data,v_id):
         """saves hash of avatar previously calculated in getAvatar funcrion"""
@@ -533,7 +534,7 @@ class user:
             if v_id in self.onlineList:
                 status = self.getStatus(bjid)
                 nick = self.getName(bjid)
-                self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=data[1])       
+                self.trans.sendPresence(bjid,self.bjid,nick=nick,status=status,avatar=data[1])
 
     def contactsOffline(self,contacts,force=0):
         """ 
@@ -542,7 +543,7 @@ class user:
         """
         for i in contacts:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
-                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")        
+                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")
     def saveData(self):
         return self.saveJsonData()
         dirname=self.trans.datadir+"/"+self.bjid[:1]
@@ -611,8 +612,8 @@ class user:
         cfile.write(dat)
         cfile.close()
         #print "user %s data successfully saved"%self.bjid
-    def saveJsonData(self):
 
+    def saveJsonData(self):
         data={}
         try:
             ad={'email':unicode(self.email), 'password': unicode(self.password), 'captcha_sid':self.captcha_sid}
@@ -657,6 +658,9 @@ class user:
         #print data
         j=demjson.JSON(compactly=False)
         dirname=self.trans.datadir+"/"+self.bjid[:1]
+        if (not os.path.exists(dirname)):
+            #print "creating dir %s"%dirname
+            os.mkdir(dirname)
         fname=dirname+"/"+self.bjid+'_json'
         #print j.encode(data)
         cfile=open(fname,'w')
@@ -690,7 +694,7 @@ class user:
     def readData(self):
         try:
             return self.readJsonData()
-        except IOError, err:
+        except (IOError, demjson.JSONDecodeError):
             pass
             #logging.exception('') 
         dirname=self.trans.datadir+"/"+self.bjid[:1]

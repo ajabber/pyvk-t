@@ -22,8 +22,7 @@
  ***************************************************************************/
  """
 
-from base64 import b64encode,b64decode
-from base64 import b64encode,b64decode
+from base64 import b64encode, b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,time,ConfigParser, hashlib
 import subprocess
@@ -63,16 +62,16 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.admin=conf.get('general','admin')
         #self.config=config
         try:
-        	proc=subprocess.Popen("svnversion",stdout=subprocess.PIPE).stdout
-        	s=proc.read()
-        	if(s=="exported" or s==""):
-            		self.revision="alpha"
-        	else:
-            		p=s.find(":")
-            		ver=s[p+1:-1]
-            		self.revision="svn-rev.%s"%ver
-	except OSError:
-		self.revision="alfa"
+            proc=subprocess.Popen("svnversion",stdout=subprocess.PIPE).stdout
+            s=proc.read()
+            if(s=="exported" or s==""):
+                self.revision="alpha"
+            else:
+                p=s.find(":")
+                ver=s[p+1:-1]
+                self.revision="svn-rev.%s"%ver
+        except OSError:
+               self.revision="alpha"
         self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
         self.usrLock=Lock()
@@ -297,7 +296,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,body=body,subject=title)
             d.addErrback(self.errorback)
     def startPoll(self):
-        self.pollMgr.start()        
+        self.pollMgr.start()
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
         """
         Send delivery notification if message successfully sent
@@ -578,7 +577,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 self.send(ans)
                 self.sendPresence(self.jid,src,"subscribe")
                 self.sendPresence(self.jid,src,"subscribed")
-                self.sendMessage(self.jid,src,u".get roster для получения списка\n.login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
+                self.sendMessage(self.jid,src,u".getroster для получения списка\n.login для подключения\nТех.поддержка в конференции: pyvk-t@conference.jabber.ru")
                 return True
                 #if (query.uri=="jabber:iq:gateway"):
                     #for prompt in query.elements():
@@ -619,7 +618,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 
         iq = createElement("iq",{'type':'error','to':src,'from':dest,'id':iq.get("id")})
         addChild(iq,"feature-not-implemented",'urn:ietf:params:xml:ns:xmpp-stanzas')
-        self.send(iq)                        
+        self.send(iq)
         return False
     def sendRegistrationForm(self,ans,q):
         """Sends registration form with old email if registered before

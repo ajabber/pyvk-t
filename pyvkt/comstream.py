@@ -132,12 +132,12 @@ class xmlstream:
                 c=self.sock.recv(1)
                 buf.append(c)
             except socket.error,e:
-		if getattr(e, 'errno', None) is not None:
-		    e_errno = e.errno
-	        elif type(getattr(e, 'error', None)) is tuple:
+                if getattr(e, 'errno', None) is not None:
+                    e_errno = e.errno
+                elif type(getattr(e, 'error', None)) is tuple:
                     e_errno = e.error[0]
-		elif type(getattr(e, 'args', None)) is tuple:
-		    e_errno = e.args[0]
+                elif type(getattr(e, 'args', None)) is tuple:
+                    e_errno = e.args[0]
                 else:
                     e_errno = errno.ESHUTDOWN # any value, but not not EAGAIN
                 if (e_errno == errno.EAGAIN):
@@ -160,18 +160,18 @@ class xmlstream:
                 c=None
                 while(c!='>'):
                     if (self.connFailure and not ignoreFail):
-                        raise Exception('connection failure')                
+                        raise Exception('connection failure')
                     c=self.sock.recv(1)
                     buf.append(c)
-                sn=''.join(buf)    
+                sn=''.join(buf)
                 #sn=sn+self.sock.recv(1)
             except socket.error,e:
-		if getattr(e, 'errno', None) is not None:
-		    e_errno = e.errno
-	        elif type(getattr(e, 'error', None)) is tuple:
+                if getattr(e, 'errno', None) is not None:
+                    e_errno = e.errno
+                elif type(getattr(e, 'error', None)) is tuple:
                     e_errno = e.error[0]
-		elif type(getattr(e, 'args', None)) is tuple:
-		    e_errno = e.args[0]
+                elif type(getattr(e, 'args', None)) is tuple:
+                    e_errno = e.args[0]
                 else:
                     e_errno = errno.ESHUTDOWN # any value, but not not EAGAIN
                 if (e_errno == errno.EAGAIN):
@@ -227,7 +227,7 @@ class xmlstream:
                     self.connFailure=True
                     self.connected.acquire()
                     self.connected.wait()
-                    self.connected.release()                    
+                    self.connected.release()
                     logging.warning("send loop respawned")
                     self.send(task)
                     #try:

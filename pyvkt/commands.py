@@ -79,7 +79,7 @@ class cmdManager:
                     #TODO syntax error
                 else:
                     ret[kv[0]]=kv[1]
-            return ret        
+            return ret
     def onMsg(self,jid,text,v_id=0):
         logging.info("text command '%s' from %s"%(text,jid))
         cmdList=self.makeCmdList(jid,v_id)
@@ -599,7 +599,7 @@ class listCommands(basicCommand):
     name=u"Список доступных команд"
     args={}
     def __init__(self,trans):
-        basicCommand.__init__(self,trans)            
+        basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         cl=self.trans.commands.makeCmdList(jid,to_id)
         msg=u''
@@ -613,7 +613,7 @@ class getWall(basicCommand):
     args={}
     #args={0:"v_id"}
     def __init__(self,trans):
-        basicCommand.__init__(self,trans)            
+        basicCommand.__init__(self,trans)
     def run(self,jid,args,sessid="0",to_id=0):
         bjid=gen.bareJid(jid)
         if self.trans.hasUser(bjid):
