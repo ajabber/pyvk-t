@@ -31,7 +31,7 @@ if (opt.logfile):
     import logging.handlers
     logging.warning('writing log to %s'%opt.logfile)
     l=logging.getLogger('')
-    rh=logging.handlers.RotatingFileHandler(opt.logfile,maxBytes=200000,encoding='utf-8')
+    rh=logging.handlers.RotatingFileHandler(opt.logfile,maxBytes=200000,backupCount=5,encoding='utf-8')
     rh.setFormatter(logging.Formatter(LOG_FORMAT))
     l.addHandler(rh)
 conf.read(opt.config)

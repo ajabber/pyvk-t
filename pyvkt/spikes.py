@@ -24,7 +24,7 @@ from twisted.internet.defer import Deferred
 import Queue
 import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
-from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError
+from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError, PrivacyError, captchaError,UserapiJsonError
 import pyvkt.general as gen
 import cProfile as prof
 class pseudoXml:
@@ -42,13 +42,14 @@ class pseudoXml:
         return True
         
 class reqQueue(threading.Thread):
-    daemon=True
+    #daemon=True
+    last='not started'
     def __init__(self,user,name=None):
-        self.daemon=True
         try:
             threading.Thread.__init__(self,target=self.loop,name=name)
         except UnicodeEncodeError:
             threading.Thread.__init__(self,target=self.loop,name="user_with_bad_jid")
+        self.daemon=True
         self.user=user
         self.queue=Queue.Queue(200)
         self.alive=1
@@ -60,11 +61,19 @@ class reqQueue(threading.Thread):
         self.call(foo,**kw)
     def call(self,foo,**kw):
         elem={"foo":foo,"args":kw,'stack':extract_stack()}
-        self.queue.put(elem)
+        try:
+            self.queue.put(elem,timeout=3)
+        except Queue.Full:
+            logging.error('pool[%s]: queue full! last task: %s, curr task: %s'%(self.name,self.last,repr(f)))
+            raise gen.QuietError()
     def defer(self,f,**kw):
         d=Deferred()
         elem={"foo":f,"args":kw,"deferred":d,'stack':extract_stack()}
-        self.queue.put(elem)
+        try:
+            self.queue.put(elem,timeout=3)
+        except Queue.Full:
+            logging.error('pool[%s]: queue full! last task: %s, curr task: %s'%(self.name,self.last,repr(f)))
+            raise gen.QuietError()
         return d
     def stop(self):
         self.alive=0
@@ -74,6 +83,7 @@ class reqQueue(threading.Thread):
         return
 
     def loop(self):
+        self.last='just started'
         while(self.alive):
             try:
                 elem=self.queue.get(block=True,timeout=10)
@@ -100,6 +110,7 @@ class reqQueue(threading.Thread):
                 pass
             else:
                 f=elem["foo"]
+                last=repr(f)
                 args=elem["args"]
                 try:
                     res=f(**args)
@@ -117,12 +128,16 @@ class reqQueue(threading.Thread):
                     else:
                         logging.warning("loop: self.user==None. aborting")
                         return
+                except PrivacyError:
+                    self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция запрещена настройками приватности на сайте.')
+                except captchaError:
+                    self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция не может быть выполнена из-за captcha-защиты на юзерапи. На данный момент обработка captcha не реализована.')
                 except HTTPError,e:
                     logging.error("http error: "+str(e).replace('\n',', '))
                 except UserapiSidError:
                     logging.error('userapi sid error (%s)'%self.user.bjid)
                 except tooFastError:
-                    logging.warning('FIXME "too fast" error stranza')
+                    logging.warning('FIXME "too fast" error stanza')
                 except gen.InternalError,e:
                     logging.error('internal error: %s'%e)
                     if e.fatal:
@@ -131,7 +146,8 @@ class reqQueue(threading.Thread):
                     txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
                     self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,
                         body=txt)
-                   
+                except UserapiJsonError:
+                    logging.warning('userapi request failed')
                 except Exception, exc:
                     logging.exception('')
                     logging.error('unhandled exception: %s'%exc)
@@ -152,6 +168,7 @@ class reqQueue(threading.Thread):
                         [logging.error('TB '+i) for i[:-1] in format_list(elem['stack'])]
                 self.queue.task_done()
         #print "queue (%s) stopped"%self.user.bjid
+        self.last='stopped'
         return 0
 class pollManager(threading.Thread):
     def __init__(self,trans):
@@ -184,25 +201,30 @@ class pollManager(threading.Thread):
                     #f.write('1')
                     #f.close()
             #else:
-            for u in self.trans.users.keys():
-                if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
-                    try:
-                        if(self.trans.users[u].refreshDone):
-                            self.trans.users[u].vclient
-                            self.trans.users[u].refreshDone=False
-                            self.trans.users[u].pool.call(self.trans.users[u].refreshData)
-                    except gen.noVclientError:
-                        print "user w/o client. skipping"
-                    except:
-                        logging.error(format_exc())
-            #print delta
-            if (currGroup==0):
-                #print 'echo sent'
-                self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='%s'%int(time.time()))
-            #print '10 sec traffic: ',self.trans.logger.getTraffic(10)                
-            #print "cg",currGroup
-            currGroup +=1
-            currGroup=currGroup%groupsNum
+            try:
+                for u in self.trans.users.keys():
+                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
+                        try:
+                            if(self.trans.users[u].refreshDone):
+                                self.trans.users[u].vclient
+                                self.trans.users[u].refreshDone=False
+                                self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                            else:
+                                logging.warning('skipping refresh for %s'%repr(u))
+                        except gen.NoVclientError:
+                            print "user w/o client. skipping"
+                        except:
+                            logging.error(format_exc())
+                #print delta
+                if (currGroup==0):
+                    #print 'echo sent'
+                    self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='%s'%int(time.time()))
+                #print '10 sec traffic: ',self.trans.logger.getTraffic(10)                
+                #print "cg",currGroup
+                currGroup +=1
+                currGroup=currGroup%groupsNum
+            except:
+                logging.exception("GREPME")
             time.sleep(5)
         print "pollManager stopped"
     def stop(self):
