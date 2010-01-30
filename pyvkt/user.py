@@ -30,7 +30,8 @@ from traceback import print_stack, print_exc,format_exc
 import xml.dom.minidom
 import lxml.etree as xml
 import time,logging
-import demjson
+import demjson,errno
+import threading
 class UnregisteredError (Exception):
     pass
 
@@ -41,6 +42,7 @@ class user:
     cookies=[]
     blocked=False
     refreshCount=0
+    config={}
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -71,7 +73,7 @@ class user:
         self.iterationsNumber=0
         self.tonline={}
         self.onlineList={}
-        
+        self.logoutLock=threading.Lock()
         #roster. {jid:{subscripbed:1/0, subscribe: 1/0, status: sometext, name: sometext,avatar_url: http://urlofavatar,avatar_hash}}
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
@@ -279,19 +281,19 @@ class user:
                 cs=self.captcha_sid
                 self.captcha_sid=None
             self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs, login=False)
-            self.vclient.readCookies()
+            self.vclient.initCookies()
             #FIXME legacy cookies
-            if (self.cookies):
-                self.vclient.cjar.clear()
-                for d,n,v in self.cookies:
-                    self.vclient.setCookie(name=n, val=v, site=d)
-                    if (n=='remixsid'):
-                        self.vclient.sid=v
-            else:
-                logging.warning('legacy cookies')
-                for d,n,v in self.vclient.getCookies():
-                    if (n=='remixsid'):
-                        self.vclient.sid=v
+            #if (self.cookies):
+                #self.vclient.cjar.clear()
+            for d,n,v in self.cookies:
+                self.vclient.setCookie(name=n, val=v, site=d)
+                if (n=='remixsid'):
+                    self.vclient.sid=v
+            #else:
+                #logging.warning('legacy cookies')
+                #for d,n,v in self.vclient.getCookies():
+                    #if (n=='remixsid'):
+                        #self.vclient.sid=v
             if (self.vclient.getSelfId()==-1):
                 self.vclient.login(email,pw,captcha_key=ck,captcha_sid=cs)
                 if (self.vclient.getSelfId()==-1):
@@ -300,10 +302,11 @@ class user:
                     if (ck and cs):
                         logging.warning ('captcha defeated!')
                 #TODO block user
+                self.cookies=self.vclient.getCookies()
                 for d,n,v in self.vclient.getCookies():
                     if (n=='remixsid'):
                         self.vclient.sid=v
-                self.vclient.saveCookies()
+                #self.vclient.saveCookies()
         except libvkontakte.captchaError,exc:
             #print "ERR: got captcha request"
             logging.warning(str(exc))
@@ -356,16 +359,26 @@ class user:
         #print "logout %s"%self.bjid
         #self.lock=1
         #self.active=0
-        
-        if (self.state==3):
-            print "logout(): state=3, logout canceled"
+        #logging.warning('acq')
+
+        if ( not self.logoutLock.acquire()):
+            #logging.warning('abrt')
             return
-        logging.warning('logout')
+        #logging.warning('acq\'d')
+        if (self.state==3):
+            #print "logout(): state=3, logout canceled"
+            self.logoutLock.release()
+            #logging.warning('released')
+            return
+        #logging.warning('logout (%s)'%repr(self.bjid))
+        #logging.warning('reeased')
         self.state=3
+        self.logoutLock.release()
+        
         #saving data
         #self.config["last_activity"]=int(time.time())
         try:
-            self.saveJsonData()
+            self.saveData()
         except Exception,e:
             logging.warning('saveData: %s'%e)
 
@@ -379,7 +392,8 @@ class user:
             self.pool.stop()
             #self.pool.join()
         except Exception,e:
-            logging.warning('stopping pool: %s'%e)
+            pass
+            #logging.warning('stopping pool: %s'%e)
         try:
             self.delThread()
         except Exception,e:
@@ -395,19 +409,22 @@ class user:
         try:
             self.trans.httpIn += self.vclient.bytesIn
         except Exception,e:
-            logging.warning('http traffic count: %s'%e)
+            pass
+            #logging.warning('http traffic count: %s'%e)
             #print_exc()
         try:
             del self.vclient
             #TODO check references
         except Exception,e:
-            logging.warning('deleting vclient: %s'%e)
+            pass
+            #logging.warning('deleting vclient: %s'%e)
         try:
             self.pool.stop()
             del self.pool
             #TODO check references
         except Exception,e:
-            logging.warning('stopping pool: %s'%e)
+            pass
+            #logging.warning('stopping pool: %s'%e)
 
     def hasResource(self,jid):
         """
@@ -459,41 +476,48 @@ class user:
         #self.loopDone=0
         #print self.roster
         #print "r"
-        self.refreshCount+=1
-        if (1 and self.rosterStatusTimer):
-            self.rosterStatusTimer=self.rosterStatusTimer-1
-        else:
-            slist=self.vclient.getStatusList()
-            self.rosterStatusTimer=5
-            # it's about 5 munutes
-            for i in slist:
-                self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
-                #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
-        self.vclient
-        tfeed=self.vclient.getFeed()
-        #tfeed is epty only on some error. Just ignore it
-        if tfeed:
-            self.trans.updateFeed(self.bjid,tfeed)
-        self.onlineList=self.vclient.getOnlineList()
-        if (self.tonline.keys()!=self.onlineList.keys()):
-            self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
-            self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
-            self.tonline=self.onlineList
-        #FIXME online status
-        if (self.getConfig("wall_notify")):
-            try:
-                self.checkWallUpdate()
-            except:
-                logging.exception('')
-        self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
-        if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
-            self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
-            self.iterationsNumber = 0
-        if ((self.refreshCount%1000)==0):
-            self.refreshCount=0
-            #self.sendProbe()
-        #self.loopDone=True        
+        try:
+            self.refreshCount+=1
+            if (1 and self.rosterStatusTimer):
+                self.rosterStatusTimer=self.rosterStatusTimer-1
+            else:
+                slist=self.vclient.getStatusList()
+                self.rosterStatusTimer=5
+                # it's about 5 munutes
+                for i in slist:
+                    self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
+                    #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
+            self.vclient
+            tfeed=self.vclient.getFeed()
+            #tfeed is epty only on some error. Just ignore it
+            if tfeed:
+                self.trans.updateFeed(self.bjid,tfeed)
+            self.onlineList=self.vclient.getOnlineList()
+            if (self.tonline.keys()!=self.onlineList.keys()):
+                self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
+                self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
+                self.tonline=self.onlineList
+            #FIXME online status
+            if (self.getConfig("wall_notify")):
+                try:
+                    self.checkWallUpdate()
+                except:
+                    logging.exception('')
+            self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
+            if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
+                #self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
+                self.iterationsNumber = 0
+            if ((self.refreshCount%1000)==0):
+                self.refreshCount=0
+            if ((self.refreshCount%10)==0):
+                self.sendProbe()
+            #self.loopDone=True
+        except:
+            self.refreshDone=True
+            logging.warning('refresh freeze prevented!')
+            raise
         self.refreshDone=True
+        
     def contactsOnline(self,contacts):
         """ send 'online' presence"""
         for i in contacts:
@@ -504,16 +528,20 @@ class user:
             bjid="%s@%s"%(i,self.trans.jid)
             status = self.getStatus(bjid)
             self.setName(bjid,nick)
-            if "avatar_url" in self.onlineList[i]:#we know about avatar
-                if not ("avatar_url" in self.roster[bjid] and self.onlineList[i]["avatar_url"]==self.roster[bjid]["avatar_url"]):
-                    self.roster[bjid]["avatar_url"]=self.onlineList[i]["avatar_url"]
-                    if self.roster[bjid]["avatar_url"]:
-                        self.roster[bjid]["avatar_hash"]="nohash"
-                    else:#no avatar -> no hash needed
-                        self.roster[bjid]["avatar_hash"]=u""
-            if not "avatar_url" in self.onlineList[i] or not "avatar_hash" in self.roster[bjid]:
-                self.roster[bjid]["avatar_hash"]="nohash"
-            #if no hash yet update it
+            try:
+                if "avatar_url" in self.onlineList[i]:#we know about avatar
+                    if not ("avatar_url" in self.roster[bjid] and self.onlineList[i]["avatar_url"]==self.roster[bjid]["avatar_url"]):
+                        self.roster[bjid]["avatar_url"]=self.onlineList[i]["avatar_url"]
+                        if self.roster[bjid]["avatar_url"]:
+                            self.roster[bjid]["avatar_hash"]="nohash"
+                        else:#no avatar -> no hash needed
+                            self.roster[bjid]["avatar_hash"]=u""
+                if not "avatar_url" in self.onlineList[i] or not "avatar_hash" in self.roster[bjid]:
+                    self.roster[bjid]["avatar_hash"]="nohash"
+            except KeyError:
+                logging.warning('fixme')
+
+           #if no hash yet update it
             if self.getConfig("vcard_avatar") and self.trans.show_avatars and self.roster[bjid]["avatar_hash"]=="nohash":
                 #print "contactsOnline: getAvatar"
                 d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
@@ -545,75 +573,6 @@ class user:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")
     def saveData(self):
-        return self.saveJsonData()
-        dirname=self.trans.datadir+"/"+self.bjid[:1]
-        #FIXME config
-        fname=dirname+"/"+self.bjid
-        #print dirname
-        if (not os.path.exists(dirname)):
-            #print "creating dir %s"%dirname
-            os.mkdir(dirname)
-        root=xml.Element("userdata",{'version':'0.1'})
-        # versions:
-        # 0.1 - initial
-        if (type(self.email)==str):
-            self.email=self.email.decode('utf-8')
-        if (type(self.password)==str):
-            try:
-                self.password=self.password.decode('utf-8')
-            except UnicodeDecodeError:
-                print "Password is not in Utf8. Trying cp1251"
-                self.password=self.password.decode('cp1251')
-        #if (self.blocked):
-            #logging.warning('saving block')
-            #xml.subElement(root,'blocked')
-        xml.SubElement(root,"email").text=self.email
-        xml.SubElement(root,"password").text=self.password
-        try:
-            cook=self.vclient.getCookies()
-            c=xml.SubElement(root,'cookies')
-            for d,n,v in cook:
-                if (d[0]=='.'):
-                    d=d[1:]
-                xml.SubElement(c,'cookie', {'domain':d,'name':n, 'value':v})
-        except Exception,e:
-            logging.error('can\'t save cookie, %s'%e)
-        #print self.config
-        if (self.captcha_sid):
-            xml.SubElement(root,"captcha_sid").text=self.captcha_sid
-        conf=xml.SubElement(root,"config")
-        for i in self.config:
-            try:
-                xml.SubElement(conf,'option',{'name':i,'value':unicode(self.config[i])})
-            except:
-                print_exc()
-        rost=xml.SubElement(root,"roster")
-        for i in self.roster:
-            item=xml.SubElement(rost,'item',{'jid':i})
-            for j in ('status', 'name', 'subscribed', 'subscribe', 'avatar_url', 'avatar_hash'):
-                try:
-                    try:
-                        t=unicode(self.roster[i][j])
-                    except:
-                        t=self.roster[i][j].decode("utf-8")
-                    xml.SubElement(item,j).text=t
-                except KeyError:
-                    pass
-                except:
-                    print_exc()
-        states=xml.SubElement(root,"states")
-        for i in self.uapiStates.keys():
-            xml.SubElement(states,i).set('ts',str(self.uapiStates[i]))
-        dat=xml.tostring(root,pretty_print=True)
-        if (len(dat.strip())==0):
-            logging.error("empty file creation prevented!")
-            return
-        cfile=open(fname,'w')
-        cfile.write(dat)
-        cfile.close()
-        #print "user %s data successfully saved"%self.bjid
-
-    def saveJsonData(self):
         data={}
         try:
             ad={'email':unicode(self.email), 'password': unicode(self.password), 'captcha_sid':self.captcha_sid}
@@ -667,21 +626,32 @@ class user:
         cfile.write(j.encode(data).encode('utf-8'))
         cfile.close()
         #logging.warning('json data saved')
-    def readJsonData(self):
+    def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid+'_json'
-        cfile=open(fname,'r')
+        try:
+            cfile=open(fname,'r')
+        except IOError,e:
+            if (e.errno==errno.ENOENT):
+                raise UnregisteredError()
         f=cfile.read()
         cfile.close()
-        j=demjson.JSON(compactly=False)
+        try:
+            j=demjson.JSON(compactly=False)
+        except demjson.JSONDecodeError,e:
+            logging.error ("broken json file: %s\n%s"%(fname,str(e)))
+            raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
         data=j.decode(f.decode('utf-8'))
         try:
             self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
         except TypeError:
             self.cookies=data['cookies']
         #TODO blocked
-        self.email=data['auth']['email']
-        self.password=data['auth']['password']
+        try:
+            self.email=data['auth']['email']
+            self.password=data['auth']['password']
+        except KeyError:
+            raise UnregisteredError()
         self.captcha_sid=data['auth']['captcha_sid']
         self.config=data['config']
         self.roster={}
@@ -691,87 +661,11 @@ class user:
             self.roster[j]=i
             #print i
         self.uapiStates=data['uapi_states']
-    def readData(self):
-        try:
-            return self.readJsonData()
-        except (IOError, demjson.JSONDecodeError):
-            pass
-            #logging.exception('') 
-        dirname=self.trans.datadir+"/"+self.bjid[:1]
-        #FIXME config
-        fname=dirname+"/"+self.bjid
-        
-        try:
-            cfile=open(fname,'r')
-        except IOError, err:
-            if (err.errno==2):
-                #logging.warning('readData for unregistered: %s'%self.bjid)
-                raise UnregisteredError
-        try:
-            tree=xml.parse(cfile)
-        except xml.XMLSyntaxError:
-            logging.error ("broken xml file: %s"%fname)
-            raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
-        try:
-            cook=tree.xpath('//cookies/*')
-            if (len(cook)):
-                self.cookies=[(i.get('domain'),i.get('name'),i.get('value')) for i in cook]
-            else:
-                self.cookies=[]
-            #print cook
-        except Exception, e:
-            logging.warning('can\'t read cookies: %s'%e)
-        #print tree.xpath('//blocked')
-        if (len(tree.xpath('//blocked'))!=0):
-            logging.warning('blocked user')
-            #self.blocked=True
-        try:
-            self.email= tree.xpath('//email/text()')[0]
-            self.password=tree.xpath('//password/text()')[0]
-        except IndexError:
-            logging.error('readData(%s): can\'t find email/password'%self.bjid)
-            self.email=''
-            self.password=''
-            #FIXME error message
-        self.config={}
-        try:
-            self.captcha_sid=tree.xpath('//captcha_sid/text()')[0]
-        except IndexError:
-            pass
-        for i in  tree.xpath('//config/*'):
-            n,v=i.get('name'),i.get('value')
-            try:
-                if (gen.userConfigFields[n]['type']=='boolean'):
-                    if (v=='True'):
-                        v=True
-                    else:
-                        v=False
-                self.config[n]=v
-            
-            except:
-                print_exc()
-            
-        #print config
-        self.roster={}
-        for i in  tree.xpath('//roster/*'):
-            t={}
-            for j in i:
-                if (j.tag in ('subscribed','subscribe')):
-                    t[j.tag]=int(j.text)
-                else:
-                    t[j.tag]=j.text
-            self.roster[i.get('jid')]=t
-        self.uapiStates={}
-        for i in  tree.xpath('//states/*'):
-            self.uapiStates[i.tag]=i.get('ts')
-        #print '1111111',self.uapiStates
-        #print "data file successfully parsed"
-        cfile.close()
     def sendProbe(self):
         for i in self.roster:
             if self.roster[i]['subscribed']:
                 self.trans.sendPresence(i,self.bjid,t='probe')
-                logging.warning('probe sent from %s'%i)
+                #logging.warning('probe sent from %s'%i)
                 return
     def getConfig(self,fieldName):
         if (not fieldName in gen.userConfigFields):

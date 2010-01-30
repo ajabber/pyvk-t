@@ -62,7 +62,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.admin=conf.get('general','admin')
         #self.config=config
         try:
-            proc=subprocess.Popen("svnversion",stdout=subprocess.PIPE).stdout
+            d=os.path.dirname(os.path.realpath(__file__))
+            d=os.path.abspath('%s/..'%d)
+            proc=subprocess.Popen(["svnversion", d],stdout=subprocess.PIPE).stdout
+            
             s=proc.read()
             if(s=="exported" or s==""):
                 self.revision="alpha"
@@ -78,21 +81,17 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.unregisteredList=[]
         signal.signal(signal.SIGUSR1,self.signalHandler)
         signal.signal(signal.SIGUSR2,self.signalHandler)
-    def handlePacket(self,st):
-        if (st.tag.endswith("message")):
-            return self.onMsg(st)
-        if (st.tag.endswith("iq")):
-            return self.onIq(st)
-        if (st.tag.endswith("presence")):
-            return self.onPresence(st)
-        logging.warning('strange packet from %s'%repr(st.get('from')))
-        #if (tryNS):
-            ##FIXME
-            #if (st.tag.find('{jabber:client}')):
-                #st.tag=st.tag.replace('{jabber:client}','')
-                #logging.warning('namespace fixed')
-                #return self.handlePacket(st,tryNS=False)
-        logging.warning('unexpected stranza: "%s"'%st.tag)
+    def handlePacket(self,st,dbg):
+        try:
+            if (st.tag.endswith("message")):
+                return self.onMsg(st)
+            if (st.tag.endswith("iq")):
+                return self.onIq(st)
+            if (st.tag.endswith("presence")):
+                return self.onPresence(st, dbg)
+            logging.warning('strange packet from %s'%repr(st.get('from')))
+        except gen.QuietError:
+            logging.warning('QuietError')
     def onMsg(self,msg):
         src=msg.get("from")
         dest=msg.get("to")
@@ -166,9 +165,12 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 gc.collect()
             elif (cmd[:4]=="eval"):
                 try:
-                    logging.warning("eval: "+repr(eval(cmd[5:])))
-                except:
+                    res=repr(eval(cmd[5:]))
+                    logging.warning("eval: "+repr(res))
+                    self.sendMessage(self.jid,src,'#eval: %s'%repr(res))
+                except Exception,e:
                     logging.error("exec failed"+format_exc())
+                    self.sendMessage(self.jid,src,'#eval: exception:\n%s'%str(e))
             elif (cmd[:4]=="exec"):
                 try:
                     execfile("inject.py")
@@ -350,8 +352,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         dest=iq.get("to")
         iq_id=iq.get('id')
         if (not iq_id):
-            #TODO error stranza
-            logging.warning('iq stranza without id: %s -> %s'%(src,dest))
             return
         bjid=gen.bareJid(src)
         ans=createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
@@ -394,6 +394,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     self.send(self.commands.onDiscoInfo(iq))
                     return True
                 else:
+                    if (node):
+                        ans.set('node', node)
                     ans.set('type','error')
                     addChild(ans,'item-not-found','urn:ietf:params:xml:ns:xmpp-stanzas',{'type':'cancel'})
                 self.send(ans)
@@ -408,7 +410,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             for i in self.users[bjid].onlineList:
                                 cname=u'%s %s'%(self.users[bjid].onlineList[i]["first"],self.users[bjid].onlineList[i]["last"])
                                 addChild(a,"item",attrs={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)})
-                        #FIXME 'not found' stranza
                     elif (node=="http://jabber.org/protocol/commands"):
                         self.send(self.commands.onDiscoItems(iq))
                         return
@@ -426,8 +427,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     values={
                         'time/uptime':('seconds',str(int(time.time()-self.startTime))),
                         'users/online':('users',str(len(self.users))),
-                        'bandwith/packets-in':('packets', str(self.stranzasIn)),
-                        'bandwith/packets-out':('packets', str(self.stranzasOut))
+                        'bandwith/packets-in':('packets', str(self.stanzasIn)),
+                        'bandwith/packets-out':('packets', str(self.stanzasOut))
                         }
                     for i in r:
                         name=i.get('name')
@@ -563,7 +564,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     u.readData()
                 except:
                     #logging.info("registration: cant read data. possible new user")
-                    u.config={}
+                    #u.config={}
+                    pass
                 u.email=email
                 u.password=pw
                 u.cookies={}
@@ -610,7 +612,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             pass
         else:
             if (len(iq)):
-                logging.warning("not implemented: %s -> %s\t%s"%(src,dest,etree.tostring(iq[0])))
+                if ('error' in iq[0].tag):
+                    for i in iq[0]:
+                        nsl=i.tag.find('}')
+                        tagname=i.tag[nsl+1:]
+                        logging.warning ("error stanza '%s' %s -> %s"%(tagname, src,dest))
+                    return
+                else:
+                    logging.warning("not implemented: %s -> %s\t%s"%(src,dest,etree.tostring(iq[0])))
             else:
                 if (src==dest):
                     logging.info ('keepalive received')
@@ -789,13 +798,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         """
         bjid=gen.bareJid(jid)
         if (not self.hasUser(bjid)):
-            #TODO error stranza
-            logging.warning("unauthorised vcard request. TODO error stranza")
             return
         card=self.users[bjid].vclient.getVcard(v_id, self.show_avatars)
         if (not card):
             logging.warning('can\'t get vcard: id%s -> %s'%(v_id,jid))
-            #FIXME error stranza
             return
         ans=createElement("iq",{'type':'result','to':jid,'from':"%s@%s"%(v_id,self.jid),'id':iq_id})
         vc=addChild(ans,'vCard','vcard-temp')
@@ -884,14 +890,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #print msg
         self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,gen.unescape(msg["text"]),msg["title"])
 
-    #def submitMessage(self,jid,v_id,body,title):
-        ##log.msg((jid,v_id,body,title))
-        #bjid=jid
-        #try:
-            #self.users[bjid].vclient.sendMessage(to_id=v_id,body=body,title=title)
-        #except:
-            #print "submit failed"
-
     def updateStatus(self, bjid, text):
         """
         update site stuse if enabled
@@ -912,6 +910,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             if self.users[bjid].state==2:
                 return 1
             if self.users[bjid].state==4:
+                #logging.warning('state=4')
                 try:
                     self.users[bjid].pool.stop()
                 except:
@@ -926,41 +925,64 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #print "addRes"
         bjid=gen.bareJid(jid)
         #if (self.hasUser(bjid)==0):
-        self.usrLock.acquire()
+        #logging.warning('acq')
+
+        if (not self.usrLock.acquire(False)):
+            #logging.warning('abrt')
+            return
+        #logging.warning('acq\'d')
         if (not self.users.has_key(bjid)):
             #print "creating user %s"
             self.users[bjid]=user(self,jid,captcha_key=captcha_key)
         self.usrLock.release()
+        #logging.warning('released')
         self.users[bjid].addResource(jid,prs)
 
-    def delResource(self,jid,to=None):
+    def delResource(self,jid, to=None,dbg=False):
         #print "delResource %s"%jid
         bjid=gen.bareJid(jid)
+        if (dbg):
+            logging.warning('start')
         if (self.hasUser(bjid)):
+            if (dbg):
+                logging.warning('st1')
             #TODO resource magic
-            self.users[bjid].delResource(jid)
+            #self.users[bjid].delResource(jid)
+            self.users[bjid].pool.call(self.users[bjid].delResource,jid=jid)
+        
+        if (dbg):
+            logging.warning('st2')
         if (not self.users[bjid].resources) or to==self.jid:
-            self.users[bjid].logout()
+            try:
+                self.users[bjid].pool.call(self.users[bjid].logout)
+            except:
+                logging.exception('')
+                # FIXME possible lock source!!!
+                # 
+                #self.users[bjid].logout()
+        if (dbg):
+            logging.warning('end')
+                
 
-    def onPresence(self, prs):
+    def onPresence(self, prs, dbg):
         """
         Act on the presence stanza that has just been received.
         """
         ptype=prs.get("type")
+        if (dbg):
+            #logging.warning('start (%s)'%ptype)
+            if (ptype=='unavailable'):
+                logging.warning(repr(tostring(prs)))
         src=prs.get("from")
         dest=prs.get("to")
-        logging.info("RECV: prs %s -> %s type=%s"%(src,dest,ptype))
+        #logging.info("RECV: prs %s -> %s type=%s"%(src,dest,ptype))
         bjid=gen.bareJid(src)
         if(ptype):
             if ptype=="unavailable" and self.hasUser(bjid) and (dest==self.jid or self.users[bjid].subscribed(dest) or not self.roster_management):
-                self.delResource(src,dest)
+                #if (dbg):
+                    #logging.warning('delres')
+                self.delResource(src,dest,dbg=dbg)
                 self.sendPresence(dest,src,t='unavailable')
-                
-                #pr=domish.Element(('',"presence"))
-                #pr["type"]="unavailable"
-                #pr["to"]=src
-                #pr["from"]=self.jid
-                #self.send(pr)
             elif(ptype=="subscribe"):
                 if self.hasUser(src):
                     self.users[bjid].subscribe(gen.bareJid(dest))
@@ -973,10 +995,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             elif(ptype=="unsubscribed"):
                 if self.hasUser(src):
                     self.users[bjid].onUnsubscribed(gen.bareJid(dest))
+            #if (dbg):
+                #logging.warning('done')
             return
         if (self.isActive or bjid==self.admin):
             self.addResource(src,prs)
-
+        #if (dbg):
+            #logging.warning('done')
     def updateFeed(self,jid,feed):
         #FIXME bjid?
         ret=""
@@ -1214,8 +1239,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         logging.warn("got signal %s"%sig)
         if (sig==signal.SIGUSR1):
             #print "caught SIGTUSR1, stopping transport"
-            #self.stopService()
-            self.alive=False
+            logging.warning('stopping service')
+            self.stopService(suspend=True)
+            #self.alive=False
         elif (sig==signal.SIGUSR2):
             logging.error('got SIGUSR2. executing hook...')
             try:

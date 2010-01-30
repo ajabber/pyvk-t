@@ -40,10 +40,11 @@ class cmdManager:
                 "bdays":checkBdays(trans),
                 "wall":sendWallMessageCmd(trans),
                 "getwall":getWall(trans),
-                "getroster": GetRoster(trans)}
+                "getroster": GetRoster(trans),
+                "refresh": RefreshData(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),
                 "wall":sendWallMessageCmd(trans),
-                #"friend":addDelFriendCmd(trans),
+                "friend":addDelFriendCmd(trans),
                 #FIXME 'friend' command
                 "getwall":getWall(trans)}
         self.adminCmdList={}
@@ -248,7 +249,6 @@ class cmdManager:
                 cmd=cmdList[node[4:]]
                 name=cmd.name
             except KeyError:
-                #FIXME error stranza?
                 name="unknown"
         addChild(q,'identity',attrs={"name":name,"category":"automation","type":"command-node"})
         addChild(q,"feature",attrs={'var':'http://jabber.org/protocol/commands'})
@@ -432,21 +432,17 @@ class sendWallMessageCmd(basicCommand):
             if (self.trans.hasUser(bjid)):
                 #print ("sending wall message...")
                 res=self.trans.users[bjid].vclient.sendWallMessage(to_id,args["text"])
-                if res==1:
-                    return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
-                elif res==2:
-                    return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка. Возможно запись на стену запрещена.'}
-                elif res!=0:
+                #if res==1:
+                    #return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка сети'}
+                #elif res==2:
+                    #return {"status":"completed","title":u"Отправка на стену",'message':u'Ошибка. Возможно запись на стену запрещена.'}
+                if res!=0:
                     return {"status":"completed","title":u"Отправка на стену",'message':u'Неизвестная ошибка.'}
-
-                #print ("done")
+                return {"status":"completed","title":u"Отправка на стену",'message':u'Сообщение отправлено'}
             else:
-                #print ("done")
                 return {"status":"completed","title":u"Отправка на стену",'message':u'Не получилось.\nСкорее всего, вам надо подключиться (команда .login)'}
-            #print ("done")
         else:
             return {"status":"executing","title":u"Отправка на стену","form":{"fields":{"text":('text-single',u'Сообщение','')}},'message':u'Введите текст сообщения для отправки на стену'}
-        return {"status":"completed","title":u"Отправка на стену",'message':u'Похоже, сообщение отправлено'}
 
 class addNoteCmd(basicCommand):
     name=u"Оставить новую заметку"
@@ -535,8 +531,43 @@ class addDelFriendCmd(basicCommand):
             user=self.trans.users[bjid]
         except KeyError:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
-        
-        if (len(args)!=1):
+        print args
+        #if (len(args)<1):
+        #TODO run in pool?
+        if (args.has_key("operation")):
+            # return values from userapi.com 
+            #retval={0:u'Текущий статус: Не друзья',
+                    #1:u'Заявка отправлена',
+                    #2:u'Текущий статус: Друзья',
+                    #3:u'Вы приняли заявку',
+                    #4:u'Вы отклонили заявку',
+                    #5:u'Текущий статус: Не друзья',
+                    #}            
+            if args["operation"]=='add':
+                add=True
+                # possible values: 2(accepted), 4(sent)
+                retval={4:u'Заявка отправлена',
+                        2:u'Вы приняли заявку',
+                        }            
+                user.vclient.addDeleteFriend(to_id,1)
+            elif args["operation"]=='del':
+                #possible values: 4(rejected), 5 (deleted), 0(cancelled)
+                retval={4:u'Вы отклонили заявку',
+                        5:u'Друг удален',
+                        0:u'Не друг'
+                        }            
+                
+                add=False
+            else:
+                return {"status":"completed","title":self.name,'message':u'Неизвестная операция: %s'%args["operation"]}
+            res=user.vclient.addDeleteFriend(to_id,add)
+            print res
+            try:
+                return {"status":"completed","title":self.name,'message':u'Выполнено (%s)'%(retval[res])}
+            except KeyError:
+                return {"status":"completed","title":self.name,'message':u'Выполнено (ok: %s)'%(res)}
+                
+        else:
             isFriend=self.trans.users[bjid].vclient.isFriend(to_id)
             fl={"operation":("text-single",u'Операция',"")}
             if (isFriend==0):
@@ -553,15 +584,7 @@ class addDelFriendCmd(basicCommand):
                 opt=u"<внутренняя ошибка транспорта>"
             return {"status":"executing","title":self.name,"form":{"fields":fl},
                     'message':u'Сейчас пользователь - %s\nДоступные операции: %s'%(st,opt)}
-        #TODO run in pool?
-        if (args.has_key("operation")):
-            if args["operation"]=='add':
-                user.vclient.addDeleteFriend(to_id,1)
-            elif args["operation"]=='del':
-                user.vclient.addDeleteFriend(to_id,0)
-            else:
-                return {"status":"completed","title":self.name,'message':u'Неизвестная операция: %s'%args["operation"]}
-            return {"status":"completed","title":self.name,'message':u'Вроде, готово.'}    
+            
         print args
         return {"status":"completed","title":self.name,'message':u'Ошибка'}
 
@@ -653,3 +676,23 @@ class GetRoster(basicCommand):
             return {"status":"completed","title":self.name,'message':msg}
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}        
+class RefreshData(basicCommand):
+    name=u'Обновить информацию'
+    args={}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans) 
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=gen.bareJid(jid)
+        if self.trans.hasUser(bjid):
+            user=self.trans.users[bjid]
+            for i in user.roster.keys():
+                self.trans.sendPresence(src=i,dest=user.bjid,t='unavailable')
+            user.tonline={}
+            user.refreshData()
+            #fl=user.vclient.getFriendList()
+            #user.sendFriendList(fl)
+            msg=u'Готово'
+            return {"status":"completed","title":self.name,'message':msg}
+        else:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}        
+    

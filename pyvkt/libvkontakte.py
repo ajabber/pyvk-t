@@ -69,7 +69,12 @@ class captchaError(Exception):
     def __str__(self):
         url='http://vkontakte.ru/captcha.php?s=1&sid=%s'%self.sid
         return 'got captcha request (jid = "%s", sid = "%s", url=%s )'%(repr(self.bjid),self.sid,url)
-            
+class UserapiCaptchaError (captchaError):
+    bjid=None
+    sid=None
+    def __init__ (self,sid=None):
+        self.sid=sid
+    pass
 class authError(Exception):
     def __init__(self):
         pass
@@ -77,12 +82,17 @@ class authError(Exception):
         return 'unexpected auth form'
 class UserapiSidError(Exception):
     pass
+class PrivacyError(Exception):
+    def __str__(self):
+        return 'privacy error'
 class HTTPError(Exception):
     def __init__(self,err,url):
         self.err=err
         self.url=url
     def __str__(self):
         return '%s [%s]'%(self.err,self.url)
+    pass
+class UserapiJsonError(Exception):
     pass
 class RedirectHandler(urllib2.HTTPRedirectHandler):
     #def http_error_301(self, req, fp, code, msg, headers):
@@ -114,6 +124,8 @@ class client():
     iterationsNumber = 999999
     # true if there is no loopInternal's in user queue
     tonline={}
+    # Данные запроса, вызвавшего капчу юзерапи
+    captchaRequestData={}
     #opener=None
     def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False,login=True):
         self.bytesIn = 0
@@ -121,18 +133,21 @@ class client():
         self.user=user
         self.dumpPath=conf.get("debug/dump_path")
         self.cachePath=conf.get('storage','cache')
-        self.cookPath=conf.get('storage','cookies')
+        #self.cookPath=conf.get('storage','cookies')
         self.keep_online=True
         self.resolve_links=True
         #FIXME delete 
         
-    def readCookies(self):
-        self.cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
-        try:
-            self.cjar.clear()
-            self.cjar.load()
-        except IOError,e :
-            logging.warning("cant read cookie (%s)"%str(e))
+    #def readCookies(self):
+        #self.cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
+        #try:
+            #self.cjar.clear()
+            #self.cjar.load()
+        #except IOError,e :
+            #logging.warning("cant read cookie (%s)"%str(e))
+        #self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
+    def initCookies(self):
+        self.cjar=cookielib.CookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
     def saveCookies(self):
         if self.user.getConfig("save_cookies"):
@@ -186,21 +201,7 @@ class client():
         for i in os.urandom(10):
             ret='%s%s'%(ret,ord(i)%100)
         return ret
-    def getInboxMessages(self,ts=None, num=10):
-        ret={}
-        if (ts):
-            d=self.userapiRequest(act='inbox', ts=ts)
-        else:
-            d=self.userapiRequest(act='inbox', to=num)
-            ret['ts']=d['h']
-            ret['messages']=[]
-            for i in d['d']:
-                m={}
-                m['id']=i[0]
-                m['text']=i[2][0].replace('<br>','\n')
-                m['from']=i[3][0]
-                ret['messages'].append(m)
-        return ret
+
             
         
     def userapiLogin(self,email,passw,captcha_sid=None, captcha_key=None):
@@ -291,12 +292,12 @@ class client():
     def logout(self):
         #self.client.usersOffline(self.bjid,self.onlineList)
         self.onlineList={}
-        if not self.user.getConfig("save_cookies"):
-            self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
-            try:
-                os.unlink("%s/%s"%(self.cookPath,self.bjid))
-            except:
-                pass
+        #if not self.user.getConfig("save_cookies"):
+            #self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
+            #try:
+                #os.unlink("%s/%s"%(self.cookPath,self.bjid))
+            #except:
+                #pass
         #print "%s: logout"%self.bjid
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmpvnoq").decode("cp1251").strip()
@@ -438,6 +439,7 @@ class client():
         3   - no data
         -1  - unknown error
         """
+        return self.sendMessage(v_id,text,wall=True)
         if (v_id==0):
             v_id=self.v_id
         if not text:
@@ -827,154 +829,56 @@ class client():
         res=self.setStatus_api(text,ts)
         if res:
             return res
-        page = self.getHttpPage("http://pda.vkontakte.ru/status")
-        if not page:
-            return None
-        dom=xml.dom.minidom.parseString(page)
-        fields=dom.getElementsByTagName("input")
-        fields=filter(lambda x:x.getAttribute("name")=='activityhash',fields)
-        if (len(fields)==0):
-            print "setstatus: cant find fields\nFIXME need page check"
-            return 0
-        hashfield=filter(lambda x:x.getAttribute("name")=='activityhash',fields)[0]
-        ahash=hashfield.getAttribute("value")
-        #if (hashfield==None):
-            #return
-        if text:
-            dat={'activityhash':ahash,'setactivity':text.encode("utf-8")}
-            res=self.getHttpPage("http://pda.vkontakte.ru/setstatus?pda=1",urlencode(dat))
+        if (text):
+            r=self.userapiRequest(act='set_activity', text=text)
         else:
-            dat={'activityhash':ahash,'clearactivity':"1"}
-            res=self.getHttpPage("http://vkontakte.ru/profile.php?",urlencode(dat))
-        if not res:
+            r=self.userapiRequest(act='clear_activity')
+        if (r['ok']==1):
             return 1
+        else:
+            return 0
 
-    def getMessage(self,msgid):
-        """
-        retrieves message from the server
-        """
-        #print "getmessage %s started"%msgid
-        page =self.getHttpPage("http://pda.vkontakte.ru/letter%s?"%msgid)
-        #print page
-        if not page:
-            return {"text":"<internal error: can't get message http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
-        try:
-            dom = xml.dom.minidom.parseString(page)
-            form=dom.getElementsByTagName("form")[0]
-        except:
-            print_exc()
-            self.dumpString(page,"msg-no-form")
-            return {"text":"<internal error: can't get message. http://vkontakte.ru/mail.php?act=show&id=%s >"%msgid,"from":"error","title":""}
-
+    def getInboxMessages(self,ts=None, num=10):
         ret={}
-        #print form.toxml()
-        links=form.getElementsByTagName("span")
-        ret["from"]=form.getElementsByTagName("a")[0].getAttribute("href")[2:]
-        tspan=form.getElementsByTagName("span")[3]
-        k=tspan.nextSibling
-        ret["title"]=k.data
-        msg=""
-        k=k.nextSibling
-
-        while(k.nodeName!="span"):
-            if (k.nodeType==xml.dom.Node.TEXT_NODE):
-                msg="%s%s"%(msg,k.data)
-            else:
-                #print k
-                msg="%s%s"%(msg,k.toxml())
-            k=k.nextSibling
-        msg=msg.replace("<br/>","\n")[6:-6]
-        ret["text"]=msg
+        if (ts):
+            d=self.userapiRequest(act='inbox', ts=ts)
+        else:
+            d=self.userapiRequest(act='inbox', to=num)
+            ret['ts']=d['h']
+            ret['messages']=[]
+            for i in d['d']:
+                m={}
+                m['id']=i[0]
+                m['text']=i[2][0].replace('<br>','\n')
+                m['from']=i[3][0]
+                ret['messages'].append(m)
         return ret
-    def sendMessage_legacy(self,to_id,body,title="[null]"):
-        """
-        Sends message through website
-        
-        Return value:
-        0   - success
-
-        1   - http error
-        2   - too fast sending
-        -1  - unknown error
-        """
-        #prs=chasGetter()
-        page = self.getHttpPage("http://pda.vkontakte.ru/","act=write&to=%s"%to_id)
-        if not page:
-            return 1
+    def sendMessage(self,to_id,body,title='', wall=False):
+        if (wall):
+            a='wall'
+        else:
+            a='message'
         try:
-            bs=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html")
-            chas=bs.find(name="input",attrs={"name":"chas"})["value"]
-        except:
-            print "SendMessage_legacy: unknown error.. saving page.."
-            self.dumpString(page,"send_chas")
-        if (type(body)==unicode):
-            tbody=body.encode("utf-8")
-        else:
-            tbody=body
-        if (type(title)==unicode):
-            ttitle=title.encode("utf-8")
-        else:
-            ttitle=title
-        data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
-        print page
-        if not page:
+            d=self.userapiRequest(act=a, to=0)
+            ts=d['h']
+            #print d
+            res=self.userapiRequest(act='add_%s'%a, id=to_id, message=body.encode('utf-8'), ts=ts)
+        except HTTPError:
             return 1
-        if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
+        r=res.get('ok',0)
+        if (r==1):
+            print 'ok'
             return 0
-        elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
-            print "too fast sending messages"
-            return 2
-        print "unknown error"
+        if r==-2:
+            raise captchaError()
+        if (r==-3):
+            raise PrivacyError()
+        if r==-1:
+            raise UserapiSidError()
+        logging.warning('unknown userapi error code: %s'%r)
         return -1
-
-    def sendMessage(self,to_id,body,title="[null]"):
-        """
-        Sends message through website
-        
-        Return value:
-        0   - success
-        1   - http error
-        2   - too fast sending
-        -1  - unknown error
-        """
-        page = self.getHttpPage("http://pda.vkontakte.ru/?act=write&to=%s"%to_id)
-        #print page
-        if not page:
-            return 1
-        dom = xml.dom.minidom.parseString(page)
-        #print dom.toxml()
-        inputs=dom.getElementsByTagName("input")
-        c_input=filter(lambda x:x.getAttribute("name")=='chas',inputs)[0]
-        chas=c_input.getAttribute("value")
-        
-        #inputs=dom.getElementsByTagName("postfield")
-        #c_input=filter(lambda x:x.getAttribute("name")=='chas',inputs)[0]
-        #chas=c_input.getAttribute("value")
-        if (type(body)==unicode):
-            tbody=body.encode("utf-8")
-        else:
-            tbody=body
-        if (type(title)==unicode):
-            ttitle=title.encode("utf-8")
-        else:
-            ttitle=title
-
-        data={"to_id":to_id,"title":ttitle,"message":tbody,"chas":chas,"to_reply":0}
-        #print data
-        page=self.getHttpPage("http://pda.vkontakte.ru/mailsent?pda=1",urlencode(data))
-        #print page
-        if not page:
-            print "Sending message: HTTP Error"
-            return 1
-        if (page.find('<div id="msg">Сообщение отправлено.</div>')!=-1):
-            return 0
-        elif (page.find('Вы попытались загрузить более одной однотипной страницы в секунду')!=-1):
-            print "Sending message: too fast sending messages"
-            return 2
-        print "Sending message: unknown error"
-        return -1
-    def getFriendList2(self, v_id=0):
+              
+    def getFriendList(self, v_id=0):
         if (v_id==0):
             v_id=self.v_id
         fl=self.userapiRequest(act='friends',id=v_id)
@@ -986,7 +890,7 @@ class client():
             except IndexError:
                 ret[i[0]]={'first':fn[0]}
         return ret
-    def getFriendList(self):
+    def getFriendList_legacy(self):
         try:
             return self.getFriendList2()
         except:
@@ -1008,27 +912,20 @@ class client():
         except:
             print_exc()
             return -1
-        #print dat["isf"]
+        
+        print dat
         if (dat["isf"]):
             return 0
         if (dat["isi"]):
             return 2
         return 1
-        #print dat["isi"]
-        page = self.getHttpPage("http://pda.vkontakte.ru/id%s"%v_id)
-        #print page
-        if not page: 
-            return -1
-        if (page.find('<div id="error">')!=-1):
-            #hidden page
-            return 1
-        if (page.find('<a href="/addfriend%s"'%v_id)==-1):
-            return 0
-        if (page.find('<a href="/deletefriend%s"'%v_id)==-1):
-            return 1
-        return 2
-
     def addDeleteFriend(self,v_id,isAdd):
+        if (isAdd):
+            act='add_friend'
+        else:
+            act='del_friend'
+        res=self.userapiRequest(act=act,id=v_id)
+        return res['ok']
         if (isAdd):
             page = self.getHttpPage("http://pda.vkontakte.ru/addfriend%s"%v_id)
             if page:
@@ -1050,12 +947,6 @@ class client():
         except:
             pass
         return -1
-        page=self.getHttpPage("http://vkontakte.ru/feed2.php")
-        if (not page):
-            return -1
-        if (page=='{"user": {"id": -1}}' or page[0]!='{'):
-            return 1
-        return 0
 
     def dummyRequest(self):
         """ request that means nothing"""
@@ -1118,7 +1009,7 @@ class client():
                     if (ev["type"]=="status"):
                         print td[1]
                         return
-    def getStatusList(self):
+    def getStatusList_legacy(self):
         try:
             return self.getStatusList2()
         except HTTPError,e:
@@ -1177,7 +1068,7 @@ class client():
                             ret[v_id]=gen.unescape(fe.data.encode("utf-8"))
         #print "end"
         return ret
-    def getStatusList2(self):
+    def getStatusList(self):
         sl=self.userapiRequest(act='updates_activity',to='50')
         sl=sl['d']
         if (not sl):
@@ -1355,6 +1246,8 @@ class client():
                 print "id%s -> id%s: %s '%s'"%(snd[0],rcv[0],txt[0],txt[2])
             except:
                 print "id%s -> id%s: '%s'"%(snd[0],rcv[0],txt[0])
+    def enterUserapiCaptcha(self, ck):
+        self.userapiRequest(fccode=ck,**self.captchaRequestData)
     def userapiRequest(self,**kw):
         #import simplejson as json
         nkw=kw
@@ -1366,9 +1259,14 @@ class client():
             #nkw['id']=nkv['v_id']
             #del nkv['v_id']
         url='http://userapi.com/data?'
-        #for k in nkw:
-        #    url="%s%s=%s&"%(url,k,nkw[k])
-        #print url
+        d=''
+        for k in nkw:
+            try:
+                v=str(nkw[k])
+            except UnicodeEncodeError:
+                v=nkw[k].encode('utf-8')
+            d="%s%s=%s&"%(d,k,urllib.quote(v))
+        url+=d
         dat=urlencode(nkw)
         try:
             page=self.getHttpPage(url,dat)
@@ -1376,7 +1274,11 @@ class client():
             raise HTTPError (e.err,'userapi: %s'%str(kw))
         #print page
         if (page=='{"ok": -2}'):
-            raise captchaError
+            cs=self.genCaptchaSid()
+            self.captchaRequestData=nkw
+            self.captchaRequestData[fcsid]=cs
+
+            raise UserapiCaptchaError(nkw)
         try:
             page=page.decode('utf-8')
         except:
@@ -1397,7 +1299,8 @@ class client():
                 ret= demjson.decode(page,strict=False)
             except Exception,e:
                 logging.error("userapi failed\n'%s'\n%s"%(repr(page),str(e)))
-                raise e
+                raise UserapiJsonError
+                #raise e
             #sr=re.search(',"fro":{.*?}',page)
             #page=page[:sr.start()]+page[sr.end():]
             #sr=re.search(',"frm":{.*?}',page)

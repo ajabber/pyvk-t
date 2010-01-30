@@ -43,6 +43,7 @@ def createReply(iq,t='result'):
     ret.set('type',t)
     return ret
 
+
 if not hasattr(socket, 'create_connection'):
     def connect_socket(address):
         """Connect to *address* and return the socket object.
@@ -70,14 +71,17 @@ if not hasattr(socket, 'create_connection'):
 else:
     connect_socket = socket.create_connection
 
+newLoop=True
 class xmlstream:
     "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
     connFailure=False
     fixNs=False
-    stranzasIn=0
-    stranzasOut=0
+    stanzasIn=0
+    stanzasOut=0
     enableDump=False
+    sendHistory=['']*10
+    loopNames=[None]
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
@@ -97,7 +101,7 @@ class xmlstream:
 	sock=connect_socket((host,port))
         #FIXME connecting
         sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%self.jid)
-        fil=sock.makefile(bufsize=1)
+        #fil=sock.makefile(bufsize=1)
         rep=sock.recv(1000)
         rep=rep.replace("<?xml version='1.0'?>", "") # Replacing sock.recv(len("<?xml version='1.0'?>"))
         logging.debug('Received server auth answer: %s'%rep)
@@ -107,7 +111,10 @@ class xmlstream:
         hsh=hashlib.sha1(str(sid)+secret).hexdigest()
         resp="<handshake>%s</handshake>"%hsh
         sock.send(resp)
-        sock.settimeout(0)
+        if (0):
+            sock.settimeout(None)
+        else:
+            sock.settimeout(3)
         self.sock=sock
         handshake_answer=self.getPacket(True)
         logging.debug('Received handshake answer: %s'%handshake_answer)
@@ -128,6 +135,7 @@ class xmlstream:
         while (c!='>'):
             try:
                 if (self.connFailure and not ignoreFail):
+                    logging.error('buffer:\n%s'%(''.join(buf)))
                     raise Exception('connection failure')
                 c=self.sock.recv(1)
                 buf.append(c)
@@ -145,6 +153,7 @@ class xmlstream:
                 else:
                     self.connectionFailure=True
                     logging.exception('recvLoop failure')
+                    logging.error('buffer:\n%s'%(''.join(buf)))
                     raise
         sn=''.join(buf)
         if (sn[-2:]=='/>'):
@@ -160,7 +169,8 @@ class xmlstream:
                 c=None
                 while(c!='>'):
                     if (self.connFailure and not ignoreFail):
-                        raise Exception('connection failure')
+                        logging.error('buffer:\n%s%s'%(es,''.join(buf)))
+                        raise Exception('connection failure')                
                     c=self.sock.recv(1)
                     buf.append(c)
                 sn=''.join(buf)
@@ -179,6 +189,7 @@ class xmlstream:
                 else:
                     self.connectionFalure=True
                     logging.exception('recvLoop failure')
+                    logging.error('buffer:\n%s%s'%(es,''.join(buf)))
                     raise
         if (self.enableDump):
             logging.warning("received %s"%sn)
@@ -198,11 +209,109 @@ class xmlstream:
                 logging.warning ('recvLoop: respawned')
                 continue
             try:
-                self.recvQueue.put(etree.fromstring(s))
-                self.stranzasIn+=1
+                #p=etree.fromstring(s)
+                #if ('stream' in p.tag):
+                    #logging.warning('stream stanza: %s\n'%tostring(p))
+                self.recvQueue.put_nowait(s)
+                self.stanzasIn+=1
             except:
                 logging.error("queue error\n"+format_exc())
                 #print_exc()
+    def waitForReconnect(self):
+        if(self.connFailure):
+            logging.warning('wfr: lock')
+            self.connected.acquire()
+            self.connected.wait()
+            self.connected.release()
+            logging.warning ('wfr: respawn')
+    
+    def recvLoop2(self):
+        buf=''
+        tagname=None
+        skip=0
+        while (1):
+            try:
+                try:
+                    #print 'recv()'
+                    tb=self.sock.recv(1024)
+                except socket.timeout:
+                    #logging.warning('socket timeout')
+                    tb=''
+                    #continue
+                except socket.error,e:
+                    if (e.errno == errno.EAGAIN):
+                        logging.warning('eagain')
+                        tb=''
+                        #time.sleep(1)
+                        #continue
+                    else:
+                        buf=''
+                        self.connectionFailure=True
+                        logging.exception('recvLoop failure')
+                        logging.critical("recvLoop: stream error\n"+str(e))
+                        self.connFailure=True
+                        self.waitForReconnect()
+                        #self.connected.acquire()
+                        #self.connected.wait()
+                        #self.connected.release()
+                        #logging.warning ('recvLoop: respawned')
+                        continue
+                if (len(tb)==0):
+                    #logging.warning('empty')
+                    if (self.connFailure):
+                        logging.warning('socket failure')
+                        buf=''
+                        self.waitForReconnect()
+
+                    time.sleep(1)
+                buf+=tb
+                if (len(buf)>50000):
+                    logging.warning('buffer too big: %s'%len(buf))
+                    logging.warning('tagname: %s'%repr(tagname))
+                while (1):
+                    #begin position
+                    bp=buf.find('<')
+                    if (bp==-1):
+                        break
+                    # end of tagname position
+                    tep=buf.find(' ',bp)
+                    tep2=buf.find('>',bp)
+                    if (tep2<tep and tep2!=-1):
+                        tep=tep2
+
+                    tagname=buf[bp+1:tep]
+                    if (tagname.find('/')!=-1):
+                        logging.error('bad tag: %s\nbuffer:%s'%(repr(tagname),repr(buf)))
+                        buf=buf[tep:]
+                        logging.warning('trying to re-use buffer')
+                        continue
+                    #print 'buf: ',buf[bp:bp+100]
+                    #print 'tagname ',tagname
+                    endtag='</%s>'%tagname
+                    #print endtag
+                    etp=buf.find(endtag,tep)
+                    if (etp!=-1):
+                        sep=buf.find('/>',tep,etp)
+                        if (sep!=-1 and buf.find('>',tep,sep)==-1):
+                            self.recvQueue.put_nowait(buf[bp:sep+2])
+                            #print 'stanza: '+repr(buf[bp:sep+2])
+                            buf=buf[sep+2:]
+                            continue
+                        #print 'stanza: '+repr(buf[bp:etp+len(endtag)])
+                        self.recvQueue.put_nowait(buf[bp:etp+len(endtag)])
+                        buf=buf[etp+len(endtag):]
+                        continue
+                    else:
+                        sep=buf.find('/>',tep)
+                        if (sep!=-1 and buf.find('>',tep,sep)==-1):
+                            self.recvQueue.put_nowait(buf[bp:sep+2])
+                            #print 'stanza: '+repr(buf[bp:sep+2])
+                            buf=buf[sep+2:]
+                            continue
+                    break
+            except:
+                logging.exception('')
+                    
     def sendLoop(self):
         while(1):
             try:
@@ -221,7 +330,9 @@ class xmlstream:
                 logging.debug("sending %s"%s.decode('utf-8'))
                 try:
                     self.sock.send(s)
-                    self.stranzasOut+=1
+                    self.stanzasOut+=1
+                    self.sendHistory.insert(0,s)
+                    self.sendHistory.pop()
                 except Exception, e:
                     logging.critical("send loop: stream error\n"+str(e))
                     self.connFailure=True
@@ -230,19 +341,21 @@ class xmlstream:
                     self.connected.release()
                     logging.warning("send loop respawned")
                     self.send(task)
-                    #try:
-                        #self.sock.close()
-                        #del self.sock
-                    #except:
-                        #logging.exception('')
-                    #self.connect(self.host,self.port,self.secret)
-                    
+                   
     def send(self,packet):
         #TODO check for debug mode 
         if (fixNs):
             packet.tag='{jabber:client}%s'%packet.tag
         st=extract_stack(limit=2)
-        self.sendQueue.put((packet,st))
+        try:
+            self.sendQueue.put_nowait((packet,st))
+        except queue.Full:
+            logging.error('recvQueue full')
+            t=packet.tag
+            s=packet.get('from')
+            d=packet.get('to')
+            logging.error('dropped stanza: %s %s->%s'%(t,s,d))
+            
     def revert(self,packet):
         f=packet.get("from")
         t=packet.get("to")
@@ -257,57 +370,106 @@ class xmlstream:
         ret.set("to",iq.get("from"))
         ret.set("from",iq.get("to"))
         ret.set("id",iq.get("id"))
-    def loop(self):
-        while(self.alive):
+    def printHistory(self):
+        sl='\n'.join(self.sendHistory)
+        logging.warning('last sent stanzas: \n%s'%sl)
+    def loop(self,loopno=0):
+        while(self.alive and loopno < len(self.loops)):
             try:
-                st=self.recvQueue.get(True,100)
+                st=self.recvQueue.get(True,10)
+                st=etree.fromstring(st)
             except Empty:
                 pass
+            except etree.XMLSyntaxError,e:
+                if 'stream:error' in st:
+                    logging.error('stream error stanza: %s'%repr(st))
+                    if ('xml-not-well-formed' in st):
+                        self.printHistory()
+                else:
+                    logging.error('bad xml: '+repr(st))
             else:
                 if (st.get("to").find(self.jid)!=-1):
                     try:
-                        self.handlePacket(st)
+                        self.handlePacket(st,dbg=False)
                     except:
                         logging.error("unhandled exception:\n"+format_exc().decode("utf-8"))
+        logging.warning('loop %s stopped'%loopno)
+    def addLoop(self):
+        i=len(self.loops)
+        logging.warning('starting loop %s'%i)
+        t=Thread(target=self.loop,name="mainloop-%s"%i, kwargs={'loopno':i})
+        t.daemon=True
+        self.loops.append(t)
+        t.start()
 
+        return len(self.loops)
+    def delLoop(self):
+        del self.loops[len(self.loops)-1]
+        logging.warning('stopping loop: len(loops)=%s'%len(self.loops))
+        return len(self.loops)
     def main(self):
-        self.rt=Thread(target=self.recvLoop,name='receiver')
+        if (newLoop):
+            self.rt=Thread(target=self.recvLoop2,name='receiver')
+        else:
+            self.rt=Thread(target=self.recvLoop,name='receiver')
         self.rt.daemon=True
         self.rt.start()
         self.st=Thread(target=self.sendLoop,name='sender')
         self.st.daemon=True
         self.st.start()
         self.loops=[]
-        for i in range(1):
-            logging.info("starting mainloop-%s"%i)
-            t=Thread(target=self.loop,name="mainloop-%s"%i)
+        for i in range(3):
+            self.addLoop()
+            #logging.info("starting mainloop-%s"%i)
+            #t=Thread(target=self.loop,name="mainloop-%s"%i)
             
-            t.daemon=True
-            t.start()
-            self.loops.append(t)
+            #t.daemon=True
+            #t.start()
+            #self.loops.append(t)
         while(self.alive):
             try:
-                try:
-                    st=self.recvQueue.get(True,10)
-                except Empty:
-                    if (self.connFailure):
-                        logging.error('connection failure detected. Trying to reconnect')
+                if (self.connFailure):
+                    logging.error('connection failure detected. Trying to reconnect')
+                    try:
                         self.sock.close()
                         del self.sock
-                        if self.connect(host=self.host, port=self.port, secret=self.secret):
-                            logging.error('connection established siccessfully')
-                        else:
-                            logging.error('can\'t re-establish connection. aborting.')
-                            return
-                            # maybe, sys.exit()?
+                    except AttributeError:
+                        pass
+                    logging.warning('waiting for recvloop to die...')
+                    time.sleep(5)
+                    if self.connect(host=self.host, port=self.port, secret=self.secret):
+                        logging.error('connection established successfully')
+                    else:
+                        logging.error('can\'t re-establish connection. aborting.')
+                        return
+                        # maybe, sys.exit()?
+                else:
+                    #logging.warning('socket OK')
+                    pass
+                try:
+                    st=self.recvQueue.get(True,10)
+                    st=etree.fromstring(st)
+                    #st=etree.fromstring(self.recvQueue.get(True,10))
+                except etree.XMLSyntaxError,e:
+                    if 'stream:error' in st:
+                        logging.error('stream error stanza: %s'%repr(st))
+                        if ('xml-not-well-formed' in st):
+                            self.printHistory()
+                    else:
+                        logging.error('bad xml: '+repr(st))
+                except Empty:
                     pass
                 else:
+                    #logging.warning('invoking handler (tag: %s)'%repr(st.tag))
+                    if ('stream' in st.tag):
+                        logging.warning('stream stanza: %s'%repr(tostring(st)))
                     if (st.get("to").find(self.jid)!=-1):
                         try:
-                            self.handlePacket(st)
+                            self.handlePacket(st,dbg=False)
                         except:
                             logging.error("unhandled exception:\n"+format_exc().decode("utf-8"))
                             #logging.exception()
+                    #logging.warning('handler finished')
             except KeyboardInterrupt:
                 logging.error("comstream: caught interrupt")
                 if self.kbInterrupt():
