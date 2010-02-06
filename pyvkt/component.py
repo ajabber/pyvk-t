@@ -1021,7 +1021,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         ret=""
         try:
             if (feed["messages"]["count"]) and feed["messages"]["items"]:
-                idlist=feed ["messages"]["items"].keys()
+                idlist=[int (i) for i in feed ["messages"]["items"].keys()]
                 inmsgs=user.vclient.getInboxMessages(num=100)
                 ml=[i for i in inmsgs['messages'] if int(i['id']) in idlist]
                 for i in ml:
