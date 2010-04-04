@@ -3,12 +3,13 @@ import socket,errno,hashlib
 #from xml.dom import minidom
 #from xml.dom.minidom import Element
 from lxml import etree
-import threading
+import threading,time
 from threading import Thread
 from Queue import Queue,Empty
 from traceback import format_exc,extract_stack,format_list
 import logging,time
 import pyvkt.config as conf
+from pyvkt.spikes import counter
 fixNs=False
 def addChild(node,name,ns=None,attrs=None):
     if(ns):
@@ -82,6 +83,7 @@ class xmlstream:
     enableDump=False
     sendHistory=['']*10
     loopNames=[None]
+    slowThreshold=10
     def __init__(self,jid):
         self.jid=jid
         self.sendQueue=Queue()
@@ -92,13 +94,13 @@ class xmlstream:
             fixNs=True
         #print fil.read(10)
         #d=minidom.parseString("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:component:accept' id='1002154109' from='ratatoskr' />")
-
+        self.counter=counter()
     def connect(self,host,port,secret):
         self.host=host
         self.port=port
         self.secret=secret
         #sock=socket.create_connection((host,port))
-	sock=connect_socket((host,port))
+        sock=connect_socket((host,port))
         #FIXME connecting
         sock.send("<stream:stream xmlns='jabber:component:accept' xmlns:stream='http://etherx.jabber.org/streams' to='%s'>"%self.jid)
         #fil=sock.makefile(bufsize=1)
@@ -232,12 +234,10 @@ class xmlstream:
         while (1):
             try:
                 try:
-                    #print 'recv()'
                     tb=self.sock.recv(1024)
-                except socket.timeout:
-                    #logging.warning('socket timeout')
+                except (socket.timeout, AttributeError):
+                    # timeout or missing sock object
                     tb=''
-                    #continue
                 except socket.error,e:
                     if (e.errno == errno.EAGAIN):
                         logging.warning('eagain')
@@ -251,18 +251,14 @@ class xmlstream:
                         logging.critical("recvLoop: stream error\n"+str(e))
                         self.connFailure=True
                         self.waitForReconnect()
-                        #self.connected.acquire()
-                        #self.connected.wait()
-                        #self.connected.release()
-                        #logging.warning ('recvLoop: respawned')
                         continue
                 if (len(tb)==0):
-                    #logging.warning('empty')
+                    if (len(buf)):
+                        logging.warning('tb empty. buf length: %s'%len(buf))
                     if (self.connFailure):
                         logging.warning('socket failure')
                         buf=''
                         self.waitForReconnect()
-
                     time.sleep(1)
                 buf+=tb
                 if (len(buf)>50000):
@@ -285,19 +281,14 @@ class xmlstream:
                         buf=buf[tep:]
                         logging.warning('trying to re-use buffer')
                         continue
-                    #print 'buf: ',buf[bp:bp+100]
-                    #print 'tagname ',tagname
                     endtag='</%s>'%tagname
-                    #print endtag
                     etp=buf.find(endtag,tep)
                     if (etp!=-1):
                         sep=buf.find('/>',tep,etp)
                         if (sep!=-1 and buf.find('>',tep,sep)==-1):
                             self.recvQueue.put_nowait(buf[bp:sep+2])
-                            #print 'stanza: '+repr(buf[bp:sep+2])
                             buf=buf[sep+2:]
                             continue
-                        #print 'stanza: '+repr(buf[bp:etp+len(endtag)])
                         self.recvQueue.put_nowait(buf[bp:etp+len(endtag)])
                         buf=buf[etp+len(endtag):]
                         continue
@@ -305,7 +296,6 @@ class xmlstream:
                         sep=buf.find('/>',tep)
                         if (sep!=-1 and buf.find('>',tep,sep)==-1):
                             self.recvQueue.put_nowait(buf[bp:sep+2])
-                            #print 'stanza: '+repr(buf[bp:sep+2])
                             buf=buf[sep+2:]
                             continue
                     break
@@ -377,6 +367,7 @@ class xmlstream:
         while(self.alive and loopno < len(self.loops)):
             try:
                 st=self.recvQueue.get(True,10)
+                self.stanzasIn+=1
                 st=etree.fromstring(st)
             except Empty:
                 pass
@@ -386,11 +377,15 @@ class xmlstream:
                     if ('xml-not-well-formed' in st):
                         self.printHistory()
                 else:
-                    logging.error('bad xml: '+repr(st))
+                    logging.error('bad xml: %s'%(repr(st)[:300]))
             else:
                 if (st.get("to").find(self.jid)!=-1):
                     try:
+                        t=time.time()
                         self.handlePacket(st,dbg=False)
+                        t2=time.time()
+                        if (t2-t>self.slowThreshold):
+                            logging.warning('sooo slooooow (%s):\n%s'%(t2-t,etree.tostring(st)))
                     except:
                         logging.error("unhandled exception:\n"+format_exc().decode("utf-8"))
         logging.warning('loop %s stopped'%loopno)
@@ -418,7 +413,7 @@ class xmlstream:
         self.st.daemon=True
         self.st.start()
         self.loops=[]
-        for i in range(3):
+        for i in range(4):
             self.addLoop()
             #logging.info("starting mainloop-%s"%i)
             #t=Thread(target=self.loop,name="mainloop-%s"%i)
@@ -448,6 +443,7 @@ class xmlstream:
                     pass
                 try:
                     st=self.recvQueue.get(True,10)
+                    self.stanzasIn+=1
                     st=etree.fromstring(st)
                     #st=etree.fromstring(self.recvQueue.get(True,10))
                 except etree.XMLSyntaxError,e:
@@ -456,7 +452,7 @@ class xmlstream:
                         if ('xml-not-well-formed' in st):
                             self.printHistory()
                     else:
-                        logging.error('bad xml: '+repr(st))
+                        logging.error('bad xml: %s'%(repr(st)[:300]))
                 except Empty:
                     pass
                 else:
