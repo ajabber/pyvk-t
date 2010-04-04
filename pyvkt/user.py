@@ -43,6 +43,7 @@ class user:
     blocked=False
     refreshCount=0
     config={}
+    instanceReady=False
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -91,7 +92,8 @@ class user:
         #if had no resources before and not trying to login now
         if (not self.resources) and self.state==0:
             self.state=1
-            self.trans.sendPresence(self.trans.jid,self.bjid,t="probe")
+            # self.trans.sendPresence(self.trans.jid,self.bjid,t="probe") 
+            # ???
             self.login()
         #new status of a resource
         if jid in self.resources:
@@ -249,6 +251,13 @@ class user:
         #print "delres", self.resources
         if jid in self.resources:
             del self.resources[jid]
+        else:
+            #logging.warning('no changes. aborting.')
+            return
+        if (len(self.resources)==0):
+            self.logout()
+            return
+            
         p = self.getHighestPresence()
         if p:
             status=self.prsToVkStatus(p)
@@ -269,6 +278,7 @@ class user:
             logging.warning('login attempt from blocked user')
             self.trans.sendPresence(self.trans.jid,jid,status=u"ERROR: login/password mismatch.",show="unavailable")
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")
+            self.state=4
             return
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
         try:
@@ -280,7 +290,7 @@ class user:
                 ck=self.captcha_key
                 cs=self.captcha_sid
                 self.captcha_sid=None
-            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs, login=False)
+            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs)
             self.vclient.initCookies()
             #FIXME legacy cookies
             #if (self.cookies):
@@ -289,11 +299,6 @@ class user:
                 self.vclient.setCookie(name=n, val=v, site=d)
                 if (n=='remixsid'):
                     self.vclient.sid=v
-            #else:
-                #logging.warning('legacy cookies')
-                #for d,n,v in self.vclient.getCookies():
-                    #if (n=='remixsid'):
-                        #self.vclient.sid=v
             if (self.vclient.getSelfId()==-1):
                 self.vclient.login(email,pw,captcha_key=ck,captcha_sid=cs)
                 if (self.vclient.getSelfId()==-1):
@@ -328,6 +333,9 @@ class user:
             self.blocked=True
             self.state=4
             return
+        except:
+            logging.error("GREPME state=1 freeze")
+            self.state=4
         self.state=2
         self.trans.updateStatus(self.bjid,self.VkStatus)
         self.refreshData()
@@ -348,10 +356,12 @@ class user:
             txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
                 body=txt)
+            self.state=4
             return
         except UnregisteredError:
             logging.warning("login attempt from unregistered user %s"%self.bjid)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
+            self.state=4
             return
         self.pool.call(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
         
@@ -573,6 +583,9 @@ class user:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")
     def saveData(self):
+        if not (self.instanceReady):
+            logging.warning('tried to save() before read().')
+            return
         data={}
         try:
             ad={'email':unicode(self.email), 'password': unicode(self.password), 'captcha_sid':self.captcha_sid}
@@ -581,7 +594,8 @@ class user:
             logging.exception('')
         try:
             cook=self.vclient.getCookies()
-        except:
+        except Exception,e:
+            logging.warning('no cookies (%s)'%e)
             cook=self.cookies
         cd=[]
         for d,n,v in cook:
@@ -625,6 +639,7 @@ class user:
         cfile=open(fname,'w')
         cfile.write(j.encode(data).encode('utf-8'))
         cfile.close()
+        
         #logging.warning('json data saved')
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
@@ -661,6 +676,7 @@ class user:
             self.roster[j]=i
             #print i
         self.uapiStates=data['uapi_states']
+        self.instanceReady=True
     def sendProbe(self):
         for i in self.roster:
             if self.roster[i]['subscribed']:

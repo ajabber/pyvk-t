@@ -39,10 +39,10 @@ import re
 import base64,copy
 import ConfigParser,os,string
 from traceback import print_stack, print_exc,format_exc
-import logging
+import logging,time, pycurl
 import pyvkt.config as conf
 
-#import StringIO
+import StringIO
 
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
@@ -127,15 +127,22 @@ class client():
     # Данные запроса, вызвавшего капчу юзерапи
     captchaRequestData={}
     #opener=None
-    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False,login=True):
+    cookieStr=''
+    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False):
         self.bytesIn = 0
         self.bjid=jid
         self.user=user
         self.dumpPath=conf.get("debug/dump_path")
         self.cachePath=conf.get('storage','cache')
-        #self.cookPath=conf.get('storage','cookies')
         self.keep_online=True
         self.resolve_links=True
+        self.c=pycurl.Curl()
+        self.c.setopt(pycurl.NOSIGNAL,1)
+        self.c.setopt(pycurl.TIMEOUT,10)
+        self.c.setopt(pycurl.FOLLOWLOCATION, 0)
+        self.c.setopt(pycurl.COOKIELIST,str('ALL'))
+        self.c.setopt(pycurl.COOKIELIST,str('Set-Cookie: test=0; domain=eqx.su'))
+        #c.setopt(pycurl.MAXREDIRS, 5)
         #FIXME delete 
         
     #def readCookies(self):
@@ -149,6 +156,9 @@ class client():
     def initCookies(self):
         self.cjar=cookielib.CookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
+        self.cookieStr=''
+        self.c.setopt(pycurl.COOKIELIST,str('ALL'))
+        self.c.setopt(pycurl.COOKIE, '')
     def saveCookies(self):
         if self.user.getConfig("save_cookies"):
             try:
@@ -166,7 +176,11 @@ class client():
         path_specified=True, secure=False, expires=int(time.time()+1e7),
         discard=False, comment=None, comment_url=None, rest={}, rfc2109=False)
         self.cjar.set_cookie(c)
+        self.c.setopt(pycurl.COOKIELIST,str('Set-Cookie: %s=%s; domain=.%s'%(name,val,site)))
+        #self.cookieStr='%s %s=%s;'%(self.cookieStr,name,val)
     def getCookies(self):
+        if True:
+            return self.getCookies_curl()
         ret=[(i.domain[1:], i.name,i.value) for i in self.cjar]
         return ret
     def login(self,email,passw,captcha_sid=None, captcha_key=None):
@@ -189,7 +203,7 @@ class client():
             return
         authData={'vk':'1','email':email.encode('cp1251'), 'pass':passw.encode('cp1251')}
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
-        #print tpage
+        print tpage
         i=tpage.find("id='s' value='")
         i+=14
         p=tpage.find("'",i+1)
@@ -213,7 +227,7 @@ class client():
             d['fccode']=captcha_key
         print d
         dat=urllib.urlencode(d)
-        op=urllib2.build_opener(RedirectHandler())
+        op=urllib2.build_opener(RedirectHandler(),urllib2.ProxyHandler())
         url='http://login.userapi.com/auth?%s​'%dat
         req=urllib2.Request(url)
         print url
@@ -239,6 +253,28 @@ class client():
         print self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':self.sid})
 
         #print f
+    def getCookies_curl(self):
+        cl=self.c.getinfo(pycurl.INFO_COOKIELIST)
+        ret=[]
+        for i in cl:
+            vl=i.split('\t')
+            if (vl[0]!='unknown'):
+                ret.append((vl[0][1:],vl[5],vl[6]))
+        return ret
+    def getHttpPage_curl(self,url,params=None):
+        c=self.c
+        c.setopt(pycurl.URL,str(url))
+        if (type(params)==type({})):
+            params=urllib.urlencode(params)
+        if (params):
+            c.setopt(pycurl.POST,1)
+            c.setopt(pycurl.POSTFIELDS, params)
+        else:
+            c.setopt(pycurl.POST,0)
+        b = StringIO.StringIO()
+        c.setopt(pycurl.WRITEFUNCTION, b.write)
+        c.perform()
+        return b.getvalue()
     def getHttpPage(self,url,params=None,cjar=None, headers={}):
         """ get contents of web page
             returns u'' if some of errors took place
@@ -247,6 +283,8 @@ class client():
             #for i in params:
                 #if type(params[i]==unicode):
                     #params[i]=params[i].encode('utf-8')
+        st=time.time()
+        return self.getHttpPage_curl(url,params)
         if (type(params)==type({})):
             params=urllib.urlencode(params)
         if params:
@@ -278,6 +316,9 @@ class client():
         self.bytesIn += len(page)
         if (cjar):
             cjar.make_cookies(res,req)
+        dt=time.time()-st
+        if (dt>10):
+            logging.warning('slow http request [%4.2f]: %r'%(dt,url))
         return page
 
     def checkPage(self,page):
@@ -397,8 +438,7 @@ class client():
         try:
             return self.getHistory2(v_id)
         except:
-            print "userapi failed"
-            print_exc()
+            logging.exception('')
         page=self.getHttpPage("http://vkontakte.ru/mail.php","act=history&mid=%s"%v_id)
         if not page:
             return []
@@ -439,7 +479,10 @@ class client():
         3   - no data
         -1  - unknown error
         """
-        return self.sendMessage(v_id,text,wall=True)
+        try:
+            return self.sendMessage(v_id,text,wall=True)
+        except Exception,e:
+            logging.warning ('userapi request failed: %s'%e)
         if (v_id==0):
             v_id=self.v_id
         if not text:
@@ -837,21 +880,27 @@ class client():
             return 1
         else:
             return 0
-
-    def getInboxMessages(self,ts=None, num=10):
+    def getInboxMessages(self,ts=None, num=10, v_id=None):
         ret={}
-        if (ts):
-            d=self.userapiRequest(act='inbox', ts=ts)
+        if (v_id):
+            rd={'act':'message', 'id':v_id, 'to':num}
+            #d=self.userapiRequest(act='message', id=v_id, to=num)
         else:
-            d=self.userapiRequest(act='inbox', to=num)
-            ret['ts']=d['h']
-            ret['messages']=[]
-            for i in d['d']:
-                m={}
-                m['id']=i[0]
-                m['text']=i[2][0].replace('<br>','\n')
-                m['from']=i[3][0]
-                ret['messages'].append(m)
+            rd={'act':'inbox'}
+            if (ts):
+                rd['ts']=ts
+            else:
+                rd['to']=num
+        d=self.userapiRequest(**rd)
+        ret['ts']=d['h']
+        ret['messages']=[]
+        for i in d['d']:
+            m={}
+            m['id']=int(i[0])
+            m['text']=i[2][0].replace('<br>','\n')
+            m['from']=i[3][0]
+            m['to']=i[4][0]
+            ret['messages'].append(m)
         return ret
     def sendMessage(self,to_id,body,title='', wall=False):
         if (wall):
@@ -859,9 +908,9 @@ class client():
         else:
             a='message'
         try:
-            d=self.userapiRequest(act=a, to=0)
+            d=self.userapiRequest(act=a, to=0 )
             ts=d['h']
-            #print d
+            print d  
             res=self.userapiRequest(act='add_%s'%a, id=to_id, message=body.encode('utf-8'), ts=ts)
         except HTTPError:
             return 1
@@ -1298,7 +1347,10 @@ class client():
             try:
                 ret= demjson.decode(page,strict=False)
             except Exception,e:
-                logging.error("userapi failed\n'%s'\n%s"%(repr(page),str(e)))
+                if (len(page)==0):
+                    logging.error("userapi failed: empty string. act=%s"%kw.get('act'))
+                else:
+                    logging.error("userapi failed. act='%s'\t'%s'\n%s"%(kw.get('act'),repr(page),str(e)))
                 raise UserapiJsonError
                 #raise e
             #sr=re.search(',"fro":{.*?}',page)

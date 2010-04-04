@@ -44,49 +44,57 @@ class pseudoXml:
 class reqQueue(threading.Thread):
     #daemon=True
     last='not started'
+    lastTime=0
     def __init__(self,user,name=None):
         try:
-            threading.Thread.__init__(self,target=self.loop,name=name)
+            threading.Thread.__init__(self,target=self.loopWrapper,name=name)
         except UnicodeEncodeError:
             threading.Thread.__init__(self,target=self.loop,name="user_with_bad_jid")
         self.daemon=True
         self.user=user
-        self.queue=Queue.Queue(200)
+        self.queue=Queue.Queue(400)
         self.alive=1
         self.ptasks={}
-    def callInThread(self,foo,**kw):
-        print "deprecated callInThread"
-        print "this in NOT an ERROR!"
-        print_stack(limit=2)
-        self.call(foo,**kw)
     def call(self,foo,**kw):
         elem={"foo":foo,"args":kw,'stack':extract_stack()}
         try:
-            self.queue.put(elem,timeout=3)
+            self.queue.put(elem,block=False)
         except Queue.Full:
-            logging.error('pool[%s]: queue full! last task: %s, curr task: %s'%(self.name,self.last,repr(f)))
+            self.printFullError(foo)
             raise gen.QuietError()
     def defer(self,f,**kw):
         d=Deferred()
         elem={"foo":f,"args":kw,"deferred":d,'stack':extract_stack()}
         try:
-            self.queue.put(elem,timeout=3)
+            self.queue.put(elem,block=False)
         except Queue.Full:
-            logging.error('pool[%s]: queue full! last task: %s, curr task: %s'%(self.name,self.last,repr(f)))
+            self.printFullError(f)
             raise gen.QuietError()
         return d
+    def printFullError(self,ct):
+        t=time.time()-self.lastTime
+        
+        qs=self.queue.qsize()
+        logging.error('pool[%s]: queue full (%s)! timeout: %i \n*\t\tlast task: %80s, curr task: %80s'%(qs,self.name,t,self.last['foo'],repr(ct)))
+        
     def stop(self):
         self.alive=0
         self.call(self.dummy)
         self.user=None
     def dummy(self):
         return
-
+    def loopWrapper(self):
+        if 'eqx@eqx.su' in self.name:
+            l=self.loop
+            prof.runctx('l()',globals(), locals(), 'profile_%s'%time.time())
+        else:
+            self.loop()
     def loop(self):
         self.last='just started'
         while(self.alive):
             try:
                 elem=self.queue.get(block=True,timeout=10)
+                self.last=elem
             except Queue.Empty:
                 try:
                     self.user.trans
@@ -113,7 +121,11 @@ class reqQueue(threading.Thread):
                 last=repr(f)
                 args=elem["args"]
                 try:
+                    self.lastTime=time.time()
                     res=f(**args)
+                    dt=time.time()-self.lastTime
+                    if (dt>15):
+                        logging.warning('slow [%6.4f] task done: %s '%(dt,repr(f)))
                 except authFormError:
                     logging.warn("%s: got login form")
                     try:
@@ -151,7 +163,7 @@ class reqQueue(threading.Thread):
                 except Exception, exc:
                     logging.exception('')
                     logging.error('unhandled exception: %s'%exc)
-                    logging.error('task traceback:\n -%s'%('\n -'.join(format_list(elem['stack']))))
+                    logging.error('task traceback:\n -%s'%(' -'.join(format_list(elem['stack']))))
                     #[logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
                     #print "Caught exception"
                     #print_exc()
@@ -177,56 +189,44 @@ class pollManager(threading.Thread):
         self.watchdog=int(time.time())
         self.alive=1
         self.trans=trans
+        self.updateInterval=15
+        self.groupsNum=3
     def loop(self):
-        pollInterval=15
-        groupsNum=5
+        pollInterval=5
         currGroup=0
         self.freeze=False
         while (self.alive):
-            #print "poll", len(self.trans.users.keys()), 'user(s)'
-            #delta=int(time.time())-self.watchdog
-            #print 'out traffic %sK'%(self.trans.logger.bytesOut/1024)
-
-            #if (delta>60):
-                #print 'freeze detected!\nupdates temporary disabled'
-                #print 'users online: %s'%len(self.trans.users)
-                #for i in [5,10,30,60,120,300]:
-                    #print '%s sec traffic: '%i,self.trans.logger.getTraffic(i)
-                #if (delta>1200):
-                    #print 'critical freeze. shutting down'
-                    #self.trans.isActive=0
-                    #self.trans.stopService()
-                    #self.alive=0
-                    #f=open('killme','w')
-                    #f.write('1')
-                    #f.close()
-            #else:
+            #logging.warning('poll')
             try:
                 for u in self.trans.users.keys():
-                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%groupsNum==currGroup)):
+                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%self.groupsNum==currGroup)):
                         try:
                             if(self.trans.users[u].refreshDone):
                                 self.trans.users[u].vclient
                                 self.trans.users[u].refreshDone=False
-                                self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                                try:
+                                    self.trans.users[u].pool.call(self.trans.users[u].refreshData)
+                                except gen.QuietError:
+                                    logging.warning('queue full. resetting refresh flag')
+                                    self.trans.users[u].refreshDone=True
+                                except Exception, e:
+                                    logging.error('refresh freeze!\n%s'%str(e))
                             else:
                                 logging.warning('skipping refresh for %s'%repr(u))
+                                pass
                         except gen.NoVclientError:
                             print "user w/o client. skipping"
                         except:
-                            logging.error(format_exc())
+                            logging.exception('')
                 #print delta
                 if (currGroup==0):
-                    #print 'echo sent'
                     self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='%s'%int(time.time()))
-                #print '10 sec traffic: ',self.trans.logger.getTraffic(10)                
-                #print "cg",currGroup
                 currGroup +=1
-                currGroup=currGroup%groupsNum
+                currGroup=currGroup%self.groupsNum
             except:
                 logging.exception("GREPME")
-            time.sleep(5)
-        print "pollManager stopped"
+            time.sleep(self.updateInterval)
+        logging.warning("pollManager stopped")
     def stop(self):
         self.alive=0
 #class Deferred1:
@@ -279,7 +279,29 @@ class pollManager(threading.Thread):
     #def call(self,foo,**kw):
         #el=(None,foo,kw)
         #q.append(el)
-
-
+class counter:
+    data={}
+    def __init__(self):
+        logging.warning('counter.init')
+    def add(self,key,val):
+        try:
+            s,c,m,M=self.data[key]
+        except KeyError:
+            s=0
+            c=0
+            m=1000
+            M=0
+        if (val>M):
+            M=val
+        if (val<m):
+            m=val
+        self.data[key]=(s+val, c+1, m, M)
+    def toStr (self,sn=0):
+        vals=[]
+        for j in self.data:
+            i=self.data[j]
+            vals.append((i[1],i[2],i[3],i[0]/i[1],"%s: min %8.3f max %8.3f avg %8.3f cnt %s"%(j,i[2],i[3],i[0]/i[1],i[1])))
+        vals.sort(lambda x, y: cmp(x[sn],y[sn]))
+        return '\n'.join([i[3] for i in vals])
 
 

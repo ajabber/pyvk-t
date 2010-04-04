@@ -91,6 +91,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 return self.onPresence(st, dbg)
             logging.warning('strange packet from %s'%repr(st.get('from')))
         except gen.QuietError:
+            return
             logging.warning('QuietError')
     def onMsg(self,msg):
         src=msg.get("from")
@@ -530,14 +531,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 bjid=gen.bareJid(src)
                 if (r.find("remove")!=None):
                     try:
-                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
+                        os.unlink("%s/%s/%s_json"%(self.datadir,bjid[:1],bjid))
                     except OSError:
                         pass
                     return
                 if (r.find("{jabber:iq:register}remove")!=None):
                     logging.warning ("FIXME namespace in register/remove")
                     try:
-                        os.unlink("%s/%s/%s"%(self.datadir,bjid[:1],bjid))
+                        os.unlink("%s/%s/%s_json"%(self.datadir,bjid[:1],bjid))
                     except OSError:
                         pass
                     return
@@ -568,13 +569,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     pass
                 u.email=email
                 u.password=pw
-                u.cookies={}
+                u.cookies=[]
                 u.blocked=False
+                u.instanceReady=True
                 u.saveData()
-                try:
-                    os.unlink("%s/%s"%(self.cookPath,bjid))
-                except OSError:
-                    pass
+                #try:
+                    #os.unlink("%s/%s"%(self.cookPath,bjid))
+                #except OSError:
+                    #pass
                 ans=createElement("iq",{'type':'result','to':src,'from':dest,'id':iq.get('id')})
                 self.send(ans)
                 self.sendPresence(self.jid,src,"subscribe")
@@ -688,6 +690,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         
         self.sendMessage(self.jid,to,ret,sepThread=True)
 
+    def sendProbe(self,bjid):
+        u=user(self,bjid,noLoop=True)
+        u.readData()
+        fr=u.roster.keys()[0]
+        del u
+        logging.warning('sending probe to %s'%bjid)
+        self.sendPresence(src=fr,dest=bjid,t='probe')
     def sendFriendlist(self,fl,jid):
 
         bjid=gen.bareJid(jid)
@@ -931,37 +940,65 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             #logging.warning('abrt')
             return
         #logging.warning('acq\'d')
-        if (not self.users.has_key(bjid)):
-            #print "creating user %s"
-            self.users[bjid]=user(self,jid,captcha_key=captcha_key)
+        try:
+            try:
+                u=self.users[bjid]
+            except KeyError:
+            #if (not self.users.has_key(bjid)):
+                #print "creating user %s"
+                self.users[bjid]=user(self,jid,captcha_key=captcha_key)
+                u=self.users[bjid]
+        except:
+            logging.exception('')
+            self.usrLock.release()
+            return
         self.usrLock.release()
         #logging.warning('released')
-        self.users[bjid].addResource(jid,prs)
+        u.pool.call(u.addResource,jid=jid,prs=prs)
 
     def delResource(self,jid, to=None,dbg=False):
         #print "delResource %s"%jid
         bjid=gen.bareJid(jid)
-        if (dbg):
-            logging.warning('start')
-        if (self.hasUser(bjid)):
-            if (dbg):
-                logging.warning('st1')
-            #TODO resource magic
-            #self.users[bjid].delResource(jid)
-            self.users[bjid].pool.call(self.users[bjid].delResource,jid=jid)
-        
-        if (dbg):
-            logging.warning('st2')
-        if (not self.users[bjid].resources) or to==self.jid:
+        #if (dbg):
+            #logging.warning('start')
+        try:
+            user=self.users[bjid]
+        except KeyError:
+            return            
+        if (to==self.jid):
             try:
-                self.users[bjid].pool.call(self.users[bjid].logout)
+                user.pool.call(user.logout)
             except:
                 logging.exception('')
-                # FIXME possible lock source!!!
-                # 
-                #self.users[bjid].logout()
-        if (dbg):
-            logging.warning('end')
+            return
+
+        #try:
+        user.pool.call(user.delResource,jid=jid)
+        #except:
+            #logging.exception('')
+        #if (self.hasUser(bjid)):
+            #if (dbg):
+                #logging.warning('st1')
+            ##TODO resource magic
+            ##self.users[bjid].delResource(jid)
+            #self.users[bjid].pool.call(self.users[bjid].delResource,jid=jid)
+        
+        #if (dbg):
+            #logging.warning('st2')
+        #try:
+            #user=self.users[bjid]
+        #except KeyError:
+            #pass
+        #if (not user.resources) or to==self.jid:
+            #try:
+                #user.pool.call(user.logout)
+            #except:
+                #logging.exception('')
+                ## FIXME possible lock source!!!
+                ## 
+                ##self.users[bjid].logout()
+        #if (dbg):
+            #logging.warning('end')
                 
 
     def onPresence(self, prs, dbg):
@@ -1023,17 +1060,29 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             if (feed["messages"]["count"]) and feed["messages"]["items"]:
                 idlist=[int (i) for i in feed ["messages"]["items"].keys()]
                 inmsgs=user.vclient.getInboxMessages(num=100)
+                #for i in inmsgs['messages']: print i
+                in_idlist=[int(i['id']) for i in inmsgs['messages']]
                 ml=[i for i in inmsgs['messages'] if int(i['id']) in idlist]
                 for i in ml:
+                    if (len(i['text'])>160):
+                        # запрашиваем заново, т.к. юзерапи режет сообщения до 192(?) символов
+                        umsgs=user.vclient.getInboxMessages(num=10, v_id=i['from'])
+                        msgtext=i['text']
+                        for j in umsgs['messages']:
+                            if j['id']==i['id']:
+                                msgtext=j['text']
+                                break
+                        if (msgtext!=i['text']):
+                            logging.warning('long message fixed. length: %s -> %s'%(len(i['text']),len(msgtext)))
+                            i['text']=msgtext
+                        else:
+                            logging.warning('long message not fixed. length: %s'%(len(i['text'])))
                     self.sendMessage(src='%s@%s'%(i['from'],self.jid), dest=jid, body=i['text'])
+                    logging.warning ('%s sent'%i)
                     user.vclient.getHttpPage('http://vkontakte.ru/mail.php?act=show&id=%s'%i['id'])
-                #for i in feed ["messages"]["items"].keys():
-                    #print "requesting message"
-                    #pass
-
-                    #self.users[jid].pool.call(self.requestMessage,jid=jid,msgid=i)
         except KeyError:
-            print_exc()
+            logging.exception('')
+            #print_exc()
             pass
         except:
             logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())        
@@ -1130,8 +1179,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return
         #self.poolMgr.alive=0
         #print "stage 1: stopping users' loops, sending messages and presences..."
-
-        for u in self.users.keys():
+        ulist=self.users.keys()
+        for u in ulist:
             if (self.hasUser(u)):
                 #try:
                     #self.users[bjid].vclient.alive=0
@@ -1149,12 +1198,15 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #print "done"
         #time.sleep(15)
         dl=[]
-        for i in self.users.keys():
+        ulist=self.users.keys()
+        for i in ulist:
             try:
                 d=self.users[i].pool.defer(self.users[i].logout)
                 dl.append(d)
-            except AttributeError:
-                pass
+            except:
+                logging.exception('')
+            #except AttributeError, gen.QuietError:
+                #pass
         print "%s logout()'s pending.. now we will wait..'"%len(dl)
         time.sleep(5)
         for i in range(10):
