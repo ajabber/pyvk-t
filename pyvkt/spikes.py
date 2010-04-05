@@ -27,6 +27,11 @@ from traceback import print_stack, print_exc,format_exc,extract_stack,format_lis
 from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError, PrivacyError, captchaError,UserapiJsonError
 import pyvkt.general as gen
 import cProfile as prof
+try:
+    import hook
+    logging.warning('hooks loaded')
+except:
+    pass
 class pseudoXml:
     def __init__(self):
         self.items={}
@@ -47,7 +52,7 @@ class reqQueue(threading.Thread):
     lastTime=0
     def __init__(self,user,name=None):
         try:
-            threading.Thread.__init__(self,target=self.loopWrapper,name=name)
+            threading.Thread.__init__(self,target=self.loop,name=name)
         except UnicodeEncodeError:
             threading.Thread.__init__(self,target=self.loop,name="user_with_bad_jid")
         self.daemon=True
@@ -196,6 +201,10 @@ class pollManager(threading.Thread):
         currGroup=0
         self.freeze=False
         while (self.alive):
+            try:
+                hook.printStats(self.trans)
+            except:
+                pass
             #logging.warning('poll')
             try:
                 for u in self.trans.users.keys():
