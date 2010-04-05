@@ -59,7 +59,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.name=conf.get('general','service_name')
         self.pubsub=None
         self.users={}
-        self.admin=conf.get('general','admin')
+        self.admins=conf.get('general','admin').split()
+        self.admin=self.admins[0]
         #self.config=config
         try:
             d=os.path.dirname(os.path.realpath(__file__))
@@ -143,7 +144,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     self.sendMessage(dest,src,self.commands.onMsg(jid=src,text=cmd,v_id=v_id))
             return
 
-        if (body[0:1]=="#" and bjid==self.admin and dest==self.jid):
+        if (body[0:1]=="#" and bjid in self.admins and dest==self.jid):
             req=msg.find('{urn:xmpp:receipts}request')
             if (req!=None):
                 self.msgDeliveryNotify(0,msg_id=msgid,jid=src,v_id=0,receipt=1)
