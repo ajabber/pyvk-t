@@ -89,10 +89,10 @@ class reqQueue(threading.Thread):
     def dummy(self):
         return
     def loopWrapper(self):
-        if 'eqx@eqx.su' in self.name:
-            l=self.loop
-            prof.runctx('l()',globals(), locals(), 'profile_%s'%time.time())
-        else:
+        #if 'eqx@eqx.su' in self.name:
+        #    l=self.loop
+        #    prof.runctx('l()',globals(), locals(), 'profile_%s'%time.time())
+        #else:
             self.loop()
     def loop(self):
         self.last='just started'
@@ -194,7 +194,7 @@ class pollManager(threading.Thread):
         self.watchdog=int(time.time())
         self.alive=1
         self.trans=trans
-        self.updateInterval=15
+        self.updateInterval=30
         self.groupsNum=3
     def loop(self):
         pollInterval=5

@@ -172,7 +172,7 @@ class xmlstream:
                 while(c!='>'):
                     if (self.connFailure and not ignoreFail):
                         logging.error('buffer:\n%s%s'%(es,''.join(buf)))
-                        raise Exception('connection failure')                
+                        raise Exception('connection failure')
                     c=self.sock.recv(1)
                     buf.append(c)
                 sn=''.join(buf)

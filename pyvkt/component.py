@@ -39,6 +39,7 @@ from lxml.etree import SubElement,tostring
 from threading import Lock
 import gc,inspect
 import pyvkt.config as conf
+from datetime import datetime
 
 class pyvk_t(pyvkt.comstream.xmlstream):
 
@@ -131,7 +132,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 else:
                     self.sendMessage(self.jid,src,u"Сначала необходимо подключиться")
             elif (cmd=="help"):
-                self.sendMessage(self.jid,src,u""".get roster - запрос списка контактов\n.list - список остальных команд""")
+                self.sendMessage(self.jid,src,u""".getroster - запрос списка контактов\n.list - список остальных команд""")
             else:
                 #print cmd
                 #logging.warning("TEXTCMD '%s' %s -> %s"%(cmd,src,dest))
@@ -359,6 +360,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         ans=createElement('iq',attrs={'from':dest,'to':src, 'id':iq.get('id'),'type':'result'})
         #logging.warning(iq.get('type'))
         logging.info("RECV: iq (%s) %s -> %s"%(iq.get('type'),src,dest))
+        if (iq.get('type')=='error'):
+            return False
         if (iq.get('type')=='get'):
             #FIXME TODO commands
             r,a=getQuery(iq,ans,'http://jabber.org/protocol/disco#info')
@@ -1086,7 +1089,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             #print_exc()
             pass
         except:
-            logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())        
+            logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())
         oldfeed = self.users[jid].feed
         if feed != self.users[jid].feed and ((oldfeed and self.users[jid].getConfig("feed_notify")) or (not oldfeed and self.users[jid].getConfig("start_feed_notify"))):
             for j in gen.feedInfo:
@@ -1189,8 +1192,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     #pass
                 if (msg):
                     self.sendMessage(self.jid,u,u"Транспорт отключается.\n[%s]"%msg)
-                else:
-                    self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+                #else:
+                #    self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
                 self.sendPresence(self.jid,u,"unavailable")
                 try:
                     self.usersOffline(u,self.users[u].vclient.onlineList)
@@ -1211,8 +1214,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         print "%s logout()'s pending.. now we will wait..'"%len(dl)
         time.sleep(5)
         for i in range(10):
-            names=[i.name for i in threading.enumerate()]
-            pools=[i for i in names if 'pool' in i]
+            names=[j.name for j in threading.enumerate()]
+            pools=[j for j in names if 'pool' in j]
             if (len(pools)==0):
                 break
             logging.warning('waiting for pools (%s)'%len(pools))
@@ -1232,8 +1235,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             print "done"
         return None
 
-    def sendMessage(self,src,dest,body,title=None,sepThread=False):
+    def sendMessage(self,src,dest,body,title=None,sepThread=False,mtime=None):
         msg=createElement("message",{'to':dest,'from':src,'type':'chat','id':"msg%s"%(int(time.time())%10000)})
+        if type(mtime)==int:
+            SubElement(msg,"delay",{"xmlns":"urn:xmpp:delay","stamp":datetime.fromtimestamp(mtime).isoformat()})
         SubElement(msg,'body').text=body
         if title:
             SubElement(msg,'title').text=title
@@ -1308,6 +1313,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
     def kbInterrupt(self):
         print "threads:"
         for i in threading.enumerate():
-            print '    %s (%s)'%(i.name,i.daemon)
+            pass
+            #print '    %s (%s)'%(i.name,i.daemon)
         return True
 

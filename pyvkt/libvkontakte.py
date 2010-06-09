@@ -201,22 +201,19 @@ class client():
                 raise
             raise captchaError(sid=sid, bjid=self.bjid)
             return
-        authData={'vk':'1','email':email.encode('cp1251'), 'pass':passw.encode('cp1251')}
+        authData={'email':email.encode('cp1251'), 'pass':passw.encode('cp1251')}
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
-        print tpage
-        i=tpage.find("id='s' value='")
-        i+=14
+        i=tpage.find("name='s' value='")
+        i+=16
         p=tpage.find("'",i+1)
         s=tpage[i:p]
-        self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':s})
+        self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1&to=&request_method=post",{'s':s})
         
     def genCaptchaSid(self):
         ret=''
         for i in os.urandom(10):
             ret='%s%s'%(ret,ord(i)%100)
         return ret
-
-            
         
     def userapiLogin(self,email,passw,captcha_sid=None, captcha_key=None):
         #TODO use cookies
@@ -368,7 +365,7 @@ class client():
             print "wrong page format: can't fing 'list:''"
             self.checkPage(page)
             self.dumpString(page,"script")
-            self.dumpString(tag,"script_list")        
+            self.dumpString(tag,"script_list")
             return {}
         #print 
         json=tag[res.start()+6:res.end()-3]
@@ -469,6 +466,7 @@ class client():
             ret.append((t,i[2][0]))
         return ret
         #print dat
+
     def sendWallMessage(self,v_id,text):
         """ 
         Send a message to user's wall
@@ -900,17 +898,20 @@ class client():
             m['text']=i[2][0].replace('<br>','\n')
             m['from']=i[3][0]
             m['to']=i[4][0]
+            m['time']=int(i[1])
             ret['messages'].append(m)
         return ret
     def sendMessage(self,to_id,body,title='', wall=False):
         if (wall):
             a='wall'
+            d=self.userapiRequest(act=a, to=0, id=to_id)
+            ts=d['h']
         else:
             a='message'
         try:
             d=self.userapiRequest(act=a, to=0 )
             ts=d['h']
-            print d  
+            #print d
             res=self.userapiRequest(act='add_%s'%a, id=to_id, message=body.encode('utf-8'), ts=ts)
         except HTTPError:
             return 1
