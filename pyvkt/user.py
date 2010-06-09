@@ -508,18 +508,18 @@ class user:
                 self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
                 self.tonline=self.onlineList
             #FIXME online status
-            if (self.getConfig("wall_notify")):
+            if (self.getConfig("wall_notify") and self.refreshCount%10==0):
                 try:
                     self.checkWallUpdate()
                 except:
                     logging.exception('')
             self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
             if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
-                #self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
+                self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
                 self.iterationsNumber = 0
             if ((self.refreshCount%1000)==0):
                 self.refreshCount=0
-            if ((self.refreshCount%10)==0):
+            if ((self.refreshCount%100)==0):
                 self.sendProbe()
             #self.loopDone=True
         except:
