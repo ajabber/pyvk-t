@@ -41,9 +41,14 @@ import ConfigParser,os,string
 from traceback import print_stack, print_exc,format_exc
 import logging,time, pycurl
 import pyvkt.config as conf
-
+try:
+    import json
+except:
+    pass
 import StringIO
 
+http_traffic=0
+http_requests=0
 #user-agent used to request web pages
 #USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
 USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
@@ -72,8 +77,9 @@ class captchaError(Exception):
 class UserapiCaptchaError (captchaError):
     bjid=None
     sid=None
-    def __init__ (self,sid=None):
+    def __init__ (self,sid, fcsid):
         self.sid=sid
+        self.fcsid=fcsid
     pass
 class authError(Exception):
     def __init__(self):
@@ -128,7 +134,7 @@ class client():
     captchaRequestData={}
     #opener=None
     cookieStr=''
-    def __init__(self,jid,email,passw,user,captcha_sid=None, captcha_key=None,ua=False):
+    def __init__(self,jid,user):
         self.bytesIn = 0
         self.bjid=jid
         self.user=user
@@ -145,14 +151,6 @@ class client():
         #c.setopt(pycurl.MAXREDIRS, 5)
         #FIXME delete 
         
-    #def readCookies(self):
-        #self.cjar=cookielib.MozillaCookieJar("%s/%s"%(self.cookPath,self.bjid))
-        #try:
-            #self.cjar.clear()
-            #self.cjar.load()
-        #except IOError,e :
-            #logging.warning("cant read cookie (%s)"%str(e))
-        #self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
     def initCookies(self):
         self.cjar=cookielib.CookieJar()
         self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
@@ -165,31 +163,19 @@ class client():
                 self.cjar.save()
             except:
                 logging.exception('can\'t save cookies')
-    def setCookies(self,cookieVal):
-        cjar.clear()
-        #TODO
     def setCookie(self, name, val, site='vkontakte.ru'):
         #FIXME arg names
-        c=cookielib.Cookie(version=0, name=name, value=val,
-        port=None, port_specified=False, domain='.%s'%site,
-        domain_specified=True, domain_initial_dot=True, path='/',
-        path_specified=True, secure=False, expires=int(time.time()+1e7),
-        discard=False, comment=None, comment_url=None, rest={}, rfc2109=False)
-        self.cjar.set_cookie(c)
         self.c.setopt(pycurl.COOKIELIST,str('Set-Cookie: %s=%s; domain=.%s'%(name,val,site)))
         #self.cookieStr='%s %s=%s;'%(self.cookieStr,name,val)
     def getCookies(self):
         if True:
             return self.getCookies_curl()
-        ret=[(i.domain[1:], i.name,i.value) for i in self.cjar]
-        return ret
     def login(self,email,passw,captcha_sid=None, captcha_key=None):
         data={'op':'a_login_attempt'}
         if (captcha_key and captcha_sid):
             logging.warning('login with captha: %s/%s'%(captcha_sid, captcha_key))
             data['captcha_key']=captcha_key
             data['captcha_sid']=captcha_sid
-        #hdrs={'Referer': 'http://vkontakte.ru/index.php', 'X-Requested-With':'XMLHttpRequest'}
         tpage=self.getHttpPage('http://vkontakte.ru/login.php',data)
         if (tpage[:20]=='{"ok":-2,"captcha_si'):
             sid=None
@@ -202,6 +188,7 @@ class client():
             raise captchaError(sid=sid, bjid=self.bjid)
             return
         authData={'email':email.encode('cp1251'), 'pass':passw.encode('cp1251')}
+        # expire='' vk=''
         tpage=self.getHttpPage("http://login.vk.com/?act=login",authData)
         i=tpage.find("name='s' value='")
         i+=16
@@ -248,8 +235,7 @@ class client():
             return 
         self.readCookies()
         print self.getHttpPage("http://vkontakte.ru/login.php?op=slogin&redirect=1",{'s':self.sid})
-
-        #print f
+    
     def getCookies_curl(self):
         cl=self.c.getinfo(pycurl.INFO_COOKIELIST)
         ret=[]
@@ -260,9 +246,17 @@ class client():
         return ret
     def getHttpPage_curl(self,url,params=None):
         c=self.c
+        #print '\n\n-----------------------\n\n'
+        #print url
+        #print params
         c.setopt(pycurl.URL,str(url))
         if (type(params)==type({})):
             params=urllib.urlencode(params)
+            c.setopt(pycurl.POST,1)
+            #kv=[(i,str(params[i])) for i in params]
+            #c.setopt(pycurl.HTTPPOST,kv)
+            #params=None
+            #FIXME
         if (params):
             c.setopt(pycurl.POST,1)
             c.setopt(pycurl.POSTFIELDS, params)
@@ -270,8 +264,17 @@ class client():
             c.setopt(pycurl.POST,0)
         b = StringIO.StringIO()
         c.setopt(pycurl.WRITEFUNCTION, b.write)
-        c.perform()
-        return b.getvalue()
+        try:
+            c.perform()
+        except pycurl.error,e:
+            raise HTTPError(str(e),url)
+        ret=b.getvalue()
+        global http_requests,http_traffic
+        http_requests+=1
+        http_traffic+=len(ret)
+        #print ret.decode('cp1251')
+        #print '----'
+        return ret
     def getHttpPage(self,url,params=None,cjar=None, headers={}):
         """ get contents of web page
             returns u'' if some of errors took place
@@ -328,15 +331,8 @@ class client():
         return 
 
     def logout(self):
-        #self.client.usersOffline(self.bjid,self.onlineList)
         self.onlineList={}
-        #if not self.user.getConfig("save_cookies"):
-            #self.getHttpPage("http://vkontakte.ru/login.php","op=logout")
-            #try:
-                #os.unlink("%s/%s"%(self.cookPath,self.bjid))
-            #except:
-                #pass
-        #print "%s: logout"%self.bjid
+    
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmpvnoq").decode("cp1251").strip()
         if not s or s[0]!=u'{':
@@ -390,6 +386,7 @@ class client():
             #print type(i[1]['l'])
         #print "--",ret
         return ret
+    
     def getOnlineList2(self):
         fl=self.userapiRequest(act='friends_online',id=self.v_id)
         ret={}
@@ -405,11 +402,10 @@ class client():
                 ret[i[0]]={'last':fn[1],'first':fn[0],'avatar_url':u""}
         return ret
             
-
     def getOnlineList(self):
         try:
             return self.getOnlineList2()
-        except UserapiSidError:
+        except (UserapiSidError,HTTPError):
             raise
         except:
             logging.warning(format_exc())
@@ -431,9 +427,10 @@ class client():
         fil.write(string)
         fil.close()
         logging.warning("%s: page saved to %s"%(comm,fname))
-    def getHistory(self,v_id):
+
+    def getHistory(self,v_id,length=15):
         try:
-            return self.getHistory2(v_id)
+            return self.getHistory2(v_id,length)
         except:
             logging.exception('')
         page=self.getHttpPage("http://vkontakte.ru/mail.php","act=history&mid=%s"%v_id)
@@ -454,18 +451,28 @@ class client():
             ret.append((t,m.replace('<br />','\n')))
         #ret=ret.replace('<br />','\n')
         return ret
-    def getHistory2(self,v_id):
-        dat=self.userapiRequest(act='message',id=v_id, to=15)
+    
+    def getHistory2(self,v_id,length=15):
+        dat=self.userapiRequest(act='message',id=v_id, to=length)
         ret=[]
+        repl=(('<br>','\n'),
+          ('&quot;','"'),
+          ('&lt;',  '<'),
+          ('&gt;',  '>'),
+          ('&#39;', '\''),
+          ('&amp;', '&'),
+          )
         for i in dat['d']:
             if (i[3][0]==self.v_id):
                 t=u'out'
             else:
                 t=u'in'
-            #print i[1],i[2][0]
-            ret.append((t,i[2][0]))
+            msg=i[2][0]
+            for k,v in repl:
+                msg=msg.replace(k,v)
+            ret.append((t,msg))
         return ret
-        #print dat
+    
 
     def sendWallMessage(self,v_id,text):
         """ 
@@ -502,6 +509,7 @@ class client():
         if page:
             return 0
         return 1
+    
     def cutPage(self,page):
         st=page.find('<div id="rightColumn">')
         end=page.find('<div id="wall" ')
@@ -519,6 +527,7 @@ class client():
         #print np.decode('cp1251').encode('utf-8')
         #print
         return np
+    
     def getVcard_new(self,v_id, show_avatars=0,page=None):
         if (not page):
             opage = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
@@ -730,6 +739,7 @@ class client():
                 #    if photo:
                 #        result["PHOTO"]=photo
         return result
+
     def getVcard2(self,v_id, show_avatars=0):
         '''
         Parsing of profile page to get info suitable to show in vcard
@@ -901,7 +911,7 @@ class client():
             m['time']=int(i[1])
             ret['messages'].append(m)
         return ret
-    def sendMessage(self,to_id,body,title='', wall=False):
+    def sendMessage(self,to_id,body,title='', wall=False,forceMsgCheck=False):
         if (wall):
             a='wall'
             d=self.userapiRequest(act=a, to=0, id=to_id)
@@ -915,9 +925,18 @@ class client():
             res=self.userapiRequest(act='add_%s'%a, id=to_id, message=body.encode('utf-8'), ts=ts)
         except HTTPError:
             return 1
+        except UserapiJsonError:
+            if not wall:
+                h=self.getHistory(to_id,3)
+                if (('out',body) in h):
+                    logging.warning('msgCheck: success!')
+                    return 0
+                else:
+                    logging.warning('GREPME msg doesn\'t match\n%s\n%s'%(repr(body),repr(h[0][1])))
+                    return -1
         r=res.get('ok',0)
         if (r==1):
-            print 'ok'
+            #logging.warning('outgoing message (%s) sent'%a)
             return 0
         if r==-2:
             raise captchaError()
@@ -1263,7 +1282,7 @@ class client():
         return dat['h']
     def getWallHistory(self,ts):
         ret=[]
-        dat=self.userapiRequest(act='wall',id=self.v_id,ts=ts)
+        dat=self.userapiRequest(act='wall',id=self.v_id,ts=ts,to=300)
         #logging.warning(ts)
         #logging.warning(self.getWallState())
         #logging.warning(dat['h'])
@@ -1298,7 +1317,12 @@ class client():
                 print "id%s -> id%s: '%s'"%(snd[0],rcv[0],txt[0])
     def enterUserapiCaptcha(self, ck):
         self.userapiRequest(fccode=ck,**self.captchaRequestData)
-    def userapiRequest(self,**kw):
+    def userapiEnterCaptcha (self,fccode):
+        logging.warning('trying to enter captcha code')
+        rd=self.captchaRequestData
+        rd['fccode']=fccode
+        return self.userapiRequest(**rd)
+    def userapiRequest(self,url='http://userapi.com/data?',**kw):
         #import simplejson as json
         nkw=kw
         nkw['sid']=self.sid
@@ -1308,7 +1332,6 @@ class client():
         #if (nkw.has_key('v_id')):
             #nkw['id']=nkv['v_id']
             #del nkv['v_id']
-        url='http://userapi.com/data?'
         d=''
         for k in nkw:
             try:
@@ -1316,51 +1339,57 @@ class client():
             except UnicodeEncodeError:
                 v=nkw[k].encode('utf-8')
             d="%s%s=%s&"%(d,k,urllib.quote(v))
-        url+=d
+        #url+=d
         dat=urlencode(nkw)
         try:
             page=self.getHttpPage(url,dat)
         except HTTPError, e:
             raise HTTPError (e.err,'userapi: %s'%str(kw))
         #print page
-        if (page=='{"ok": -2}'):
-            cs=self.genCaptchaSid()
-            self.captchaRequestData=nkw
-            self.captchaRequestData[fcsid]=cs
-
-            raise UserapiCaptchaError(nkw)
+        #if (page=='{"ok": -2}'):
+            #cs=self.genCaptchaSid()
+            #self.captchaRequestData=nkw
+            #self.captchaRequestData['fcsid']=cs
+            #logging.warning('got captcha')
+            #raise UserapiCaptchaError(nkw,cs)
         try:
             page=page.decode('utf-8')
         except:
             try:
                 page=page.decode('cp1251')
+                #logging.warning('legacy charset (act=%s).'%kw.get('act'))
             except:
                 logging.warning("strange userapi charset")
-        #print page
-        #ret=json.loads(page)
+        if (len(page)==0):
+            if (kw.get('act')!='add_message'):
+                # error silently handled by sendMessage()
+                logging.error("empty response (act=%s)."%kw.get('act'))
+            raise UserapiJsonError
         try:
-            ret= demjson.decode(page,strict=False)
-        except:
-            logging.warning("json error. trying to remofe 'fr.' blocks...")
-            sr=re.search(',"fr":{.*?},"fro":{.*?},"frm":{.*?}',page)
-            if (sr):
-                page=page[:sr.start()]+page[sr.end():]
+            ret=json.loads(page)
+            #FIXME
+        except Exception,e:
+            logging.warning ('json failed: %s'%str(e))
             try:
                 ret= demjson.decode(page,strict=False)
             except Exception,e:
-                if (len(page)==0):
-                    logging.error("userapi failed: empty string. act=%s"%kw.get('act'))
-                else:
+                logging.warning("json error (%s). trying to remofe 'fr.' blocks..."%e)
+                sr=re.search(',"fr":{.*?},"fro":{.*?},"frm":{.*?}',page)
+                if (sr):
+                    page=page[:sr.start()]+page[sr.end():]
+                try:
+                    ret= demjson.decode(page,strict=False)
+                except Exception,e:
                     logging.error("userapi failed. act='%s'\t'%s'\n%s"%(kw.get('act'),repr(page),str(e)))
-                raise UserapiJsonError
-                #raise e
-            #sr=re.search(',"fro":{.*?}',page)
-            #page=page[:sr.start()]+page[sr.end():]
-            #sr=re.search(',"frm":{.*?}',page)
-            #page=page[:sr.start()]+page[sr.end():]
+                    raise UserapiJsonError
         try:
             if (ret['ok']==-2):
-                raise captchaError
+                #raise captchaError
+                cs=self.genCaptchaSid()
+                self.captchaRequestData=nkw
+                self.captchaRequestData['fcsid']=cs
+                logging.warning('got captcha')
+                raise UserapiCaptchaError(nkw,cs)
             elif (ret['ok']==-1):
                 raise UserapiSidError()
                 #logging.error('userapiRequest: GREPME userapi session error (%s)'%self.bjid)

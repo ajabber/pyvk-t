@@ -25,13 +25,13 @@ LOG_LEVELS={'debug': logging.DEBUG,
             'critical': logging.CRITICAL}
 lvl=LOG_LEVELS.get(opt.logmode.lower(), logging.NOTSET)
 
-LOG_FORMAT='    \033[32m* %(asctime)s\033[0m [%(levelname)3.3s] \033[33m%(funcName)s\033[0m[%(threadName)s]:\t %(message)s'
+LOG_FORMAT='    \033[32m* %(asctime)s\033[0m [%(levelname)3.3s] \033[33m%(funcName)12s\033[0m @ %(threadName)s:\t %(message).1000s'
 logging.basicConfig(level=lvl,format=LOG_FORMAT)
 if (opt.logfile):
     import logging.handlers
     logging.warning('writing log to %s'%opt.logfile)
     l=logging.getLogger('')
-    rh=logging.handlers.RotatingFileHandler(opt.logfile,maxBytes=2000000,backupCount=5,encoding='utf-8')
+    rh=logging.handlers.RotatingFileHandler(opt.logfile,maxBytes=8000000,backupCount=5,encoding='utf-8')
     rh.setFormatter(logging.Formatter(LOG_FORMAT))
     l.addHandler(rh)
 conf.read(opt.config)

@@ -41,6 +41,7 @@ class cmdManager:
                 "wall":sendWallMessageCmd(trans),
                 "getwall":getWall(trans),
                 "getroster": GetRoster(trans),
+                "captcha": EnterCaptcha(trans),
                 "refresh": RefreshData(trans)}
         self.contactCmdList={"history":getHistioryCmd(trans),
                 "wall":sendWallMessageCmd(trans),
@@ -657,8 +658,6 @@ class getWall(basicCommand):
                     msg="%s\n\n- %s"%(msg,temp['unknown'].substitute(m,tjid=self.trans.jid))
             msg=gen.unescape(msg.replace('<br>','\n')).strip()
             return {"status":"completed","title":self.name,'message':msg}
-                    
-            
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}
 class GetRoster(basicCommand):
@@ -692,6 +691,30 @@ class RefreshData(basicCommand):
             #fl=user.vclient.getFriendList()
             #user.sendFriendList(fl)
             msg=u'Готово'
+            return {"status":"completed","title":self.name,'message':msg}
+        else:
+            return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}        
+class EnterCaptcha(basicCommand):
+    name=u'Ввод captcha'
+    args={0: 'code'}
+    def __init__(self,trans):
+        basicCommand.__init__(self,trans) 
+    def run(self,jid,args,sessid="0",to_id=0):
+        bjid=gen.bareJid(jid)
+        if self.trans.hasUser(bjid):
+            user=self.trans.users[bjid]
+            if (args.has_key('code')):
+                pass
+                if (user.vclient.captchaRequestData):
+                    logging.warning('captcha cmd!')
+                    ret=user.vclient.enterUserapiCaptcha(args['code'])
+                    logging.warning('response lenght: %s'%len(str(ret)))
+                    msg=u'Запрос отправлен. Проверьте результат операции.'
+                    pass
+                else:
+                    msg=u'Нет данных для запроса. Или капча не запрашивалась вообще, или это ошибка транспорта.'
+            else:
+                msg=u'А где код?'
             return {"status":"completed","title":self.name,'message':msg}
         else:
             return {"status":"completed","title":self.name,'message':u'Сначала надо подключиться'}        
