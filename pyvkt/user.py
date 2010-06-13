@@ -35,7 +35,7 @@ import threading
 class UnregisteredError (Exception):
     pass
 
-class user:
+class user (object):
     #lock=1
     #active=0
     feed={}
@@ -44,6 +44,9 @@ class user:
     refreshCount=0
     config={}
     instanceReady=False
+    timeCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
+    callCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
+    captchaReqData=None   
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -80,37 +83,52 @@ class user:
         #subscribe meanes transported contact send status
         self.roster={}
         if (not noLoop):
-            self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
-            self.pool.start()
+            self.startPool()
+            #self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
+            #self.pool.start()
         
-
+    def startPool(self):
+        try:
+            self.pool
+            logging.warning('pool already exists')
+            if (self.pool.is_alive()):
+                logging.warning('pool is alive')
+                return
+            del self.pool
+        except:
+            pass
+        self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
+        self.pool.start()
     def addResource(self,jid,prs=None):
         """
         adds resource to jid's reources list
         stores it's presence and does some work of resending presences
         """
-        #if had no resources before and not trying to login now
-        if (not self.resources) and self.state==0:
-            self.state=1
-            # self.trans.sendPresence(self.trans.jid,self.bjid,t="probe") 
-            # ???
-            self.login()
-        #new status of a resource
-        if jid in self.resources:
-            pass
-        elif self.resources and self.state==2:
-            self.trans.sendPresence(self.trans.jid,jid,status=self.status)
-            self.contactsOnline(self.onlineList)
-        #if VkStatus has to be changed and should be done now
-        if (prs!=None):
-            status=self.prsToVkStatus(self.storePresence(prs))
-            #if not locked we update status now
-            if status!=self.VkStatus and self.state==2:
-                self.trans.updateStatus(self.bjid,status)
-            #save status. If locked we'll update it automatically when possible
-            self.VkStatus = status
-        else:
-            self.resources[jid]=None
+        try:
+            #if had no resources before and not trying to login now
+            if (not self.resources) and self.state==0:
+                self.state=1
+                # self.trans.sendPresence(self.trans.jid,self.bjid,t="probe") 
+                # ???
+                self.login()
+            #new status of a resource
+            if jid in self.resources:
+                pass
+            elif self.resources and self.state==2:
+                self.trans.sendPresence(self.trans.jid,jid,status=self.status)
+                self.contactsOnline(self.onlineList)
+            #if VkStatus has to be changed and should be done now
+            if (prs!=None):
+                status=self.prsToVkStatus(self.storePresence(prs))
+                #if not locked we update status now
+                if status!=self.VkStatus and self.state==2:
+                    self.trans.updateStatus(self.bjid,status)
+                #save status. If locked we'll update it automatically when possible
+                self.VkStatus = status
+            else:
+                self.resources[jid]=None
+        except:
+            logging.exception('ZZZZOMBIE!\n')
 
     def getStatus(self,bjid):
         """ returns status of roster item if set """
@@ -290,11 +308,9 @@ class user:
                 ck=self.captcha_key
                 cs=self.captcha_sid
                 self.captcha_sid=None
-            self.vclient=libvkontakte.client(jid=jid,email=email,passw=pw,user=self,captcha_key=ck,captcha_sid=cs)
+            self.vclient=libvkontakte.client(jid=jid,user=self)
             self.vclient.initCookies()
             #FIXME legacy cookies
-            #if (self.cookies):
-                #self.vclient.cjar.clear()
             for d,n,v in self.cookies:
                 self.vclient.setCookie(name=n, val=v, site=d)
                 if (n=='remixsid'):
@@ -334,8 +350,9 @@ class user:
             self.state=4
             return
         except:
-            logging.error("GREPME state=1 freeze")
+            logging.exception("GREPME state=1 freeze")
             self.state=4
+            return
         self.state=2
         self.trans.updateStatus(self.bjid,self.VkStatus)
         self.refreshData()
@@ -364,13 +381,8 @@ class user:
             self.state=4
             return
         self.pool.call(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
-        
+    
     def logout(self):
-        #print "logout %s"%self.bjid
-        #self.lock=1
-        #self.active=0
-        #logging.warning('acq')
-
         if ( not self.logoutLock.acquire()):
             #logging.warning('abrt')
             return
@@ -380,8 +392,6 @@ class user:
             self.logoutLock.release()
             #logging.warning('released')
             return
-        #logging.warning('logout (%s)'%repr(self.bjid))
-        #logging.warning('reeased')
         self.state=3
         self.logoutLock.release()
         
@@ -487,44 +497,43 @@ class user:
         #print self.roster
         #print "r"
         try:
-            self.refreshCount+=1
-            if (1 and self.rosterStatusTimer):
-                self.rosterStatusTimer=self.rosterStatusTimer-1
-            else:
-                slist=self.vclient.getStatusList()
-                self.rosterStatusTimer=5
-                # it's about 5 munutes
-                for i in slist:
-                    self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
-                    #self.roster["%s@%s"%(i,self.trans.jid)]["status"]=slist[i]
             self.vclient
             tfeed=self.vclient.getFeed()
             #tfeed is epty only on some error. Just ignore it
             if tfeed:
                 self.trans.updateFeed(self.bjid,tfeed)
-            self.onlineList=self.vclient.getOnlineList()
-            if (self.tonline.keys()!=self.onlineList.keys()):
-                self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
-                self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
-                self.tonline=self.onlineList
+            #to=time.time()
+            if ((self.refreshCount%3)==0):
+                # performance tweak: dont update online list every time
+                self.onlineList=self.vclient.getOnlineList()
+                if (self.tonline.keys()!=self.onlineList.keys()):
+                    self.contactsOffline(filter(lambda x:self.onlineList.keys().count(x)-1,self.tonline.keys()))
+                    self.contactsOnline(filter(lambda x:self.tonline.keys().count(x)-1,self.onlineList.keys()))
+                    self.tonline=self.onlineList
+            if (self.refreshCount%6)==0:
+                slist=self.vclient.getStatusList()
+                for i in slist:
+                    self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
+                if self.getConfig("keep_online"):
+                    self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
             #FIXME online status
-            if (self.getConfig("wall_notify") and self.refreshCount%10==0):
+            if (self.refreshCount%3)==0 and self.getConfig("wall_notify"):
                 try:
                     self.checkWallUpdate()
                 except:
                     logging.exception('')
-            self.iterationsNumber = self.iterationsNumber + 15 #we sleep 15 in  pollManager
-            if self.iterationsNumber>13*60 and self.getConfig("keep_online"):
-                self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
-                self.iterationsNumber = 0
             if ((self.refreshCount%1000)==0):
                 self.refreshCount=0
             if ((self.refreshCount%100)==0):
                 self.sendProbe()
             #self.loopDone=True
+            self.refreshCount+=1
+        except libvkontakte.HTTPError:
+            self.refreshDone=True
+            raise
         except:
             self.refreshDone=True
-            logging.warning('refresh freeze prevented!')
+            logging.exception('refresh freeze?')
             raise
         self.refreshDone=True
         
@@ -653,10 +662,10 @@ class user:
         cfile.close()
         try:
             j=demjson.JSON(compactly=False)
+            data=j.decode(f.decode('utf-8'))
         except demjson.JSONDecodeError,e:
             logging.error ("broken json file: %s\n%s"%(fname,str(e)))
             raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
-        data=j.decode(f.decode('utf-8'))
         try:
             self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
         except TypeError:

@@ -21,7 +21,8 @@ fields={
             'server':(unicode,None,True),
             'port':(int,None,True),
             'secret':(unicode,None,True),
-            'admin':(unicode,None,False)
+            'admin':(unicode,None,False),
+            'control_socket':(unicode,None,False)
         },
     "debug":
         {
@@ -53,7 +54,7 @@ def read(filename):
                     logging.critical("can't get required field '%s/%s'. Check your config file ('%s')."%(s,o,filename))
                     raise Exception
                 conf[s][o]=d
-    print conf
+    #print conf
 def get(sect,opt=None):
     if (not opt):
         sect,opt=sect.split('/')

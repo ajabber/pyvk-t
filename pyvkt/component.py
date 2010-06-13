@@ -25,7 +25,7 @@
 from base64 import b64encode, b64decode
 from traceback import print_stack, print_exc,format_exc
 import sys,os,platform,threading,signal,cPickle,time,ConfigParser, hashlib
-import subprocess
+import subprocess,traceback
 
 from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
@@ -39,6 +39,7 @@ from lxml.etree import SubElement,tostring
 from threading import Lock
 import gc,inspect
 import pyvkt.config as conf
+from pyvkt.control import ControlSocketListener
 from datetime import datetime
 
 class pyvk_t(pyvkt.comstream.xmlstream):
@@ -47,7 +48,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
     logger=None
     terminating=False
     isActive=1
-    
+    latency=0
+    timeCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
+    callCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
     def __init__(self,jid):
         pyvkt.comstream.xmlstream.__init__(self,jid)
         self.httpIn = 0
@@ -61,6 +64,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.pubsub=None
         self.users={}
         self.admins=conf.get('general','admin').split()
+        if (conf.get('general','control_socket')):
+            logging.warning('starting CSL')
+            self.csl=ControlSocketListener(self)
+            self.csl.start()
+        else:
+            logging.warning('ControlSocket disabled')
+
         self.admin=self.admins[0]
         #self.config=config
         try:
@@ -83,6 +93,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.unregisteredList=[]
         signal.signal(signal.SIGUSR1,self.signalHandler)
         signal.signal(signal.SIGUSR2,self.signalHandler)
+    def addPerfStats(self,tc, cc):
+        for i in tc.keys():
+            self.timeCounters[i]+=tc[i]
+            self.callCounters[i]+=cc[i]
     def handlePacket(self,st,dbg):
         try:
             if (st.tag.endswith("message")):
@@ -153,85 +167,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             cmd=body[1:]
 
             logging.warning("admin command: '%s'"%cmd)
-            if (cmd[:4]=="stop"):
-                self.isActive=0
-                if (cmd=="stop"):
-                    self.stopService(suspend=True)
-                else:
-                    self.stopService(suspend=True,msg=cmd[5:])
-                self.sendMessage(self.jid,src,"'%s' done"%cmd)
-            elif (cmd=="start"):
-                self.isActive=1
-            elif (cmd=="sendprobes"):
-                self.sendProbes(src)
-            elif (cmd=="collect"):
-                gc.collect()
-            elif (cmd[:4]=="eval"):
-                try:
-                    res=repr(eval(cmd[5:]))
-                    logging.warning("eval: "+repr(res))
-                    self.sendMessage(self.jid,src,'#eval: %s'%repr(res))
-                except Exception,e:
-                    logging.error("exec failed"+format_exc())
-                    self.sendMessage(self.jid,src,'#eval: exception:\n%s'%str(e))
-            elif (cmd[:4]=="exec"):
-                try:
-                    execfile("inject.py")
-                except:
-                    logging.error("exec failed"+format_exc())
-            elif (cmd=='convertdb'):
-                logging.warning('starting database update')
-                logging.warning('stopping gateway...')
-                self.isActive=0
-                self.stopService(suspend=True, msg='database update')
-                logging.warning('gateway stopped, starting conversion')
-                
-                for i in os.listdir(self.datadir):
-                    p=str(self.datadir)+'/'+i
-                    if not os.path.isdir(p):
-                        continue
-                    if (p in ('.','..')):
-                        continue
-                    for j in os.listdir(p):
-                        if (j in ('..','.')):
-                            continue
-                        if (not j[-5:] in ('_json', '_bckp')):
-                            try:
-                                str(j)
-                                logging.warning('converting %s'%j)
-                            except:
-                                logging.warning('converting %s'%repr(j))
-                            u=user(self,j, noLoop=True)
-                            try:
-                                u.readJsonData()
-                                logging.warning('already in new format')
-                                continue
-                            except:
-                                pass
-                            try:
-                                u.readData()
-                            except Exception, e:
-                                logging.warning('failed')
-                                continue
-                            u.saveJsonData()
-                            logging.warning('done')
-                            os.rename('%s/%s'%(p,j), '%s/%s_bckp'%(p,j))
-                logging.warning('conversion finished.')
-                        
-
-            elif (cmd=="users"):
-                count = 0
-                ret = u''
-                for i in self.users.keys():
-                    if (self.hasUser(i)):
-                        ret=ret+u"\nxmpp:%s"%(i)
-                        count+=1
-                ret=u"%s user(s) online"%count + ret
-                self.sendMessage(self.jid,src,ret)
-            elif (cmd=="stats"):
-                #TODO async request
-                self.sendStatsMessage(src)
-
+            resp=self.adminCmd(cmd)
+            if (type(resp)==unicode):
+                pass
+                #resp=resp.encode('utf-8')
+            else:
+                resp=str(resp)
+            self.sendMessage(self.jid,src,resp)
+            return
             #elif (cmd=="resources"):
                 #count = 0
                 #rcount = 0
@@ -265,19 +208,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                         ##print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
                     #except:
                         #pass
-            elif (cmd[:4]=="wall"):
-                for i in self.users:
-                    self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
-                self.sendMessage(self.jid,src,"'%s' done"%cmd)
             #elif (cmd[:7]=='traffic'):
                 #try:
                     #self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
                 #except:
                     #print_exc()
 
-
-            else:
-                self.sendMessage(self.jid,src,"unknown command: '%s'"%cmd)
+            #else:
+                #self.sendMessage(self.jid,src,"unknown command: '%s'"%cmd)
             return
             #logging.error("fixme: sending messages")op
             #return
@@ -300,6 +238,116 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             else:
                 d.addCallback(self.msgDeliveryNotify,msg_id=msgid,jid=src,v_id=v_id,body=body,subject=title)
             d.addErrback(self.errorback)
+        if src==self.jid and body[:4]=='ping':
+            self.latency=time.time()-float(body[4:])
+            if (self.latency>600):
+                logging.error("critical overload. disabling updates.")
+                self.pollMgr.updateInterval=300
+            elif (self.latency>180):
+                logging.warning("performance troubles. increasing update interval.")
+                self.pollMgr.updateInterval=30
+            else:
+                self.pollMgr.updateInterval=15
+         
+    def adminCmd(self,cmd):
+        if (cmd[:4]=="stop"):
+            self.isActive=0
+            if (cmd=="stop"):
+                self.stopService(suspend=True)
+            else:
+                self.stopService(suspend=True,msg=cmd[5:])
+            return "'%s' done"%cmd
+        elif (cmd=="start"):
+            self.isActive=1
+        elif (cmd=="sendprobes"):
+            self.sendProbes(src)
+        elif (cmd=="collect"):
+            gc.collect()
+        elif (cmd[:4]=="eval"):
+            try:
+                res=repr(eval(cmd[5:]))
+                logging.warning("eval: "+repr(res))
+                return '#eval: %s'%repr(res)
+            except Exception,e:
+                logging.error("exec failed"+format_exc())
+                return '#eval: exception:\n%s'%str(e)
+        elif (cmd[:4]=="exec"):
+            try:
+                execfile("inject.py")
+            except:
+                logging.error("exec failed"+format_exc())
+
+        elif (cmd=='savestate'):
+            try:
+                self.saveState()
+                return 'state saved'
+            except:
+                logging.exception('')
+
+        elif (cmd=='restorestate'):
+            try:
+                self.restoreState()
+                return 'state restored'
+            except:
+                logging.exception('')
+        elif (cmd=="users"):
+            count = 0
+            ret = u''
+            for i in self.users.keys():
+                if (self.hasUser(i)):
+                    ret=ret+u"\nxmpp:%s"%(i)
+                    count+=1
+            return "%s user(s) online"%count + ret
+        elif (cmd=="stats"):
+            #TODO async request
+            return self.getStatsMessage()
+
+        #elif (cmd=="resources"):
+            #count = 0
+            #rcount = 0
+            #ret = u''
+            #for i in self.users.keys():
+                #if (self.hasUser(i)):
+                    #for j in self.users[i].resources.keys():
+                        #ret=ret+u"\nxmpp:%s %s(%s)[%s]"%(j,self.users[i].resources[j]["show"],self.users[i].resources[j]["status"],self.users[i].resources[j]["priority"])
+                        #rcount +=1
+                    #ret=ret+u"\n"
+                    #count+=1
+            #ret=u"%s(%s) user(s) online"%(count,rcount) + ret
+            #self.sendMessage(self.jid,src,ret)
+        #elif (cmd[:6]=="roster"):#Получение информации о ростере человека
+            #logging.error("fixme")
+            #j=cmd[7:]
+            #if not j:
+                    #j=src
+            #j=pyvkt.bareJid(j)
+            #ret=u'Ростер %s:\n'%j
+            #if self.hasUser(j):
+                #ret = ret + u'\tКоличество контактов: %s\n'%len(self.users[j].roster)
+                #ret = ret + u'\tРазмер данных в БД: %s'%len(b64encode(cPickle.dumps(self.users[j].roster,2)))
+            #else:
+                #ret = u'Пользователь %s не в сети, можете посмотреть его ростер в базе'%j
+            #self.sendMessage(self.jid,msg["from"],ret)
+        #elif(cmd=="stats2"):
+            #for i in self.users.keys():
+                #try:
+                    #print i
+                    ##print "a=%s l=%s"%(self.users[i].active,self.users[i].lock)
+                #except:
+                    #pass
+        elif (cmd[:4]=="wall"):
+            for i in self.users:
+                self.sendMessage(self.jid,i,"[broadcast message]\n%s"%cmd[5:])
+            return True
+        #elif (cmd[:7]=='traffic'):
+            #try:
+                #self.sendMessage(self.jid,msg["from"],"Traffic: %s"%repr(self.logger.getTraffic(int(cmd[7:]))))
+            #except:
+                #print_exc()
+
+        else:
+            return "unknown command: '%s'"%cmd
+        return 
     def startPoll(self):
         self.pollMgr.start()
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
@@ -307,6 +355,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         Send delivery notification if message successfully sent
         use receipt flag if needed to send receipt
         """
+        #logging.warning('receipt: res=%s'%res)
         if (v_id):
             src="%s@%s"%(v_id,self.jid)
         else:
@@ -324,11 +373,15 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #        msg.addElement("subject").addContent(subject)
         #msg["to"]=jid
         #msg["id"]=msg_id
-        if res == 0 and receipt:
-            addChild(msg,'received','urn:xmpp:receipts')
+        if res == 0:
+            if (receipt):
+                addChild(msg,'received','urn:xmpp:receipts')
+            else:
+                #logging.warning('disabled')
+                return
             #msg.addElement("received",'urn:xmpp:receipts')
-        elif res == 0:
-            return #no reciepts needed and no errors
+        #elif res == 0:
+            #return #no reciepts needed and no errors
         elif res == 2:
             err=addChild(msg,'error',attrs={'type':'wait','code':'500'})
             addChild(err,"resource-constraint","urn:ietf:params:xml:ns:xmpp-stanzas")
@@ -338,8 +391,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             err=addChild(msg,'error',attrs={'type':'cancel','code':'500'})
             addChild(err,"undefined-condition","urn:ietf:params:xml:ns:xmpp-stanzas")
             addChild(err,"text","urn:ietf:params:xml:ns:xmpp-stanzas").text=u"Капча на сайте или ошибка сервера"
-
         self.send(msg)
+        #logging.warning('receipt sent')
     def onIq(self,iq):
         #return False
         def getQuery(iq,ans,ns):
@@ -414,7 +467,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                         if (self.hasUser(bjid)):
                             for i in self.users[bjid].onlineList:
                                 cname=u'%s %s'%(self.users[bjid].onlineList[i]["first"],self.users[bjid].onlineList[i]["last"])
-                                addChild(a,"item",attrs={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)})
+                                #addChild(a,"item",attrs={"node":"http://jabber.org/protocol/commands",'name':cname,'jid':"%s@%s"%(i,self.jid)})
+                                addChild(a,"item",attrs={"node":"",'name':cname,'jid':"%s@%s"%(i,self.jid)})
                     elif (node=="http://jabber.org/protocol/commands"):
                         self.send(self.commands.onDiscoItems(iq))
                         return
@@ -666,9 +720,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             pass
         self.send(ans)
 
-    def sendStatsMessage(self,to):
-        ret=u"%s пользователей в сети\n%s секунд аптайм\n%s threads active"%(len(self.users),int(time.time()-self.startTime),len(threading.enumerate()))
-        self.sendMessage(self.jid,to,ret)
+    def getStatsMessage(self):
+        ret="users online: %s\nuptime: %s\nactive threads: %s"%(len(self.users),int(time.time()-self.startTime),len(threading.enumerate()))
+        return ret
 
     def getUserList(self):
         ret=[]
@@ -699,7 +753,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         u.readData()
         fr=u.roster.keys()[0]
         del u
-        logging.warning('sending probe to %s'%bjid)
+        #logging.warning('sending probe to %s'%bjid)
         self.sendPresence(src=fr,dest=bjid,t='probe')
     def sendFriendlist(self,fl,jid):
 
@@ -959,12 +1013,24 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.usrLock.release()
         #logging.warning('released')
         u.pool.call(u.addResource,jid=jid,prs=prs)
-
+    def checkZombie(self,bjid):
+        try:
+            u=self.users[bjid]
+        except KeyError:
+            return False
+        if (u.state==1 and u.loginTime-time.time()>600):
+            logging.warning('%s: zombie detected! invoking logout() from main pool'%bjid)
+            user.logout()
+            logging.warning('%s: zombie defeated!'%bjid)
+            return True
+        return False
     def delResource(self,jid, to=None,dbg=False):
         #print "delResource %s"%jid
         bjid=gen.bareJid(jid)
         #if (dbg):
             #logging.warning('start')
+        #if (self.checkZombie(bjid)):
+            #return
         try:
             user=self.users[bjid]
         except KeyError:
@@ -977,6 +1043,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return
 
         #try:
+        
         user.pool.call(user.delResource,jid=jid)
         #except:
             #logging.exception('')
@@ -1082,7 +1149,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                         else:
                             logging.warning('long message not fixed. length: %s'%(len(i['text'])))
                     self.sendMessage(src='%s@%s'%(i['from'],self.jid), dest=jid, body=i['text'])
-                    logging.warning ('%s sent'%i)
+                    #logging.warning ('%s sent'%i)
                     user.vclient.getHttpPage('http://vkontakte.ru/mail.php?act=show&id=%s'%i['id'])
         except KeyError:
             logging.exception('')
@@ -1253,6 +1320,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             try:
                 SubElement(pr,'status').text=status
             except ValueError:
+                logging.warning('bad status: %.80s'%repr(status))
                 SubElement(pr,'status').text=status.replace('\0','')
                 logging.warning('null byte in status: fixed')
                 
@@ -1316,4 +1384,43 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             pass
             #print '    %s (%s)'%(i.name,i.daemon)
         return True
+    def saveState(self):
+        fn='%s/%s'%(conf.get ('storage','datadir'),'state.json')
+        olist=self.users.keys()
+        ret={'version':'0.1'}
+        ret['users_online']=olist
+        j=demjson.JSON(compactly=False)
+        cfile=open(fn,'w')
+        cfile.write(j.encode(ret).encode('utf-8'))
+        cfile.close()
+    def restoreState(self):
+        fn='%s/%s'%(conf.get ('storage','datadir'),'state.json')
+        cfile=open(fn,'r')
+        f=cfile.read()
+        cfile.close()
+        j=demjson.JSON(compactly=False)
+        data=j.decode(f.decode('utf-8'))
+        if data['version']=='0.1':
+            probeCnt=0
+            probeTotal=len(data['users_online'])
+            for i in data['users_online']:
+                probeCnt+=1
+                try:
+                    logging.warning('autoreconnect: [%s/%s]sending probe to %s'%(probeCnt,probeTotal,i))
+                    self.sendProbe(i)
+                except:
+                    logging.exception('')
+    def userStack(self,bjid):
+        
+        try:
+            fr=sys._current_frames()[self.users[bjid].pool.ident]
+            ret=(''.join(traceback.format_stack(fr)))
+            #logging.warning(ret)
+            return ret
+        except:
+            logging.exception('')
+
+
+ 
+        
 
