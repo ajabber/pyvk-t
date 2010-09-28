@@ -73,7 +73,7 @@ else:
     connect_socket = socket.create_connection
 
 newLoop=True
-class xmlstream:
+class xmlstream(object):
     "Да, я знаю, что тут костыль на костыле и костылем погоняет."
     alive=True
     connFailure=False

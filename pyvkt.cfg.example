@@ -14,7 +14,6 @@
 [storage]
 #cache: ./cache
 #datadir: ./data
-#cookies: ./cookies
 
 [debug]
 #dump_path: dumps

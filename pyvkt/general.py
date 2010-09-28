@@ -20,7 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-import re, htmlentitydefs,ConfigParser
+import re, htmlentitydefs,ConfigParser,traceback
 class config:
     fields={'genegal':{1:1}}
     def __init__(cfile='pyvk-t_new.conf'):
@@ -63,6 +63,9 @@ def jidToId(jid):
     except:
         return -1
 
+def stack():
+    tb=traceback.extract_stack(limit=5)[:-2]
+    return ['%10s:%s %10s -> %s'%i for i in tb]
 
 ##
 # Removes HTML or XML character references and entities from a text string.
@@ -94,14 +97,14 @@ def unescape(text):
     return re.sub("&#?\w+;", fixup, text)
 
 userConfigFields={
-    "sync_status":{"type":"boolean", "default":False, "desc":u"Синхронизировать статус с сайтом"}
-    ,"vcard_avatar":{"type":"boolean", "default":False, "desc":u"Аватары в vCard"}
-    ,"resolve_nick":{"type":"boolean", "default":False, "desc":u"Пытаться выделить ник"}
-    ,"keep_online":{"type":"boolean", "default":False, "desc":u'Поддерживать статус "в сети" (экспериментально)'}
-    ,"show_onlines":{"type":"boolean", "default":True, "desc":u"Показывать, кто в сети ('online' на сайте)"}
-    ,"jid_in_subject":{"type":"boolean","default":True, "desc":u"JID в теме сообщений, если не указана"}
-    ,"feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
-    ,"wall_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых сообщениях на стене"}
+    "sync_status":       {"type":"boolean", "default":False, "desc":u"Синхронизировать статус с сайтом"}
+    ,"vcard_avatar":     {"type":"boolean", "default":False, "desc":u"Аватары в vCard"}
+    ,"resolve_nick":     {"type":"boolean", "default":False, "desc":u"Пытаться выделить ник"}
+    ,"keep_online":      {"type":"boolean", "default":False, "desc":u'Поддерживать статус "в сети" (экспериментально)'}
+    ,"show_onlines":     {"type":"boolean", "default":True,  "desc":u"Показывать, кто в сети ('online' на сайте)"}
+    ,"jid_in_subject":   {"type":"boolean", "default":True,  "desc":u"JID в теме сообщений, если не указана"}
+    ,"feed_notify":      {"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
+    ,"wall_notify":      {"type":"boolean", "default":False, "desc":u"Уведомлять о новых сообщениях на стене"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
     #,"save_cookies":{"type":"boolean", "default":True, "desc":u"Сохранять cookies на сервере. Поможет уберечься от капчи"}
     ,"signature":{"type":"text-single", "default":"", "desc":u"Подпись в сообщении"}

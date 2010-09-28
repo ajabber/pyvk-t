@@ -244,14 +244,15 @@ class cmdManager:
             #else:
                 #addChild(q,'identity',attrs={"name":"pyvk-t commands","category":"automation","type":"command-node"})
                 #q.addElement("identity").attributes={"category":"automation","type":"command-node"}
-                
+            ntype="command-list"    
         else:
             try:
                 cmd=cmdList[node[4:]]
                 name=cmd.name
             except KeyError:
                 name="unknown"
-        addChild(q,'identity',attrs={"name":name,"category":"automation","type":"command-node"})
+            ntype="command-node"
+        addChild(q,'identity',attrs={"name":name,"category":"automation","type":ntype})
         addChild(q,"feature",attrs={'var':'http://jabber.org/protocol/commands'})
         addChild(q,"feature",attrs={'var':'jabber:x:data'})
         return resp

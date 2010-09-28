@@ -41,6 +41,7 @@ import ConfigParser,os,string
 from traceback import print_stack, print_exc,format_exc
 import logging,time, pycurl
 import pyvkt.config as conf
+import weakref
 try:
     import json
 except:
@@ -50,8 +51,8 @@ import StringIO
 http_traffic=0
 http_requests=0
 #user-agent used to request web pages
-#USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
-USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
+USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
+#USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
 #USERAGENT='User-Agent=Mozilla/5.0 (X11; U; Linux i686; ru; rv:1.9.1.4) Gecko/20091016 Firefox/3.5.4'
 class tooFastError(Exception):
     def __init__(self):
@@ -122,26 +123,21 @@ class RedirectHandler(urllib2.HTTPRedirectHandler):
         #print 302
         #print headers.dict
         return result
-class client():
-    oldFeed=""
+class client(object):
+    __slots__=['tonline','captchaRequestData','bjid','user','dumpPath',
+               'cachePath', 'c','sid','v_id']
     #onlineList={}
-    loopDone=True
     #just counter for loops. use some big number in the beginning
     iterationsNumber = 999999
-    # true if there is no loopInternal's in user queue
-    tonline={}
-    # Данные запроса, вызвавшего капчу юзерапи
-    captchaRequestData={}
-    #opener=None
-    cookieStr=''
     def __init__(self,jid,user):
-        self.bytesIn = 0
+        # true if there is no loopInternal's in user queue
+        self.tonline={}
+        # Данные запроса, вызвавшего капчу юзерапи
+        self.captchaRequestData={}
         self.bjid=jid
-        self.user=user
+        self.user=weakref.ref(user)
         self.dumpPath=conf.get("debug/dump_path")
         self.cachePath=conf.get('storage','cache')
-        self.keep_online=True
-        self.resolve_links=True
         self.c=pycurl.Curl()
         self.c.setopt(pycurl.NOSIGNAL,1)
         self.c.setopt(pycurl.TIMEOUT,10)
@@ -152,17 +148,8 @@ class client():
         #FIXME delete 
         
     def initCookies(self):
-        self.cjar=cookielib.CookieJar()
-        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cjar))
-        self.cookieStr=''
         self.c.setopt(pycurl.COOKIELIST,str('ALL'))
         self.c.setopt(pycurl.COOKIE, '')
-    def saveCookies(self):
-        if self.user.getConfig("save_cookies"):
-            try:
-                self.cjar.save()
-            except:
-                logging.exception('can\'t save cookies')
     def setCookie(self, name, val, site='vkontakte.ru'):
         #FIXME arg names
         self.c.setopt(pycurl.COOKIELIST,str('Set-Cookie: %s=%s; domain=.%s'%(name,val,site)))
@@ -244,15 +231,27 @@ class client():
             if (vl[0]!='unknown'):
                 ret.append((vl[0][1:],vl[5],vl[6]))
         return ret
-    def getHttpPage_curl(self,url,params=None):
+    def getHttpPage(self,url,params=None, referer=None,files=None, hdrFunction=None):
         c=self.c
         #print '\n\n-----------------------\n\n'
         #print url
         #print params
         c.setopt(pycurl.URL,str(url))
+        
+        c.setopt(pycurl.POST,0)
+        if (files):
+            #we expect each file in form (fieldName,fileName)
+            c.setopt(c.POST,1)
+            kv=[(i,str(params[i])) for i in params]
+            for file in files:
+                kv.append((file[0],(pycurl.FORM_FILE,file[1])))
+            #print kv
+            c.setopt(c.HTTPPOST,kv)
+
+            params=None
         if (type(params)==type({})):
             params=urllib.urlencode(params)
-            c.setopt(pycurl.POST,1)
+            #c.setopt(pycurl.POST,1)
             #kv=[(i,str(params[i])) for i in params]
             #c.setopt(pycurl.HTTPPOST,kv)
             #params=None
@@ -260,10 +259,14 @@ class client():
         if (params):
             c.setopt(pycurl.POST,1)
             c.setopt(pycurl.POSTFIELDS, params)
-        else:
-            c.setopt(pycurl.POST,0)
+        if (referer):
+            c.setopt(pycurl.REFERER,referer)
+        #c.setopt(pycurl.USERAGENT,USERAGENT)
+        #c.setopt(pycurl.VERBOSE,255)
         b = StringIO.StringIO()
         c.setopt(pycurl.WRITEFUNCTION, b.write)
+        if (hdrFunction):
+            c.setopt(pycurl.HEADERFUNCTION, hdrFunction)
         try:
             c.perform()
         except pycurl.error,e:
@@ -275,7 +278,7 @@ class client():
         #print ret.decode('cp1251')
         #print '----'
         return ret
-    def getHttpPage(self,url,params=None,cjar=None, headers={}):
+    def getHttpPage_legacy(self,url,params=None,cjar=None, headers={}):
         """ get contents of web page
             returns u'' if some of errors took place
         """
@@ -313,7 +316,6 @@ class client():
             raise HTTPError("HTTP bad status line error",req.get_full_url())
         except httplib.HTTPException, err:
             raise HTTPError("HTTP exception.",req.get_full_url())
-        self.bytesIn += len(page)
         if (cjar):
             cjar.make_cookies(res,req)
         dt=time.time()-st
@@ -331,7 +333,7 @@ class client():
         return 
 
     def logout(self):
-        self.onlineList={}
+        pass
     
     def getFeed(self):
         s=self.getHttpPage("http://vkontakte.ru/feed2.php","mask=ufmpvnoq").decode("cp1251").strip()
@@ -346,49 +348,25 @@ class client():
         return {}
 
     def flParse(self,page):
-        res=re.search("<script>friendsInfo.*?</script>",page,re.DOTALL)
-        if (res==None):
-            print "wrong page format: can't fing <script>"
-            self.checkPage(page)
-            self.dumpString(page,"script")
-            return {}
-        tag=page[res.start():res.end()]
-        res=re.search("\tlist:\[\[.*?\]\],\n\n",tag,re.DOTALL)
-        if (res==None):
-            if (tag.find("list:[],")!=-1):
-                #print "empty list"
-                return {}
-            print "wrong page format: can't fing 'list:''"
-            self.checkPage(page)
-            self.dumpString(page,"script")
-            self.dumpString(tag,"script_list")
-            return {}
-        #print 
-        json=tag[res.start()+6:res.end()-3]
-        #print json
-        
-        #json=json
-        #.decode("cp1251")
-        #.encode("utf-8")
-        gl={}
-        for i in ["f","l","p","uy","uf","to","r","f","u","ds","fg"]:
-            gl[i]=i
-        try:
-            flist=eval(json,gl,{})
-            #print flist
-            #flist=demjson.decode(json)
-        except Exception, e:
-            logging.warning('json decode error: %e',e)
-            return {}
+        startString="var friendsData = "
+        endString=";\n var diff;"
+        varStart=page.find(startString)
+        if(varStart==-1):
+            raise HttpError()
+        varStart+=len(startString)
+        varEnd=page.find(endString, varStart)
+        jsonString=page[varStart:varEnd].decode("cp1251")
+        fl=demjson.decode(jsonString)
+        #print fl['friends'][0]
         ret={}
-        for i in flist:
-            ret[i[0]]={"last":i[1]['l'].decode("cp1251"),"first":i[1]['f'].decode("cp1251")}
-            #print type(i[1]['l'])
-        #print "--",ret
+        for item in fl['friends']:
+            first, last=item[1].rsplit(' ', 1)
+            ret[item[0]]={"last":last, "first": first, "avatar_url":item[2]}
         return ret
     
     def getOnlineList2(self):
         fl=self.userapiRequest(act='friends_online',id=self.v_id)
+        print fl
         ret={}
         for i in fl:
             if (len(i)<3):
@@ -412,7 +390,7 @@ class client():
             #print "getOnlineList: userapi request failed"
             #print_exc()
         ret={}
-        page=self.getHttpPage("http://vkontakte.ru/friend.php","act=online&nr=1")
+        page=self.getHttpPage("http://vkontakte.ru/friends.php?filter=online&id=%s"%self.v_id)
         if not page:
             return {}
         return self.flParse(page)
@@ -421,11 +399,10 @@ class client():
         if (self.dumpPath==None or self.dumpPath==''):
             return
         fname="%s/%s-%s"%(self.dumpPath,fn,int(time.time()))
-        fil=open(fname,"w")
-        if (type(string)==unicode):
-            string=strng.encode("utf-8")
-        fil.write(string)
-        fil.close()
+        with open(fname,"w") as fil:
+            if (type(string)==unicode):
+                string=strng.encode("utf-8")
+            fil.write(string)
         logging.warning("%s: page saved to %s"%(comm,fname))
 
     def getHistory(self,v_id,length=15):
@@ -556,7 +533,7 @@ class client():
             return result
             
         result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-        if (self.user.getConfig("resolve_nick")):
+        if (self.user().getConfig("resolve_nick")):
             #FIXME 
             list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
             if len(list)==6:
@@ -659,7 +636,7 @@ class client():
                 lc=None
                 result['FN']=pt[del_pos+3:]
                 result[u"О себе:"]=u"[страница удалена ее владельцем]"
-        if (self.user.getConfig("resolve_nick")):
+        if (self.user().getConfig("resolve_nick")):
             list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
             if len(list)==6:
                 result['GIVEN']=list[1].strip()
@@ -760,9 +737,8 @@ class client():
                     fpath="%s/avatar-%s"%(self.cachePath,fname)
                     ifpath="%s/img-avatar-%s"%(self.cachePath,fname)
                     try:
-                        cfile=open(fpath,"r")
-                        photo=cfile.read()
-                        cfile.close()
+                        with open(fpath,"r") as cfile:
+                            photo=cfile.read()
                         if gen_hash:
                             hash=hashlib.sha1(base64.decodestring(photo)).hexdigest()
                     except:
@@ -783,9 +759,8 @@ class client():
                     for i in os.listdir(self.cachePath):
                         if (i[:l]==fn or i[:l2]==fn2):
                             os.unlink("%s/%s"%(self.cachePath,i))
-                    cfile=open(fpath,'w')
-                    cfile.write(photo)
-                    cfile.close()
+                    with open(fpath,'w') as cfile:
+                        cfile.write(photo)
             if gen_hash:
                 return photo,hash
             else:
@@ -950,6 +925,7 @@ class client():
     def getFriendList(self, v_id=0):
         if (v_id==0):
             v_id=self.v_id
+        return self.flParse(self.getHttpPage("http://vkontakte.ru/friends.php?filter=all&id=%s"%v_id))
         fl=self.userapiRequest(act='friends',id=v_id)
         ret={}
         for i in fl:
@@ -1170,10 +1146,7 @@ class client():
                     ttds=cd[1].div.table.tr.findAll("td")
                     ld=eval(ttds[0].img["onclick"][18:-1],{},{})
                     tdata=ttds[1].findAll(text=True)
-                    if (self.resolve_links):
-                        pinfo["dlink"]="http://cs%s.vk.com/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
-                    else:
-                        pinfo["dlink"]='direct links are disabled'
+                    pinfo["dlink"]="http://cs%s.vk.com/u%s/audio/%s.mp3"%(ld[1],ld[2],ld[3])
                     pinfo["type"]='audio'
                     pinfo["desc"]="%s - %s (%s)"%(tdata[1],tdata[3],tdata[5])
                 else:
@@ -1260,8 +1233,8 @@ class client():
                 pinfo['dlink']=i[2][4]
                 pinfo['thumb']=i[2][3]
                 pinfo['link']='http://vkontakte.ru/photo%s_%s'%(i[2][5],i[2][6])
-            if (not self.resolve_links):
-                pinfo['dlink']=u'прямые ссылки отключены админом'
+            #if (not self.resolve_links):
+                #pinfo['dlink']=u'прямые ссылки отключены админом'
                     
             ret.append((i[3][0],pinfo))
         return ret
@@ -1396,4 +1369,25 @@ class client():
         except (KeyError,TypeError):
             pass
         return ret
+    def desktopApiRequest(self):
+#api_id	8
+#fields	photo_rec,contacts
+#format	JSON
+#method	getProfiles
+#sid	3e7c7f9f464a6e125a3c561c6777005d39f4af8332fecb02e3c4c914d6
+#sig	28d22a5043b919f1b6150752dd7b6972
+#uids	10189909,14070,193251,2579063,2626314,26884806,39755,460082,4770607,481836,51020738,5506400,6612601,83061,939351
+#v	3
+        reqParams={}
+        reqParams["api_id"]=8
+        reqParams["fields"]="photo_rec,contacts"
+        reqParams["method"]="getProfiles"
+        reqParams["sid"]="3e7c7f9f464a6e125a3c561c6777005d39f4af8332fecb02e3c4c914d6"
+        reqParams["uids"]="10189909,14070,193251,2579063,2626314,26884806,39755,460082,4770607,481836,51020738,5506400,6612601,83061,939351"
+        reqParams["v"]=3
+        hashStr="".join(("%s=%s"%(i,reqParams[i]) for i in sorted(reqParams.keys()) if i!="sid"))
+        import md5
+        sig=md5.new(hashStr).hexdigest()
+        print hashStr
+        print sig
         
