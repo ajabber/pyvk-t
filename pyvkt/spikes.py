@@ -26,7 +26,7 @@ import threading,time,logging
 from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
 from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError, PrivacyError, captchaError,UserapiJsonError,UserapiCaptchaError
 import pyvkt.general as gen
-import weakref
+import weakref,gc
 import cProfile as prof
 try:
     import hook
@@ -46,20 +46,36 @@ class pseudoXml:
         return self.attrs.has_key(k)
     def __nonzero__(self):
         return True
-class reqQueue(threading.Thread):
-    last='not started'
-    lastTime=0
-    def __init__(self,user,name=None):
+class reqQueue(object):
+    __slots__=['last','lastTime','_thread','alive','queue','user','threadId','name','__weakref__','bjid']
+    def __init__(self,user,bjid=None,ownThread=True):
         try:
-            threading.Thread.__init__(self,target=self.loop,name=name)
+            #n=str(name)
+            j=str(bjid)
         except UnicodeEncodeError:
-            threading.Thread.__init__(self,target=self.loop,name="pool(user_with_bad_jid)")
-        self.daemon=True
+            #n=repr(name)
+            j=repr(bjid)
+        n='rq (%s)'%j
+        if (False):
+            self._thread=threading.Thread(target=self.loop,name='pool(%s)'%n)
+            self._thread.daemon=True
+        else:
+            self._thread=None
         self.user=user
-        self.queue=Queue.Queue(400)
+        self.name=n
+        self.bjid=j
+        self.queue=Queue.Queue()
         self.alive=1
-        self.ptasks={}
         self.lastTime=time.time()
+        self.last='init'
+        self.threadId=None
+    def start(self):
+        self.user.trans.usrPool.addQueue(self)
+        return
+        if self._thread:
+            self._thread.start()
+    def len(self):
+        return self.queue.qsize()
     def call(self,foo,**kw):
         elem={"foo":foo,"args":kw,'stack':extract_stack()}
         try:
@@ -86,8 +102,10 @@ class reqQueue(threading.Thread):
         
     def stop(self):
         self.alive=0
-        self.call(self.dummy)
+        self.last=None
+        #self.call(self.dummy)
         self.user=None
+        #print gc.get_referrers(self)
     def dummy(self):
         return
     def loopWrapper(self):
@@ -96,14 +114,87 @@ class reqQueue(threading.Thread):
         #    prof.runctx('l()',globals(), locals(), 'profile_%s'%time.time())
         #else:
             self.loop()
+    def doNextTask(self,block=True):
+        elem=None
+        elem=self.queue.get(block=False)
+        self.last=elem
+        f=elem["foo"]
+        last=repr(f)
+        args=elem["args"]
+        self.lastTime=time.time()
+        try:
+            res=f(**args)
+            dt=time.time()-self.lastTime
+            if (dt>15):
+                logging.warning('slow [%6.4f] task done: %s '%(dt,repr(f)))
+        except authFormError:
+            logging.warn("%s: got login form")
+            try:
+                self.alive=0
+                self.user.logout()
+                self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
+            except:
+                logging.error(format_exc())
+        except gen.NoVclientError:
+            if (self.user):
+                logging.error("err: no vClient (%s)"%repr(self.user.bjid))
+            else:
+                logging.warning("loop: self.user==None. aborting")
+                return
+        except PrivacyError:
+            self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция запрещена настройками приватности на сайте.')
+            logging.warning('privacy error')
+        except UserapiCaptchaError,e:
+            logging.warning('userapi captcha error')
+            link='http://userapi.com/data?act=captcha&csid=%s'%e.fcsid
+            self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Невозможно выполнить операцию, captcha-защита.\nСмотрим картинку по ссылке %s и отправляем транспорту код командой ".captcha aaaaa", вместо aaaaa пишем код с картинки, затем проверяем, выполнилась ли операция (.history, .wall и т.п.)\nв случае ошибок запоминаем точное время попытки и заходим на pyvkt@conference.jabber.ru'%link)
+        #except captchaError:
+            #self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция не может быть выполнена из-за captcha-защиты на юзерапи. На данный момент обработка captcha не реализована.')
+        except HTTPError,e:
+            logging.error("http error: "+str(e).replace('\n',', '))
+        except UserapiSidError:
+            logging.error('userapi sid error (%s) logging out.\nsid = %s'%self.user.bjid,self.user.vclient.sid)
+            txt=u"Внутренняя ошибка транспорта (UseraspiSidError)"
+            self.user.vclient.initCookies()
+            self.user.logout()
+            return
+        except tooFastError:
+            logging.warning('FIXME "too fast" error stanza')
+        except gen.InternalError,e:
+            logging.error('internal error: %s'%e)
+            if e.fatal:
+                logging.error('fatal error')
+                return
+            txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
+            self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,
+                body=txt)
+        except UserapiJsonError:
+            logging.warning('userapi request failed')
+        except Exception, exc:
+            logging.exception('')
+            logging.error('unhandled exception: %s'%exc)
+            logging.error('task traceback:\n -%s'%(' -'.join(format_list(elem['stack']))))
+            #[logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
+            #print "Caught exception"
+            #print_exc()
+            #print "thread is alive!"
+            
+        else:
+            try:
+                elem["deferred"].callback(res)
+            except KeyError:
+                pass
+            except:
+                logging.error('error in callback')
+                logging.error(format_exc())
+                [logging.error('TB '+i) for i[:-1] in format_list(elem['stack'])]
+        self.queue.task_done()
     def loop(self):
         self.last='just started'
         try: 
             while(self.alive):
                 try:
-                    elem=None
-                    elem=self.queue.get(block=True,timeout=10)
-                    self.last=elem
+                    self.doNextTask()
                 except Queue.Empty:
                     self.lastTime=time.time()
                     try:
@@ -126,93 +217,36 @@ class reqQueue(threading.Thread):
                         except:
                             logging.exception('can\'t check user')
                     pass
-                else:
-                    f=elem["foo"]
-                    last=repr(f)
-                    args=elem["args"]
-                    self.lastTime=time.time()
-                    try:
-                        res=f(**args)
-                        dt=time.time()-self.lastTime
-                        if (dt>15):
-                            logging.warning('slow [%6.4f] task done: %s '%(dt,repr(f)))
-                    except authFormError:
-                        logging.warn("%s: got login form")
-                        try:
-                            self.alive=0
-                            self.user.logout()
-                            self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,body=u"Ошибка: возможно, неверный логин/пароль")
-                        except:
-                            logging.error(format_exc())
-                    except gen.NoVclientError:
-                        if (self.user):
-                            logging.error("err: no vClient (%s)"%repr(self.user.bjid))
-                        else:
-                            logging.warning("loop: self.user==None. aborting")
-                            return
-                    except PrivacyError:
-                        self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция запрещена настройками приватности на сайте.')
-                    except UserapiCaptchaError,e:
-                        link='http://userapi.com/data?act=captcha&csid=%s'%e.fcsid
-                        self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Невозможно выполнить операцию, captcha-защита.\nСмотрим картинку по ссылке %s и отправляем транспорту код командой ".captcha aaaaa", вместо aaaaa пишем код с картинки, затем проверяем, выполнилась ли операция (.history, .wall и т.п.)\nв случае ошибок запоминаем точное время попытки и заходим на pyvkt@conference.jabber.ru'%link)
-                    #except captchaError:
-                        #self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid, body=u'Запрошенная операция не может быть выполнена из-за captcha-защиты на юзерапи. На данный момент обработка captcha не реализована.')
-                    except HTTPError,e:
-                        logging.error("http error: "+str(e).replace('\n',', '))
-                    except UserapiSidError:
-                        logging.error('userapi sid error (%s) logging out.'%self.user.bjid)
-                        self.user.vclient.initCookies()
-                        self.user.logout()
-                        return
-                    except tooFastError:
-                        logging.warning('FIXME "too fast" error stanza')
-                    except gen.InternalError,e:
-                        logging.error('internal error: %s'%e)
-                        if e.fatal:
-                            logging.error('fatal error')
-                            return
-                        txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
-                        self.user.trans.sendMessage(src=self.user.trans.jid,dest=self.user.bjid,
-                            body=txt)
-                    except UserapiJsonError:
-                        logging.warning('userapi request failed')
-                    except Exception, exc:
-                        logging.exception('')
-                        logging.error('unhandled exception: %s'%exc)
-                        logging.error('task traceback:\n -%s'%(' -'.join(format_list(elem['stack']))))
-                        #[logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
-                        #print "Caught exception"
-                        #print_exc()
-                        #print "thread is alive!"
-                        
-                    else:
-                        try:
-                            elem["deferred"].callback(res)
-                        except KeyError:
-                            pass
-                        except:
-                            logging.error('error in callback')
-                            logging.error(format_exc())
-                            [logging.error('TB '+i) for i[:-1] in format_list(elem['stack'])]
-                    self.queue.task_done()
         except:
             logging.exception('user loop fault\n')
         #print "queue (%s) stopped"%self.user.bjid
         self.last='stopped'
         return 0
-class pollManager(threading.Thread):
+class pollManager(object):
     def __init__(self,trans):
-        threading.Thread.__init__(self,target=self.loop,name="Poll Manager")
-        self.daemon=True
+        self._thread=threading.Thread(target=self.loop,name="Poll Manager")
+        self._thread.daemon=True
         self.watchdog=int(time.time())
         self.alive=1
         self.trans=trans
-        self.updateInterval=30
+        self.updateInterval=15
+        self.dynamicInterval=True
         self.groupsNum=3
+        self.dynIntervalSteps=5
+        self.dynIntervalMin=0.01
+        self.dynIntervalMax=0.1
+    def start(self):
+        self._thread.start()
+    def __getattr__(self,s):
+        logging.warning('legacy pollManager.%s'%s)
+        return self.thread.__getattr__(s)
     def loop(self):
         pollInterval=5
         currGroup=0
         self.freeze=False
+        skippedCnt=0
+        totalCnt=0
+        stepsToDecreaseInterval=self.dynIntervalSteps
         while (self.alive):
             try:
                 hook.printStats(self.trans)
@@ -220,98 +254,168 @@ class pollManager(threading.Thread):
                 pass
             #logging.warning('poll')
             try:
-                for u in self.trans.users.keys():
-                    if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%self.groupsNum==currGroup)):
-                        try:
-                            upool=self.trans.users[u].pool
-                            if(self.trans.users[u].refreshDone):
-                                self.trans.users[u].vclient
-                                self.trans.users[u].refreshDone=False
-                                try:
-                                    upool.call(self.trans.users[u].refreshData)
-                                except gen.QuietError:
-                                    logging.warning('queue full. resetting refresh flag')
-                                    self.trans.users[u].refreshDone=True
-                                except Exception, e:
-                                    logging.error('refresh freeze!\n%s'%str(e))
-                            else:
+                ul=[u for u in self.trans.users.keys() if self.trans.hasUser(u) and (self.trans.users[u].loginTime%self.groupsNum==currGroup)]
+                #for u in self.trans.users.keys():
+                    #if (self.trans.hasUser(u) and (self.trans.users[u].loginTime%self.groupsNum==currGroup)):
+                if currGroup==0:
+                    skippedCnt=0
+                    totalCnt=0
+                totalCnt+=len(ul)
+                for u in ul:
+                    try:
+                        upool=self.trans.users[u].pool
+                        if(self.trans.users[u].refreshDone):
+                            self.trans.users[u].vclient
+                            self.trans.users[u].refreshDone=False
+                            try:
+                                upool.call(self.trans.users[u].refreshData)
+                            except gen.QuietError:
+                                logging.warning('queue full. resetting refresh flag')
+                                self.trans.users[u].refreshDone=True
+                            except Exception, e:
+                                logging.error('refresh freeze!\n%s'%str(e))
+                        else:
 
-                                lastJob=upool.last['foo']
-                                qlen=upool.queue.qsize()
-                                logging.warning('skipping refresh for %s [queue: %s last: %s]'%(repr(u),qlen,lastJob))
-                                if (qlen==0):
-                                    logging.warning('%s: empty queue. dropping refresh state')
-                                    self.trans.users[u].refreshDone=True
-                                logging.warning('%s stack:\n%s'%(u,self.trans.userStack(u)))
-                                if ((time.time()-upool.lastTime)>600):
-                                    logging.warning('%s: user loop freeze!'%u)
-                                    #self.trans.users[u].logout()
-                                    #logging.warning('%s: successfully logged out'%u)
-                        except gen.NoVclientError:
-                            print "user w/o client. skipping"
-                        except:
-                            logging.exception('')
+                            lastJob=upool.last['foo']
+                            qlen=upool.queue.qsize()
+                            logging.warning('skipping refresh for %s [queue: %s last: %s]'%(repr(u),qlen,lastJob))
+                            skippedCnt+=1
+                            if (qlen==0):
+                                logging.warning('%s: empty queue. dropping refresh state')
+                                self.trans.users[u].refreshDone=True
+                            #logging.warning('%s stack:\n%s'%(u,self.trans.userStack(u)))
+                            if ((time.time()-upool.lastTime)>600):
+                                logging.warning('%s: user loop freeze!'%u)
+                                #self.trans.users[u].logout()
+                                #logging.warning('%s: successfully logged out'%u)
+                    except gen.NoVclientError:
+                        print "user w/o client. skipping"
+                    except:
+                        logging.exception('')
+                
                 #print delta
                 #if (currGroup==0):
                 self.trans.sendMessage(src=self.trans.jid,dest=self.trans.jid,body='ping%s'%time.time())
                 currGroup +=1
                 currGroup=currGroup%self.groupsNum
+                if (currGroup==0):
+                    frac=float(skippedCnt)/totalCnt
+                    logging.warning('skipped/total = %s'%frac)
+                    if (self.dynamicInterval):
+                        if (frac>self.dynIntervalMax and self.updateInterval<15):
+                            self.updateInterval+=1
+                            logging.warning('increasing update interval to %s'%self.updateInterval) 
+                        if (frac<self.dynIntervalMin and self.updateInterval>5):
+                            stepsToDecreaseInterval-=1
+                            logging.warning('STDI: %s'%stepsToDecreaseInterval)
+                            if (stepsToDecreaseInterval==0):
+                                self.updateInterval-=1
+                                logging.warning('decreasing update interval to %s'%self.updateInterval) 
+                                stepsToDecreaseInterval=self.dynIntervalSteps
+                        else:
+                            stepsToDecreaseInterval=self.dynIntervalSteps
             except:
                 logging.exception("GREPME")
             time.sleep(self.updateInterval)
         logging.warning("pollManager stopped")
     def stop(self):
         self.alive=0
-#class Deferred1:
-    #cblist=[]
-    #def addCallback(self,foo,*args,**kwargs):
-        #cb=(foo,args,kwargs)
-        #self.cblist.append(cb)
-    #def addErrback(self,foo,*args,**kwargs):
-        #pass
-    #def callback(self,res):
-        #for i in self.cblist:
-            #f,a,k=i
-            #try:
-                #f(res,*a,**k)
-            #except:
-                #logging.error(format_exc())
-#class ThreadPool:
-    #threads=[]
-    #active=True
-    #def __init__(self,threadNum=1,name='pool'):
-        #self.q=Queue()
+class Deferred1(object):
+    __slots__=['_cblist']
+    _cblist=[]
+    def addCallback(self,foo,*args,**kwargs):
+        cb=(foo,args,kwargs)
+        self._cblist.append(cb)
+    def addErrback(self,foo,*args,**kwargs):
+        pass
+    def callback(self,res):
+        for i in self._cblist:
+            f,a,k=i
+            try:
+                f(res,*a,**k)
+            except:
+                logging.exception('error in deferred\'s callback')
+class UserThreadPool(object):
+    __slots__=['_threads', '_queues','new_id','_switchQueueLock','trans']
+    def __init__(self,trans):
+        self.new_id=0
+        self._switchQueueLock=threading.Lock()
+        self.trans=trans
+        self._threads={}
+        self._queues=[]
+    def stats(self):
+        ql=[i.len() for i in self._threads]
+        max=ql[0]
+        min=ql[0]
+        sum=0
+        for i in ql:
+            if i>max:
+                max=i
+            if i<min:
+                min=i
+            sum+=i
+        avg=sum/len(ql)
+    def selectQueue(self):
+        self._queues=[i for i in self._queues if i()]
+        qlist=[i for i in self._queues if i().threadId==None]
+        #print qlist
+        if not qlist:
+            return None
+        m=qlist[0]().len()
+        ret=qlist[0]
+        for i in qlist:
+            if i().len()>m:
+                ret=i
+                m=i().len()
+        if (m==0):
+            return None
+        return ret
+    def addThread(self):
+        nt=threading.Thread(name='userloop %s'%self.new_id,target=self.loop,kwargs={'t_id':self.new_id})
+        nt.daemon=True
+        self._threads[self.new_id]=nt
+        nt.start()
+        self.new_id+=1
+    def loop(self,t_id):
+        logging.warn('userloop %s started'%t_id)
+        q=None
+        while t_id in self._threads:
+            try:
+                q().doNextTask(block=False)
+                #logging.warning('job done!')
+            except (Queue.Empty,TypeError,AttributeError),e:
+                #logging.warning('queue empty, looking for job...')
+                self._threads[t_id].name='UL%s (NULL)'%t_id
+                try:
+                    q().threadId=None
+                except (AttributeError,TypeError):
+                    pass
+                q=None
+                self._switchQueueLock.acquire()
+                #logging.warning('switch lock acquired!')
+                try:
+                    while not q:
+                        q=self.selectQueue()
+                        if not q:
+                            logging.warning('no matching queues!')
+                            time.sleep(1)
+                    q().threadId=t_id
+                    self._threads[t_id].name='UL%s (%s)'%(t_id,q().bjid)
+                    #logging.warn('switched to %s'%q().name)
+                except:
+                    logging.exception('GREPME switch error')
+                self._switchQueueLock.release()
+            except:
+                logging.exception('')
+            pass
+        if (q.threadId==t_id):
+            q.threadId=None
+        else:
+            logging.error('thread id mismatch! %s and %s'%(t_id,q.threadId))
+        logging.warning('userloop stopped')
+    def addQueue(self,q):
+        self._queues.append(weakref.ref(q))
         
-        #for i in range(threadNum):
-            #t=Thread(name='%s[%s]'%(name,i),target=self.loop)
-            #t.daemon=True
-            #threads.append(t)
-    #def start(self):
-        #[t.start() for t in threads]
-    #def stop(self):
-        #self.active=False
-    #def loop(self):
-        #while(self.active):
-            #try:
-                #task=q.get(block=True,timeout=5)
-            #except Queue.Empty:
-                #pass
-            #else:
-                #d,f,k=task
-                #try:
-                    #res=f(**k)
-                    #if (d):
-                        #d.callback(res)
-                #except:
-                    #logging.error("unhandled exception:\n"+format_exc())
-    #def defer(self,foo,**kw):
-        #d=Deferred()
-        #el=(d,foo,kw)
-        #q.append(el)
-        #return d
-    #def call(self,foo,**kw):
-        #el=(None,foo,kw)
-        #q.append(el)
 class counter:
     data={}
     def __init__(self):

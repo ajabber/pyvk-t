@@ -31,7 +31,7 @@ from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
 import pyvkt.user,pyvkt.commands, pyvkt.comstream
 from libvkontakte import *
-from pyvkt.spikes import pollManager,pseudoXml
+from pyvkt.spikes import pollManager,pseudoXml,UserThreadPool
 from pyvkt.comstream import addChild,createElement
 #import lxml.etree
 from lxml import etree
@@ -89,6 +89,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                self.revision="alpha"
         self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
+        self.usrPool=UserThreadPool(self)
+        for i in range(3):
+            self.usrPool.addThread()
         self.usrLock=Lock()
         self.unregisteredList=[]
         signal.signal(signal.SIGUSR1,self.signalHandler)
@@ -246,8 +249,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             elif (self.latency>180):
                 logging.warning("performance troubles. increasing update interval.")
                 self.pollMgr.updateInterval=30
-            else:
-                self.pollMgr.updateInterval=15
+            #else:
+                #self.pollMgr.updateInterval=15
          
     def adminCmd(self,cmd):
         if (cmd[:4]=="stop"):
@@ -274,9 +277,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         elif (cmd[:4]=="exec"):
             try:
                 execfile("inject.py")
+                return 'Ok'
             except:
-                logging.error("exec failed"+format_exc())
-
+                logging.exception("exec failed")
+            return 'fail'
         elif (cmd=='savestate'):
             try:
                 self.saveState()
@@ -347,7 +351,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
 
         else:
             return "unknown command: '%s'"%cmd
-        return 
+        return 'something wrong'
     def startPoll(self):
         self.pollMgr.start()
     def msgDeliveryNotify(self,res,msg_id,jid,v_id,receipt=0,body=None,subject=None):
@@ -437,8 +441,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             #features.append("jabber:iq:search")
                             pass
                     else:
-                        SubElement(a,'identity',category='pubsub',type='pep')
-                        addChild(a,'identity',attrs={'category':'pubsub','type':'pep'})
+                        cname=u'%s %s'%(self.users[bjid].onlineList[gen.jidToId(dest)]["first"],self.users[bjid].onlineList[gen.jidToId(dest)]["last"])                        
+                        SubElement(a,'identity',category='pubsub',type='pep', name=cname)
+                        #addChild(a,'identity',attrs={'category':'pubsub','type':'pep'})
                         features=[
                             "jabber:iq:version",
                             'http://jabber.org/protocol/commands',
@@ -447,7 +452,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     for i in features:
                         SubElement(a,'feature',var=i)
                 elif (node=='friendsonline'):
-                    addChild(a,'identity',attrs={"name":u'Друзья в сети',"category":"automation","type":"command-node"})
+                    addChild(a,'identity',attrs={"name":u'Друзья в сети',"category":"automation","type":"command-list"})
                 elif (node=="http://jabber.org/protocol/commands" or node[:4]=='cmd:'):
                     self.send(self.commands.onDiscoInfo(iq))
                     return True
@@ -569,8 +574,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     #print etree.tostring(ans)
                     if self.show_avatars:
                         try:
-                            req=open("avatar.png")
-                            photo=base64.encodestring(req.read())
+                            
+                            with open("avatar.png") as req:
+                                photo=base64.encodestring(req.read())
                             p=etree.SubElement(ans,"PHOTO")
                             etree.SubElement(q,"TYPE").text="image/png"
                             etree.SubElement(q,"BINVAL").text=photo.replace("\n","")
@@ -1006,9 +1012,13 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 #print "creating user %s"
                 self.users[bjid]=user(self,jid,captcha_key=captcha_key)
                 u=self.users[bjid]
-        except:
-            logging.exception('')
+        except Exception,e:
+            if (type(e)==gen.QuietError):
+                logging.error('QuietError (%s): %s'%(bjid,e))
+            else:
+                logging.exception('')
             self.usrLock.release()
+            self.sendPresence(self.jid,bjid,'unavailable',status='Internal error. Please, try again later.')
             return
         self.usrLock.release()
         #logging.warning('released')
@@ -1025,7 +1035,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return True
         return False
     def delResource(self,jid, to=None,dbg=False):
-        #print "delResource %s"%jid
         bjid=gen.bareJid(jid)
         #if (dbg):
             #logging.warning('start')
@@ -1045,32 +1054,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         #try:
         
         user.pool.call(user.delResource,jid=jid)
-        #except:
-            #logging.exception('')
-        #if (self.hasUser(bjid)):
-            #if (dbg):
-                #logging.warning('st1')
-            ##TODO resource magic
-            ##self.users[bjid].delResource(jid)
-            #self.users[bjid].pool.call(self.users[bjid].delResource,jid=jid)
-        
-        #if (dbg):
-            #logging.warning('st2')
-        #try:
-            #user=self.users[bjid]
-        #except KeyError:
-            #pass
-        #if (not user.resources) or to==self.jid:
-            #try:
-                #user.pool.call(user.logout)
-            #except:
-                #logging.exception('')
-                ## FIXME possible lock source!!!
-                ## 
-                ##self.users[bjid].logout()
-        #if (dbg):
-            #logging.warning('end')
-                
 
     def onPresence(self, prs, dbg):
         """
@@ -1108,8 +1091,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return
         if (self.isActive or bjid==self.admin):
             self.addResource(src,prs)
-        #if (dbg):
-            #logging.warning('done')
+
     def updateFeed(self,jid,feed):
         #FIXME bjid?
         ret=""
@@ -1150,7 +1132,12 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             logging.warning('long message not fixed. length: %s'%(len(i['text'])))
                     self.sendMessage(src='%s@%s'%(i['from'],self.jid), dest=jid, body=i['text'])
                     #logging.warning ('%s sent'%i)
-                    user.vclient.getHttpPage('http://vkontakte.ru/mail.php?act=show&id=%s'%i['id'])
+                    print 'http://vkontakte.ru/mail.php?id=4475'
+                    url='http://m.vkontakte.ru/letter%s?'%i['id']
+                    print url
+                    user.vclient.getHttpPage(url)
+
+                    #_t=user.vclient.getHttpPage('http://vkontakte.ru/mail.php?act=show&id=%s'%i['id'],referer='Referer=http://vkontakte.ru/mail.php?id=%s'%user.v_id)
         except KeyError:
             logging.exception('')
             #print_exc()
@@ -1259,8 +1246,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     #pass
                 if (msg):
                     self.sendMessage(self.jid,u,u"Транспорт отключается.\n[%s]"%msg)
-                #else:
-                #    self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
+                else:
+                    self.sendMessage(self.jid,u,u"Транспорт отключается, в ближайшее время он будет запущен вновь.")
                 self.sendPresence(self.jid,u,"unavailable")
                 try:
                     self.usersOffline(u,self.users[u].vclient.onlineList)
@@ -1390,14 +1377,12 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         ret={'version':'0.1'}
         ret['users_online']=olist
         j=demjson.JSON(compactly=False)
-        cfile=open(fn,'w')
-        cfile.write(j.encode(ret).encode('utf-8'))
-        cfile.close()
+        with open(fn,'w') as cfile:
+            cfile.write(j.encode(ret).encode('utf-8'))
     def restoreState(self):
         fn='%s/%s'%(conf.get ('storage','datadir'),'state.json')
-        cfile=open(fn,'r')
-        f=cfile.read()
-        cfile.close()
+        with open(fn,'r') as cfile:
+            f=cfile.read()
         j=demjson.JSON(compactly=False)
         data=j.decode(f.decode('utf-8'))
         if data['version']=='0.1':
@@ -1413,7 +1398,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
     def userStack(self,bjid):
         
         try:
-            fr=sys._current_frames()[self.users[bjid].pool.ident]
+            fr=sys._current_frames()[self.users[bjid].pool._thread.ident]
             ret=(''.join(traceback.format_stack(fr)))
             #logging.warning(ret)
             return ret

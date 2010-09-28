@@ -34,10 +34,8 @@ import demjson,errno
 import threading
 class UnregisteredError (Exception):
     pass
-
+stateDebug=False
 class user (object):
-    #lock=1
-    #active=0
     feed={}
     cookies=[]
     blocked=False
@@ -47,6 +45,7 @@ class user (object):
     timeCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
     callCounters={'feed':0.,'online':0.,'status':0.,'wall':0.}
     captchaReqData=None   
+    _state=0
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
@@ -59,7 +58,8 @@ class user (object):
         self._lock=0
         self.status_lock = 0
         self._active=1
-        self.state=0
+        self._state=0
+        self.pool=None
         # login - 1
         # active - 2
         # logout - 3
@@ -82,23 +82,37 @@ class user (object):
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
+        self.v_id=0
         if (not noLoop):
             self.startPool()
-            #self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
             #self.pool.start()
-        
+    @property
+    def state(self):
+        return self._state
+    @state.setter
+    def state(self,val):
+        global stateDebug
+        if stateDebug:
+            logging.warning('%s: state changed %s -> %s. stack:\n%s'%(repr(self.bjid),self._state,val,'\n'.join(gen.stack())))
+        self._state=val
     def startPool(self):
         try:
-            self.pool
-            logging.warning('pool already exists')
-            if (self.pool.is_alive()):
-                logging.warning('pool is alive')
-                return
-            del self.pool
+            if self.pool:
+                logging.warning('pool already exists')
+                if (self.pool.is_alive()):
+                    logging.warning('pool is alive')
+                    return
+                del self.pool
         except:
             pass
-        self.pool=reqQueue(user=self,name="pool(%s)"%self.bjid)
-        self.pool.start()
+        self.pool=reqQueue(user=self,bjid=self.bjid)
+        try:
+            self.pool.start()
+        except Exception,e:
+            self.pool=None
+            self.state=4
+            logging.error('user(%s): can\'t start pool thread. (%s)'%(self.bjid,str(e)))
+            raise gen.QuietError('can\'t start pool thread')
     def addResource(self,jid,prs=None):
         """
         adds resource to jid's reources list
@@ -108,6 +122,7 @@ class user (object):
             #if had no resources before and not trying to login now
             if (not self.resources) and self.state==0:
                 self.state=1
+                #FIXME add lock and move state-related stuff to login() 
                 # self.trans.sendPresence(self.trans.jid,self.bjid,t="probe") 
                 # ???
                 self.login()
@@ -317,7 +332,9 @@ class user (object):
                     self.vclient.sid=v
             if (self.vclient.getSelfId()==-1):
                 self.vclient.login(email,pw,captcha_key=ck,captcha_sid=cs)
-                if (self.vclient.getSelfId()==-1):
+                self.v_id=self.vclient.getSelfId()
+                if (self.v_id==-1):
+                    state=4
                     raise libvkontakte.authError
                 else:
                     if (ck and cs):
@@ -359,8 +376,9 @@ class user (object):
         
     def login(self):
         # TODO bare jid?
-        self.state=1
+        #self.state=1
         if (self.trans.isActive==0 and self.bjid!=self.trans.admin):
+            logging.warning('isActive == 0. login() aborted')
             self.state=4
             return
         try:
@@ -369,6 +387,7 @@ class user (object):
             logging.error('internal error: %s'%e)
             if e.fatal:
                 logging.error('fatal error')
+                self.state=4
                 return
             txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
@@ -380,6 +399,10 @@ class user (object):
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
             self.state=4
             return
+        except:
+            logging.exception('GREPME state=1 freeze (login())')
+            self.state=4
+            raise
         self.pool.call(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
     
     def logout(self):
@@ -524,12 +547,15 @@ class user (object):
                     logging.exception('')
             if ((self.refreshCount%1000)==0):
                 self.refreshCount=0
-            if ((self.refreshCount%100)==0):
+            if ((self.refreshCount%3)==0):
                 self.sendProbe()
             #self.loopDone=True
             self.refreshCount+=1
         except libvkontakte.HTTPError:
             self.refreshDone=True
+            raise
+        except libvkontakte.UserapiSidError:
+            logging.warning ('sid error!')
             raise
         except:
             self.refreshDone=True
@@ -645,21 +671,20 @@ class user (object):
             os.mkdir(dirname)
         fname=dirname+"/"+self.bjid+'_json'
         #print j.encode(data)
-        cfile=open(fname,'w')
-        cfile.write(j.encode(data).encode('utf-8'))
-        cfile.close()
+        with open(fname,'w') as cfile:
+            cfile.write(j.encode(data).encode('utf-8'))
         
         #logging.warning('json data saved')
     def readData(self):
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid+'_json'
         try:
-            cfile=open(fname,'r')
+            with open(fname,'r') as cfile:
+                f=cfile.read()
         except IOError,e:
             if (e.errno==errno.ENOENT):
                 raise UnregisteredError()
-        f=cfile.read()
-        cfile.close()
+            raise
         try:
             j=demjson.JSON(compactly=False)
             data=j.decode(f.decode('utf-8'))
