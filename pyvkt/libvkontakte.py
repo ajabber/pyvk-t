@@ -23,25 +23,21 @@
 import urllib2
 import urllib
 from urllib import urlencode
-import httplib
-import pyvkt.general as gen
+import general as gen
 #from BaseHTTPServer import BaseHTTPRequestHandler as http
 import demjson
-import cookielib
-from cookielib import Cookie
-from htmlentitydefs import name2codepoint
 from BeautifulSoup import BeautifulSoup,SoupStrainer
 import xml.dom.minidom
 import time
 import hashlib
-from os import environ
 import re
-import base64,copy
-import ConfigParser,os,string
-from traceback import print_stack, print_exc,format_exc
-import logging,time, pycurl
-import pyvkt.config as conf
+import base64
+import os, string
+from traceback import print_exc,format_exc
+import logging, pycurl
+import config as conf
 import weakref
+from pprint import pprint
 try:
     import json
 except:
@@ -52,8 +48,23 @@ http_traffic=0
 http_requests=0
 #user-agent used to request web pages
 USERAGENT="Opera/9.60 (J2ME/MIDP; Opera Mini/4.2.13337/724; U; ru) Presto/2.2.0"
+API_PERMS=2+4+8+1024+4096+8192
 #USERAGENT="ELinks (0.4pre5; Linux 2.4.27 i686; 80x25)"
 #USERAGENT='User-Agent=Mozilla/5.0 (X11; U; Linux i686; ru; rv:1.9.1.4) Gecko/20091016 Firefox/3.5.4'
+def readForms(page):
+    "reads input's with default values"
+    imatches = re.findall(
+        '<input.*name=[\'"](?P<name>\w+)[\'"] .*value=[\'"](?P<value>\w+)[\'"]', 
+                      page)
+    args = {}
+    for name, val in imatches:
+        args[name]=val
+    return args
+def deleteTags(s):
+    replaceList={'<br>':'\n'}
+    for i in replaceList:
+        s=s.replace(i, replaceList[i])
+    return s
 class tooFastError(Exception):
     def __init__(self):
         pass
@@ -99,6 +110,21 @@ class HTTPError(Exception):
     def __str__(self):
         return '%s [%s]'%(self.err,self.url)
     pass
+class ApiError(Exception):
+    pass
+class AppAuthError(ApiError):
+    def __init__(self,err,url):
+        self.err=err
+        self.url=url
+
+class ApiAuthError(ApiError):
+    pass
+
+class AppPermsError(ApiAuthError):
+    pass
+
+class ApiPermissionMissing(ApiError):
+    pass
 class UserapiJsonError(Exception):
     pass
 class RedirectHandler(urllib2.HTTPRedirectHandler):
@@ -124,18 +150,26 @@ class RedirectHandler(urllib2.HTTPRedirectHandler):
         #print headers.dict
         return result
 class client(object):
-    __slots__=['tonline','captchaRequestData','bjid','user','dumpPath',
-               'cachePath', 'c','sid','v_id']
+    __slots__=['tonline', 'captchaRequestData', 'bjid', 'user', 'dumpPath',
+               'cachePath', 'c','sid','v_id', 'api', 'api_sid', 'api_secret', 
+               'api_active']
     #onlineList={}
     #just counter for loops. use some big number in the beginning
     iterationsNumber = 999999
+
     def __init__(self,jid,user):
         # true if there is no loopInternal's in user queue
         self.tonline={}
         # Данные запроса, вызвавшего капчу юзерапи
         self.captchaRequestData={}
         self.bjid=jid
-        self.user=weakref.ref(user)
+        self.api_secret=''
+        self.api_sid=''
+        self.api_active=False
+        if (user):
+            self.user=weakref.ref(user)
+        else:
+            self.user=None
         self.dumpPath=conf.get("debug/dump_path")
         self.cachePath=conf.get('storage','cache')
         self.c=pycurl.Curl()
@@ -231,6 +265,7 @@ class client(object):
             if (vl[0]!='unknown'):
                 ret.append((vl[0][1:],vl[5],vl[6]))
         return ret
+        
     def getHttpPage(self,url,params=None, referer=None,files=None, hdrFunction=None):
         c=self.c
         #print '\n\n-----------------------\n\n'
@@ -267,6 +302,13 @@ class client(object):
         c.setopt(pycurl.WRITEFUNCTION, b.write)
         if (hdrFunction):
             c.setopt(pycurl.HEADERFUNCTION, hdrFunction)
+        else:
+            def hdrHandler(buf):
+                if 'Location' in buf:
+                    loc_url=':'.join(buf.split(':')[1:])
+                    logging.warn("got Location header '%s' [%s] "%
+                                 (loc_url.strip(), url))
+            c.setopt(pycurl.HEADERFUNCTION, hdrHandler)            
         try:
             c.perform()
         except pycurl.error,e:
@@ -278,50 +320,6 @@ class client(object):
         #print ret.decode('cp1251')
         #print '----'
         return ret
-    def getHttpPage_legacy(self,url,params=None,cjar=None, headers={}):
-        """ get contents of web page
-            returns u'' if some of errors took place
-        """
-        #if (type(params)==type({})):
-            #for i in params:
-                #if type(params[i]==unicode):
-                    #params[i]=params[i].encode('utf-8')
-        st=time.time()
-        return self.getHttpPage_curl(url,params)
-        if (type(params)==type({})):
-            params=urllib.urlencode(params)
-        if params:
-            req=urllib2.Request(url,params)
-        else:
-            req=urllib2.Request(url)
-        req.addheaders = [('User-agent', USERAGENT)]
-        for i in headers:
-            req.addheaders.append((i,headers[i]))
-        #print repr(req)
-        try:
-            res=self.opener.open(req)
-            #print res.url
-            page=res.read()
-        except urllib2.HTTPError, err:
-            raise HTTPError(err.code,req.get_full_url())
-            #return ''
-        except IOError, e:
-            msg="IO Error"
-            if hasattr(e, 'reason'):
-                msg=msg+"\nReason: %s."%(e.reason)
-            elif hasattr(e, 'code'):
-                msg=msg+"\nCode: %s."%(e.code)
-            raise HTTPError(msg,req.get_full_url())
-        except httplib.BadStatusLine, err:
-            raise HTTPError("HTTP bad status line error",req.get_full_url())
-        except httplib.HTTPException, err:
-            raise HTTPError("HTTP exception.",req.get_full_url())
-        if (cjar):
-            cjar.make_cookies(res,req)
-        dt=time.time()-st
-        if (dt>10):
-            logging.warning('slow http request [%4.2f]: %r'%(dt,url))
-        return page
 
     def checkPage(self,page):
         if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
@@ -346,27 +344,166 @@ class client(object):
             logging.exception("JSON decode error")
             #print_exc()
         return {}
+    def apiRequest(self, method, raw=False, **kwargs):
+        req_vars = kwargs
+        req_vars['method'] = method
+        #print req_vars
+        req_vars['api_id'] = conf.get('api', 'application_id')
+        req_vars['v'] = '3.0'
+        req_vars['format'] = 'JSON'
+        sig = str(self.v_id)
+        url = 'http://api.vkontakte.ru/api.php?'
+        for key in sorted(req_vars.keys()):
+            val=req_vars[key]
+            try:
+                val=val.encode('utf-8')
+            except: pass
+            sig += '%s=%s' % (key, val)
+            if type(val) == unicode:
+                val=val.encode('utf-8')
+            url += '%s=%s&' % (key, urllib2.quote(str(val)))
+        if type(sig)==str:
+            sig = sig.decode("utf-8")
+        sig += self.api_secret
+        #print sig
+        m = hashlib.md5()
+        m.update(sig.encode("utf-8"))
+        sig = m.hexdigest()
+        url += 'sid=%s&sig=%s' % (self.api_sid, sig)
+        #print url
 
+        f = self.getHttpPage(url)
+        f=f.replace('<br>', '\\n')
+        f=f.replace('&quot;', '\\"')
+        res = demjson.decode(f)
+        if 'error' in res:
+            err = res['error']
+            errCode = err['error_code']
+            if errCode==4:
+                logging.warn("api error: auth error, method: %s"%method)                
+                raise ApiAuthError()
+            elif errCode == 7:
+                logging.warn("api error: missing permission, method: %s"%method)
+                raise ApiPermissionMissing()
+            logging.warn("api method failed: %s (%s)"%(method, str(kwargs)))
+            raise Exception("api error: "+res['error']['error_msg'])
+        if not raw:
+            return res['response']
+        return res
+    def apiCheck(self):
+        t=self.apiRequest("isAppUser")
+        if int(t)!=1:
+                raise AppAuthError('', self.apiLoginUrl())
+        t=self.apiRequest('getUserSettings')
+        if (int(t)&API_PERMS)!=API_PERMS:
+                raise AppPermsError('', self.apiLoginUrl())            
+        self.api_active=True
+    
+    def apiLoginUrl(self):
+        return 'http://vkontakte.ru/login.php?app=%s&layout=touch&type=browser&settings=%s'%(
+                                                conf.get('api', 'application_id'), API_PERMS)
+    
+    def isApiActive(self):
+        return self.api_active
+            
+    def apiLogin(self):
+        #perms = 2+4+8
+        #print self.api_secret
+        #login_url = 
+        #print login_url
+        def parseUrl(url):
+            data = re.search("(?P<data>[{].*[}])", url)
+            if not data:
+                logging.error("location parse error: "+url)
+                if 'security' in url:
+                    fullUrl='http://vkontakte.ru'+url
+                    logging.warn("trying to open "+fullUrl)
+                    self.dumpString(self.getHttpPage(fullUrl),fn="security")
+                return
+            data = (eval(data.group("data"), {}, {}))
+            self.api_secret = data['secret']
+            self.api_sid = data['sid']
+
+        def getLocation(buf):
+            #print repr(buf)
+            if 'Location' in buf:
+                loc=buf.split()[1]
+                parseUrl(urllib.unquote(loc))
+                try:
+                    self.apiCheck()
+                except:
+                    pass
+
+        #proxy=None
+        lform = self.getHttpPage(self.apiLoginUrl(), hdrFunction=getLocation)
+        if self.isApiActive():
+            return
+        #print lform[:-1000]
+        #print 'lform: ', lform
+        args = readForms(lform)
+
+            
+        #args["email"] = email[:2]
+        #args["pass"] = pw
+
+        login_url = 'http://login.vk.com/'
+        #pprint(args)
+        l1 = self.getHttpPage(login_url,urllib.urlencode(args))
+        #print l1
+        if ('onCaptcha' in l1):
+            data = re.search("\"([0-9]+)\"", l1)
+            raise Exception("captcha: sid = %s" % data.group(1))
+        # capcha_{key, sid}
+        l2_url = 'http://vkontakte.ru/login.php'
+        l1_data = readForms(l1)
+        
+        #for i in [2,4,8]:
+        #    l1_data['app_settings_%s'%i]='on'
+        print self.getCookies()
+        pprint (l1_data)
+        
+        if not l1_data:
+            raise ApiAuthError()
+
+        l2=self.getHttpPage(l2_url, l1_data, hdrFunction=getLocation)
+
+        parseUrl(l2)
+    def addApplication(self, perms=[2,4,8]):
+        sett_url = 'http://vkontakte.ru/apps.php?act=a_save_response'
+        args={'addMember':1}
+        for i in perms:
+            args['app_settings_%s'%i]=i
+        pprint(args)
+        self.getHttpPage(sett_url, args)
+        print 'result:', self.apiRequest("isAppUser")
+            
     def flParse(self,page):
         startString="var friendsData = "
         endString=";\n var diff;"
         varStart=page.find(startString)
         if(varStart==-1):
-            raise HttpError()
+            raise HTTPError()
         varStart+=len(startString)
         varEnd=page.find(endString, varStart)
         jsonString=page[varStart:varEnd].decode("cp1251")
         fl=demjson.decode(jsonString)
         #print fl['friends'][0]
         ret={}
+      
         for item in fl['friends']:
-            first, last=item[1].rsplit(' ', 1)
+            try:
+                first, last=item[1].rsplit(' ', 1)
+            except ValueError:
+                first=item[1]
+                last=''
             ret[item[0]]={"last":last, "first": first, "avatar_url":item[2]}
         return ret
     
-    def getOnlineList2(self):
+    def getOnlineList2(self, v_id=None):
+        if not v_id:
+            v_id=self.v_id
         fl=self.userapiRequest(act='friends_online',id=self.v_id)
-        print fl
+        #print fl
         ret={}
         for i in fl:
             if (len(i)<3):
@@ -380,29 +517,36 @@ class client(object):
                 ret[i[0]]={'last':fn[1],'first':fn[0],'avatar_url':u""}
         return ret
             
-    def getOnlineList(self):
+    def getOnlineList(self, v_id=None):
         try:
-            return self.getOnlineList2()
+            return self.getFriends_api(v_id, online=True)
+        except ApiAuthError:
+            logging.warning("api auth error[gOL]")
+        except ApiPermissionMissing:
+            pass
+        except:
+            logging.exception('')
+        try:
+            return self.getOnlineList2(v_id)
         except (UserapiSidError,HTTPError):
             raise
         except:
             logging.warning(format_exc())
             #print "getOnlineList: userapi request failed"
             #print_exc()
-        ret={}
         page=self.getHttpPage("http://vkontakte.ru/friends.php?filter=online&id=%s"%self.v_id)
         if not page:
             return {}
         return self.flParse(page)
 
-    def dumpString(self,string,fn="",comm='parser error'):
+    def dumpString(self,data,fn="",comm='parser error'):
         if (self.dumpPath==None or self.dumpPath==''):
             return
         fname="%s/%s-%s"%(self.dumpPath,fn,int(time.time()))
         with open(fname,"w") as fil:
-            if (type(string)==unicode):
-                string=strng.encode("utf-8")
-            fil.write(string)
+            if (type(data)==unicode):
+                data=data.encode("utf-8")
+            fil.write(data)
         logging.warning("%s: page saved to %s"%(comm,fname))
 
     def getHistory(self,v_id,length=15):
@@ -504,7 +648,13 @@ class client(object):
         #print np.decode('cp1251').encode('utf-8')
         #print
         return np
-    
+        
+    def getVcard_api(self,v_id, show_avatars=0,page=None):
+        profileInfo = self.apiRequest('getProfiles', uids=str(v_id), 
+                                     fields='photo_medium')[0]
+        ret={}
+        ret['FN']=profileInfo['first_name']+' '+profileInfo['last_name']
+        return ret
     def getVcard_new(self,v_id, show_avatars=0,page=None):
         if (not page):
             opage = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
@@ -515,12 +665,14 @@ class client(object):
             return {"FN":u""}
         result={}
         page=self.cutPage(opage)
+        
         #print page
         #dom=xml.dom.minidom.parseString(page.decode('cp1251').encode('utf-8'))
         rc=BeautifulSoup(page,convertEntities="html",smartQuotesTo="html",fromEncoding="cp-1251")
         #FIXME closed pages
         #FIXME deleted pages
-        profName=rc.find("div", {"class":"profileName"})
+        #print rc
+        profName=rc.find("div", {"id":"profile_name"})
         if (profName==None):
             self.checkPage(opage)
             if (opage.find(u'<p>Для того, чтобы просматривать информацию о других, необходимо заполнить информацию о себе как минимум на <b>30%</b>.</p>'.encode('cp1251'))!=-1):
@@ -533,7 +685,12 @@ class client(object):
             return result
             
         result['FN']=unicode(profName.find(name="h2").string).encode("utf-8").strip()
-        if (self.user().getConfig("resolve_nick")):
+        resolve_nick=False
+        try:
+            self.user().getConfig("resolve_nick")
+        except:
+            pass
+        if (resolve_nick):
             #FIXME 
             list=re.split("^(\S+?) (.*) (\S+?) \((\S+?)\)$",result['FN'])
             if len(list)==6:
@@ -579,11 +736,12 @@ class client(object):
         '''
         Parsing of profile page to get info suitable to show in vcard
         '''
-        try:
-            return self.getVcard_new(v_id)
-        except Exception,e:
-            logging.warning ('getvcard_new failed for id%s'%v_id)
-            logging.warning(str(e))
+        #if self.isApiActive():
+        return self.getVcard_api(v_id)
+        return self.getVcard_new(v_id)
+        #except Exception,e:
+        #    logging.warning ('getvcard_new failed for id%s'%v_id)
+        #    logging.warning(str(e))
         page = self.getHttpPage("http://vkontakte.ru/id%s"%v_id)
         
         if not page:
@@ -886,6 +1044,12 @@ class client(object):
             m['time']=int(i[1])
             ret['messages'].append(m)
         return ret
+    
+    def sendMessage_api(self, uid, body, title=''):
+        r=self.apiRequest("messages.send", uid=uid, message=body, title=title)
+        logging.warn("message sent, mid = "+str(r))
+        return r
+    
     def sendMessage(self,to_id,body,title='', wall=False,forceMsgCheck=False):
         if (wall):
             a='wall'
@@ -893,6 +1057,10 @@ class client(object):
             ts=d['h']
         else:
             a='message'
+            try:
+                return self.sendMessage_api(to_id, body, title )
+            except:
+                logging.exception("")
         try:
             d=self.userapiRequest(act=a, to=0 )
             ts=d['h']
@@ -921,8 +1089,26 @@ class client(object):
             raise UserapiSidError()
         logging.warning('unknown userapi error code: %s'%r)
         return -1
-              
+    def convertFriendList(self, data):
+        ret={}
+        for i in data:
+            ret[i['uid']]={'first':i['first_name'], 
+                            'last':i['last_name'],
+                            'avatar_url':i['photo_medium'].replace('\\/','/')}
+        return ret
+    def getFriends_api(self, v_id=0, online=False):
+        kw={}
+        if v_id:
+            kw={'uid': v_id}
+        fields='first_name,last_name,photo_medium'
+        data=self.apiRequest("friends.get", fields=fields, **kw)
+        if online:
+            filt=lambda i: i['online']==1
+            data = filter(filt, data)
+        return self.convertFriendList(data)
+   
     def getFriendList(self, v_id=0):
+        return self.getFriends_api(v_id)
         if (v_id==0):
             v_id=self.v_id
         return self.flParse(self.getHttpPage("http://vkontakte.ru/friends.php?filter=all&id=%s"%v_id))
@@ -993,15 +1179,6 @@ class client(object):
             pass
         return -1
 
-    def dummyRequest(self):
-        """ request that means nothing"""
-        req=urllib2.Request("http://wap.vk.com/")
-        try:
-            res=self.opener.open(req)
-            page=res.read()
-        except urllib2.HTTPError, err:
-            print "HTTP error %s.\nURL:%s"%(err.code,req.get_full_url())
-            return -1
     def exit(self):
         self.logout()
 
@@ -1052,7 +1229,7 @@ class client(object):
                 else:
                     ev["id"]=tds[1].a["href"][3:]
                     if (ev["type"]=="status"):
-                        print td[1]
+                        print tds[1]
                         return
     def getStatusList_legacy(self):
         try:
@@ -1339,6 +1516,8 @@ class client(object):
                 logging.error("empty response (act=%s)."%kw.get('act'))
             raise UserapiJsonError
         try:
+            page=page.replace('<br>', '\\n')
+            page=page.replace('&quot;', '\\"')
             ret=json.loads(page)
             #FIXME
         except Exception,e:
@@ -1390,4 +1569,5 @@ class client(object):
         sig=md5.new(hashStr).hexdigest()
         print hashStr
         print sig
-        
+if __name__=='__main__':
+    execfile ('test.py')

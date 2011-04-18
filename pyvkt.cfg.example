@@ -12,8 +12,18 @@
 #status: Это сообщение будет видно пользователям в статусе транспорта
 
 [storage]
-#cache: ./cache
-#datadir: ./data
+# cache: ./cache
+# datadir: ./data
+
+# Ценители теперь могут хранить данные пользователей в mongodb. 
+# Возможен также перенос существующих данных.  
+# mongodb: true
+# mongodbURI: mongodb://localhost
 
 [debug]
 #dump_path: dumps
+
+[api]
+# Регистрируем своё приложение для транспорта и вводим сюда данные.
+# application_id: 0000000
+# application_key: aaaaaaaaaaaaaaaa
