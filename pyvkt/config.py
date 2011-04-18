@@ -11,8 +11,10 @@ fields={
     "storage":
         {
             'datadir':(unicode,None,False),
-            'cookies':(unicode,None,False),
-            'cache':(unicode,None,False)
+            'cache':(unicode,None,False),
+            'mongodb':(bool, False, False),
+            'mongodbURI':(unicode, None, False)
+
         },
     "general":
         {
@@ -23,6 +25,11 @@ fields={
             'secret':(unicode,None,True),
             'admin':(unicode,None,False),
             'control_socket':(unicode,None,False)
+        },
+    "api":
+        {
+            'application_id':(unicode, None, True),
+            'application_key':(unicode, None, True)
         },
     "debug":
         {

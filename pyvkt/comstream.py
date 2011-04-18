@@ -307,7 +307,7 @@ class xmlstream(object):
             try:
                 task,st=self.sendQueue.get(True,10)
             except Empty:
-                task=createElement('iq',{'from':self.jid,'to':self.jid,'id':'keepalive'})
+                task=createElement('iq',{'from':self.jid,'to':self.jid,'id':'keepalive', 'type':'get'})
                 logging.info('sending keepalive')
             try:
                 s=etree.tostring(task,encoding='utf-8')

@@ -23,6 +23,7 @@
 import pyvkt.libvkontakte as libvkontakte
 from spikes import reqQueue
 import general as gen
+import config
 import sys,os,cPickle
 from base64 import b64encode,b64decode
 import time
@@ -32,9 +33,18 @@ import lxml.etree as xml
 import time,logging
 import demjson,errno
 import threading
+from pprint import pprint
+try:
+    import pymongo
+except:
+    logging.warn("pymongo is unavailable")
 class UnregisteredError (Exception):
     pass
 stateDebug=False
+MSG_APILOGINERROR=u'''Ошибка при авторизации в api приложений.
+Возможна некорректная работа транспорта.
+Теоретически, может помочь повторная авторизация приложения: %s'''
+MSG_APPAUTHREQUEST=u'''Для корректной работы транспорта необходимо добавить приложение: '''
 class user (object):
     feed={}
     cookies=[]
@@ -82,7 +92,12 @@ class user (object):
         #subscribed means transported contact recieves status
         #subscribe meanes transported contact send status
         self.roster={}
+        self.unreadMsgWatchlist={}
+        self.enableReadWatch=(self.bjid in self.trans.unreadWatchUsers)
         self.v_id=0
+        self.apiAuthData=None
+        self.vclient=None
+        self.mongoID=None
         if (not noLoop):
             self.startPool()
             #self.pool.start()
@@ -273,7 +288,10 @@ class user (object):
         p=None
         for j in self.resources:
             q=self.resources[j]
-            if q and (not p or p["priority"]<q["priority"] or (p["priority"]==q["priority"] and p["time"]<q["time"])):
+            if q and (not p 
+                      or p["priority"] <   q["priority"] 
+                      or (p["priority"] == q["priority"] 
+                          and p["time"] <  q["time"])):
                 p = q
         return p
 
@@ -298,7 +316,40 @@ class user (object):
                 self.trans.updateStatus(self.bjid,status)
                 self.VkStatus = status
         #print "delres", self.resources
+        
+    def requestApplicationAuth(self, url):
+        self.trans.sendMessage(src=self.trans.jid,
+                               dest=self.bjid,
+                               body=MSG_APPAUTHREQUEST + url)
+        
+    def checkApi(self, recursive=True):
+        try:
+            self.vclient.apiCheck()
+        except libvkontakte.ApiAuthError:
+            self.vclient.apiLogin()
+            if (recursive):
+                self.checkApi(recursive=False)
+                return
+            else:
+                logging.warn("api login failed")
+                self.trans.sendMessage(src=self.trans.jid,
+                                       dest=self.bjid,
+                                       body=MSG_APILOGINERROR%self.vclient.apiLoginUrl())                
+                
+        except libvkontakte.AppPermsError, ex:
+            if (recursive):
+                self.checkApi(recursive=False)
+                return
+            else:
+                logging.warn("api perms error: sending request")
+                self.requestApplicationAuth(ex.url)
+            
+        except libvkontakte.AppAuthError, ex:
+            logging.warn('sending app auth request')
+            self.requestApplicationAuth(ex.url)
 
+        logging.warn("api auth ok")
+        
     def createThread(self,jid,email,pw):
         #print "createThread %s"%self.bjid
         jid=gen.bareJid(jid)
@@ -309,8 +360,13 @@ class user (object):
             pass
         if (self.blocked):
             logging.warning('login attempt from blocked user')
-            self.trans.sendPresence(self.trans.jid,jid,status=u"ERROR: login/password mismatch.",show="unavailable")
-            self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")
+            self.trans.sendPresence(self.trans.jid,
+                                    jid,
+                                    status=u"ERROR: login/password mismatch.",
+                                    show="unavailable")
+            self.trans.sendMessage(src=self.trans.jid,
+                                   dest=self.bjid,
+                                   body=u"Вы указали неверный email или пароль. Необходимо зарегистрироваться на транспорте повторно.")
             self.state=4
             return
         self.trans.sendPresence(self.trans.jid,jid,status=self.status,show="away")
@@ -334,7 +390,7 @@ class user (object):
                 self.vclient.login(email,pw,captcha_key=ck,captcha_sid=cs)
                 self.v_id=self.vclient.getSelfId()
                 if (self.v_id==-1):
-                    state=4
+                    self.state=4
                     raise libvkontakte.authError
                 else:
                     if (ck and cs):
@@ -345,6 +401,10 @@ class user (object):
                     if (n=='remixsid'):
                         self.vclient.sid=v
                 #self.vclient.saveCookies()
+            try:
+                self.checkApi()
+            except:
+                logging.exception('')
         except libvkontakte.captchaError,exc:
             #print "ERR: got captcha request"
             logging.warning(str(exc))
@@ -363,14 +423,14 @@ class user (object):
             logging.warning('authError')
             self.trans.sendPresence(self.trans.jid,jid,status="ERROR: login/password mismatch.",show="unavailable")
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u"Неверный email и/или пароль.")
-            self.blocked=True
-            self.state=4
+            self.blocked = True
+            self.state = 4
             return
         except:
             logging.exception("GREPME state=1 freeze")
-            self.state=4
+            self.state = 4
             return
-        self.state=2
+        self.state = 2
         self.trans.updateStatus(self.bjid,self.VkStatus)
         self.refreshData()
         
@@ -379,7 +439,7 @@ class user (object):
         #self.state=1
         if (self.trans.isActive==0 and self.bjid!=self.trans.admin):
             logging.warning('isActive == 0. login() aborted')
-            self.state=4
+            self.state = 4
             return
         try:
             self.readData()
@@ -387,21 +447,21 @@ class user (object):
             logging.error('internal error: %s'%e)
             if e.fatal:
                 logging.error('fatal error')
-                self.state=4
+                self.state = 4
                 return
             txt=u"Внутренняя ошибка транспорта (%s):\n%s"%(e.t,e.s)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,
                 body=txt)
-            self.state=4
+            self.state = 4
             return
         except UnregisteredError:
             logging.warning("login attempt from unregistered user %s"%self.bjid)
             self.trans.sendMessage(src=self.trans.jid,dest=self.bjid,body=u'Вы не зарегистрированы на транспорте.')
-            self.state=4
+            self.state = 4
             return
         except:
             logging.exception('GREPME state=1 freeze (login())')
-            self.state=4
+            self.state = 4
             raise
         self.pool.call(self.createThread,jid=self.bjid,email=self.email,pw=self.password)
     
@@ -444,6 +504,7 @@ class user (object):
         #TODO separate thread
         self.trans.hasUser(self.bjid)
         return 0
+    
     def delThread(self,void=0):
         #print "delThread %s"%self.bjid
         #self.active=0
@@ -511,7 +572,60 @@ class user (object):
                     self.trans.sendMessage(src,self.bjid,body=u"Сообщение с вашей стены было удалено")
                 #logging.warning("new ts: %s"%t)
                 self.uapiStates['wall']=t
-                    
+    def sendUnreadMessages(self):
+        #if not self.vclient.isApiActive():
+            #return False
+        mlist=self.vclient.apiRequest('messages.get', 
+                                 filters=1, preview_length=0)
+        mids=[]
+        if mlist==0:
+            return True
+        print mlist
+        for i in mlist[1:]:
+            self.trans.sendMessage(src='%s@%s'%(i['uid'],self.trans.jid), 
+                                   dest=self.bjid, body=i['body'], 
+                                    title=i['title'], mtime=i['date'])
+            mids.append(str(i['mid']))
+        self.vclient.apiRequest('messages.markAsRead', mids=','.join(mids))
+        return True
+    
+    def checkUnreadMsgs(self):
+        mlist=self.vclient.apiRequest('messages.get', 
+                                 filters=1, preview_length=0, out=1)
+        if mlist==0:
+            return
+        mlist=mlist[1:]
+        mids=[i['mid'] for i in mlist]
+        midsRead=[i['mid'] for i in mlist if i['read_state']==1]
+        for mid in self.unreadMsgWatchlist:
+            uid, body = self.unreadMsgWatchlist[mid]
+            if not mid in mids:
+                txt=u'[notify] Сообщение %s (%s) на найдено в ответе сервера.'%(mid, body)
+                self.trans.sendMessage(src=uid, dest=self.bjid, body=txt, 
+                                       title='[pyvk-t notify]')
+                del self.unreadMsgWatchlist[mid]
+                continue
+            if mid in midsRead:
+                txt=u'[notify] Сообщение %s (%s) прочитано.'%(mid, body)
+                self.trans.sendMessage(src=uid, dest=self.bjid, body=txt, 
+                                       title='[pyvk-t notify]')
+                #print "msg %s (%s) read"%(mid, self.msgWatchlist[mid])
+                del self.unreadMsgWatchlist[mid]
+                continue
+            print "msg %s unread"%mid
+
+    def onOutgoingMessageSent(self, mid, uid, body):
+        if self.enableReadWatch:
+            if len(body)>15:
+                body=body[:10]+"..."
+            if type(mid)!=int:
+                logging.warn("bad mid: "+repr(mid))
+                return
+            self.unreadMsgWatchlist[mid]=(uid, body)
+            logging.warning("msg added")
+        else:
+            logging.warning("msg watch disabled")
+        
     def refreshData(self):
         """
         refresh online list and statuses
@@ -523,8 +637,11 @@ class user (object):
             self.vclient
             tfeed=self.vclient.getFeed()
             #tfeed is epty only on some error. Just ignore it
+            if self.unreadMsgWatchlist:
+                self.checkUnreadMsgs()
             if tfeed:
                 self.trans.updateFeed(self.bjid,tfeed)
+
             #to=time.time()
             if ((self.refreshCount%3)==0):
                 # performance tweak: dont update online list every time
@@ -538,7 +655,7 @@ class user (object):
                 for i in slist:
                     self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
                 if self.getConfig("keep_online"):
-                    self.vclient.getHttpPage("http://pda.vkontakte.ru/id1")
+                    self.vclient.getHttpPage("http://m.vkontakte.ru/id1")
             #FIXME online status
             if (self.refreshCount%3)==0 and self.getConfig("wall_notify"):
                 try:
@@ -586,7 +703,7 @@ class user (object):
             except KeyError:
                 logging.warning('fixme')
 
-           #if no hash yet update it
+            #if no hash yet update it
             if self.getConfig("vcard_avatar") and self.trans.show_avatars and self.roster[bjid]["avatar_hash"]=="nohash":
                 #print "contactsOnline: getAvatar"
                 d=self.pool.defer(f=self.vclient.getAvatar,photourl=self.roster[bjid]["avatar_url"],v_id=i,gen_hash=1)
@@ -617,13 +734,21 @@ class user (object):
         for i in contacts:
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
                 self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")
-    def saveData(self):
+    def reprData(self):
         if not (self.instanceReady):
             logging.warning('tried to save() before read().')
             return
         data={}
         try:
             ad={'email':unicode(self.email), 'password': unicode(self.password), 'captcha_sid':self.captcha_sid}
+            try:
+                self.api_secret=self.vclient.api_secret
+            except:
+                pass
+            try:
+                ad['api_secret']=self.api_secret
+            except:
+                logging.exception('')
             data['auth']=ad
         except:
             logging.exception('')
@@ -663,7 +788,23 @@ class user (object):
             rost.append(item)
         data['roster']=rost
         data['uapi_states']=self.uapiStates
+        data['last']=time.time()
+        if self.mongoID:
+            data['_id']=self.mongoID
+        if self.enableReadWatch:
+            data['unread_watchlist']=self.unreadMsgWatchlist
+        return data
+            
+    def saveData(self):
         #print data
+        if config.get('storage', 'mongodb'):
+            while True:
+                try:
+                    return self.saveDataMongo()
+                except pymongo.errors.AutoReconnect:
+                    logging.warning("mongodb: reconnecting")
+                    time.sleep(0.1)
+        data=self.reprData()
         j=demjson.JSON(compactly=False)
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         if (not os.path.exists(dirname)):
@@ -674,8 +815,33 @@ class user (object):
         with open(fname,'w') as cfile:
             cfile.write(j.encode(data).encode('utf-8'))
         
+    def saveDataMongo(self, mtime=None):
+        conn = self.trans.mongoConn
+        users = conn.pyvkt.users
+        data = self.reprData()
+        data['jid'] = self.bjid
+        if mtime:
+            data['last']=mtime
+        users.save(data)
+        
         #logging.warning('json data saved')
+    def readDataMongo(self):
+        conn = self.trans.mongoConn
+        users=conn.pyvkt.users
+        data=users.find_one({'jid': self.bjid})
+        if not data:
+            raise UnregisteredError
+        self.applyData(data)
+        logging.warning('mongo ok')
+        
     def readData(self):
+        if config.get('storage', 'mongodb'):
+            while True:
+                try:
+                    return self.readDataMongo()
+                except pymongo.errors.AutoReconnect:
+                    logging.warning("mongodb: reconnecting")
+                    time.sleep(0.1)
         dirname=self.trans.datadir+"/"+self.bjid[:1]
         fname=dirname+"/"+self.bjid+'_json'
         try:
@@ -683,6 +849,7 @@ class user (object):
                 f=cfile.read()
         except IOError,e:
             if (e.errno==errno.ENOENT):
+                print fname
                 raise UnregisteredError()
             raise
         try:
@@ -691,6 +858,9 @@ class user (object):
         except demjson.JSONDecodeError,e:
             logging.error ("broken json file: %s\n%s"%(fname,str(e)))
             raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
+        self.applyData(data)
+    
+    def applyData(self, data):
         try:
             self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
         except TypeError:
@@ -701,6 +871,19 @@ class user (object):
             self.password=data['auth']['password']
         except KeyError:
             raise UnregisteredError()
+        
+        try:
+            self.api_secret=data['auth']['api_secret']
+        except KeyError:
+            logging.warn('no api auth data')
+            
+        try:
+            self.unreadMsgWatchlist=data['unread_watchlist']
+        except KeyError: pass
+        try:
+            self.mongoID=data['_id']
+        except KeyError:
+            pass
         self.captcha_sid=data['auth']['captcha_sid']
         self.config=data['config']
         self.roster={}

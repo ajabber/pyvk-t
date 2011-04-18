@@ -23,7 +23,7 @@
 from twisted.internet.defer import Deferred
 import Queue
 import threading,time,logging
-from traceback import print_stack, print_exc,format_exc,extract_stack,format_list
+from traceback import format_exc,extract_stack,format_list
 from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError, PrivacyError, captchaError,UserapiJsonError,UserapiCaptchaError
 import pyvkt.general as gen
 import weakref,gc
@@ -187,7 +187,7 @@ class reqQueue(object):
             except:
                 logging.error('error in callback')
                 logging.error(format_exc())
-                [logging.error('TB '+i) for i[:-1] in format_list(elem['stack'])]
+                [logging.error('TB '+i[:-1]) for i in format_list(elem['stack'])]
         self.queue.task_done()
     def loop(self):
         self.last='just started'
@@ -229,19 +229,19 @@ class pollManager(object):
         self.watchdog=int(time.time())
         self.alive=1
         self.trans=trans
-        self.updateInterval=15
-        self.dynamicInterval=True
         self.groupsNum=3
-        self.dynIntervalSteps=5
-        self.dynIntervalMin=0.01
-        self.dynIntervalMax=0.1
+        self.updateInterval=10.0
+        self.minUpdateInterval=10./self.groupsNum
+        self.maxUpdateInterval=60./self.groupsNum
+        self.dynamicInterval=True
+        self.dynIntervalSteps=3
+        self.dynIntervalMin=0.03
+        self.dynIntervalMax=0.2
+    
     def start(self):
         self._thread.start()
-    def __getattr__(self,s):
-        logging.warning('legacy pollManager.%s'%s)
-        return self.thread.__getattr__(s)
+    
     def loop(self):
-        pollInterval=5
         currGroup=0
         self.freeze=False
         skippedCnt=0
@@ -278,11 +278,16 @@ class pollManager(object):
 
                             lastJob=upool.last['foo']
                             qlen=upool.queue.qsize()
-                            logging.warning('skipping refresh for %s [queue: %s last: %s]'%(repr(u),qlen,lastJob))
+
                             skippedCnt+=1
                             if (qlen==0):
-                                logging.warning('%s: empty queue. dropping refresh state')
+                                logging.warning('%s: empty queue. dropping refresh state'%
+                                                repr(u))
                                 self.trans.users[u].refreshDone=True
+                                skippedCnt-=1
+                            else:
+                                logging.warning('skipping refresh for %s [queue: %s last: %s]'%
+                                                (repr(u),qlen,lastJob))
                             #logging.warning('%s stack:\n%s'%(u,self.trans.userStack(u)))
                             if ((time.time()-upool.lastTime)>600):
                                 logging.warning('%s: user loop freeze!'%u)
@@ -302,14 +307,16 @@ class pollManager(object):
                     frac=float(skippedCnt)/totalCnt
                     logging.warning('skipped/total = %s'%frac)
                     if (self.dynamicInterval):
-                        if (frac>self.dynIntervalMax and self.updateInterval<15):
-                            self.updateInterval+=1
+                        if (frac>self.dynIntervalMax and 
+                            self.updateInterval<self.maxUpdateInterval):
+                            self.updateInterval*=1.1
                             logging.warning('increasing update interval to %s'%self.updateInterval) 
-                        if (frac<self.dynIntervalMin and self.updateInterval>5):
+                        if (frac<self.dynIntervalMin 
+                            and self.updateInterval>self.minUpdateInterval):
                             stepsToDecreaseInterval-=1
                             logging.warning('STDI: %s'%stepsToDecreaseInterval)
                             if (stepsToDecreaseInterval==0):
-                                self.updateInterval-=1
+                                self.updateInterval/=1.1
                                 logging.warning('decreasing update interval to %s'%self.updateInterval) 
                                 stepsToDecreaseInterval=self.dynIntervalSteps
                         else:
@@ -320,9 +327,11 @@ class pollManager(object):
         logging.warning("pollManager stopped")
     def stop(self):
         self.alive=0
-class Deferred1(object):
+class Deferred111(object):
     __slots__=['_cblist']
     _cblist=[]
+    def __init__(self):
+        _cblist=[]
     def addCallback(self,foo,*args,**kwargs):
         cb=(foo,args,kwargs)
         self._cblist.append(cb)

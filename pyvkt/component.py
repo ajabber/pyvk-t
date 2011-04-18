@@ -21,16 +21,18 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-
-from base64 import b64encode, b64decode
+import base64
 from traceback import print_stack, print_exc,format_exc
-import sys,os,platform,threading,signal,cPickle,time,ConfigParser, hashlib
+import sys, platform, threading, signal
 import subprocess,traceback
 
 from pyvkt.user import user,UnregisteredError
 import pyvkt.general as gen
-import pyvkt.user,pyvkt.commands, pyvkt.comstream
-from libvkontakte import *
+import pyvkt.user, pyvkt.commands, pyvkt.comstream
+import logging
+import time
+import os
+import demjson
 from pyvkt.spikes import pollManager,pseudoXml,UserThreadPool
 from pyvkt.comstream import addChild,createElement
 #import lxml.etree
@@ -41,6 +43,11 @@ import gc,inspect
 import pyvkt.config as conf
 from pyvkt.control import ControlSocketListener
 from datetime import datetime
+from pyvkt import libvkontakte
+try:
+    import pymongo
+except:
+    pass
 
 class pyvk_t(pyvkt.comstream.xmlstream):
 
@@ -59,7 +66,6 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         self.datadir=conf.get ('storage','datadir')
         self.roster_management= 1
         self.cachePath=conf.get('storage','cache')
-        self.cookPath=conf.get('storage','cookies')
         self.name=conf.get('general','service_name')
         self.pubsub=None
         self.users={}
@@ -72,7 +78,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             logging.warning('ControlSocket disabled')
 
         self.admin=self.admins[0]
-        #self.config=config
+
         try:
             d=os.path.dirname(os.path.realpath(__file__))
             d=os.path.abspath('%s/..'%d)
@@ -86,14 +92,23 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 ver=s[p+1:-1]
                 self.revision="svn-rev.%s"%ver
         except OSError:
-               self.revision="alpha"
+                self.revision="alpha"
         self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
         self.usrPool=UserThreadPool(self)
-        for i in range(3):
+        for i in range(5):
             self.usrPool.addThread()
         self.usrLock=Lock()
         self.unregisteredList=[]
+        self.unreadWatchUsers = []
+        
+        self.mongoConn=None
+        if conf.get('storage', 'mongodb'):
+            self.mongoConn=pymongo.Connection(conf.get('storage', 'mongodbURI'))
+        try:
+            self.readParameters()
+        except IOError, e:
+            logging.warn(str(e))
         signal.signal(signal.SIGUSR1,self.signalHandler)
         signal.signal(signal.SIGUSR2,self.signalHandler)
     def addPerfStats(self,tc, cc):
@@ -263,7 +278,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         elif (cmd=="start"):
             self.isActive=1
         elif (cmd=="sendprobes"):
-            self.sendProbes(src)
+            self.sendProbes()
         elif (cmd=="collect"):
             gc.collect()
         elif (cmd[:4]=="eval"):
@@ -283,14 +298,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return 'fail'
         elif (cmd=='savestate'):
             try:
-                self.saveState()
+                self.saveDynamicState()
                 return 'state saved'
             except:
                 logging.exception('')
 
         elif (cmd=='restorestate'):
             try:
-                self.restoreState()
+                self.restoreDynamicState()
                 return 'state restored'
             except:
                 logging.exception('')
@@ -305,6 +320,45 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         elif (cmd=="stats"):
             #TODO async request
             return self.getStatsMessage()
+        elif (cmd=='convertdb'):
+            logging.warning('starting database update')
+            logging.warning('stopping gateway...')
+            self.isActive=0
+            self.stopService(suspend=True, msg='database update')
+            logging.warning('gateway stopped, starting conversion')
+            self.mongoConn=pymongo.Connection(conf.get('storage', 'mongodbURI'))
+            for i in os.listdir(self.datadir):
+                p=str(self.datadir)+'/'+i
+                if not os.path.isdir(p):
+                    continue
+                if (p in ('.','..')):
+                    continue
+                for j in os.listdir(p):
+                    if (j in ('..','.')):
+                        continue
+                    if (j[-5:] == '_json'):
+                        j=j[:-5]
+                        try:
+                            str(j)
+                            logging.warning('converting %s'%j)
+                        except:
+                            logging.warning('converting %s'%repr(j))
+                        u=user(self,j, noLoop=True)
+                        try:
+                            u.readDataMongo()
+                            logging.warning('already in database')
+                            continue
+                        except:
+                            pass
+                        try:
+                            u.readData()
+                        except Exception, e:
+                            logging.exception('failed')
+                            continue
+                        u.saveDataMongo(os.path.getmtime(os.path.join(p,j)+'_json'))
+                        logging.warning('done')
+            logging.warning('conversion finished.')
+            return 'Conversion done. Now u need to restart me.'
 
         #elif (cmd=="resources"):
             #count = 0
@@ -359,6 +413,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         Send delivery notification if message successfully sent
         use receipt flag if needed to send receipt
         """
+        try:
+            self.users[gen.bareJid(jid)].onOutgoingMessageSent(res, v_id, body)
+        except Exception, e:
+            logging.warn (str(e))
         #logging.warning('receipt: res=%s'%res)
         if (v_id):
             src="%s@%s"%(v_id,self.jid)
@@ -369,15 +427,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             msg=createElement("message",{'to':jid,'from':src,'id':msg_id})
         else:
             logging.warning('receipt request without id. %s -> %s'%(src,jid))
-            msg=createElement("message",{'to':jid,'from':src})
-            #if res!=0:
-        #    if body:
-        #        msg.addElement("body").addContent(body)
-        #    if subject:
-        #        msg.addElement("subject").addContent(subject)
-        #msg["to"]=jid
-        #msg["id"]=msg_id
-        if res == 0:
+            return
+
+        if res >= 0:
             if (receipt):
                 addChild(msg,'received','urn:xmpp:receipts')
             else:
@@ -386,7 +438,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             #msg.addElement("received",'urn:xmpp:receipts')
         #elif res == 0:
             #return #no reciepts needed and no errors
-        elif res == 2:
+        elif res == -2:
             err=addChild(msg,'error',attrs={'type':'wait','code':'500'})
             addChild(err,"resource-constraint","urn:ietf:params:xml:ns:xmpp-stanzas")
             addChild(err,"too-many-stanzas","urn:xmpp:errors")
@@ -578,8 +630,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                             with open("avatar.png") as req:
                                 photo=base64.encodestring(req.read())
                             p=etree.SubElement(ans,"PHOTO")
-                            etree.SubElement(q,"TYPE").text="image/png"
-                            etree.SubElement(q,"BINVAL").text=photo.replace("\n","")
+                            etree.SubElement(p,"TYPE").text="image/png"
+                            etree.SubElement(p,"BINVAL").text=photo.replace("\n","")
                         except:
                             logging.warning('cannot load avatar')
                             print_exc()
@@ -872,11 +924,36 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         bjid=gen.bareJid(jid)
         if (not self.hasUser(bjid)):
             return
-        card=self.users[bjid].vclient.getVcard(v_id, self.show_avatars)
+        try:
+            card=self.users[bjid].vclient.getVcard(v_id, self.show_avatars)
+            errMsg='Unknown error'
+        except libvkontakte.ApiAuthError:
+            logging.warning('api auth error')
+            errMsg='Desktop API auth error'
+        except:
+            logging.exception('')
+            
         if (not card):
             logging.warning('can\'t get vcard: id%s -> %s'%(v_id,jid))
+            ans=createElement("iq",
+                              {'type':'result',
+                               'to':jid,
+                               'from':"%s@%s"%(v_id,self.jid),
+                               'id':iq_id})
+            addChild(ans,'vCard','vcard-temp')
+            err=addChild(ans, 'error', 
+                         ns='urn:ietf:params:xml:ns:xmpp-stanzas', 
+                         attrs={'type': 'wait'})
+            addChild(err, 'text').text=errMsg
+            addChild(err, 
+                     'internal-server-error', 
+                     'urn:ietf:params:xml:ns:xmpp-stanzas')
+            self.send(ans)
             return
-        ans=createElement("iq",{'type':'result','to':jid,'from':"%s@%s"%(v_id,self.jid),'id':iq_id})
+        ans=createElement("iq",{'type':'result',
+                                'to':jid,
+                                'from':"%s@%s"%(v_id,self.jid),
+                                'id':iq_id})
         vc=addChild(ans,'vCard','vcard-temp')
         def addField(name,key):
             try:
@@ -891,7 +968,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                     card[i]=card[i].decode("utf-8")
                     # is it necessary?
             pass
-        for i in (("NICKNAME","NICKNAME"),("FN",'FN'),(u'Веб-сайт:',"URL"),(u'День рождения:',"BDAY")):
+        for i in (("NICKNAME","NICKNAME"),
+                  ("FN",'FN'),
+                  (u'Веб-сайт:',"URL"),
+                  (u'День рождения:',"BDAY")):
             k,n=i
             addField(n,k)
         descr=u""
@@ -961,7 +1041,9 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         msg=self.users[bjid].vclient.getMessage(msgid)
         #log.msg(msg)
         #print msg
-        self.sendMessage("%s@%s"%(msg["from"],self.jid),jid,gen.unescape(msg["text"]),msg["title"])
+        self.sendMessage("%s@%s"%(msg["from"],self.jid),
+                         jid,
+                         gen.unescape(msg["text"]),msg["title"])
 
     def updateStatus(self, bjid, text):
         """
@@ -1018,7 +1100,10 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             else:
                 logging.exception('')
             self.usrLock.release()
-            self.sendPresence(self.jid,bjid,'unavailable',status='Internal error. Please, try again later.')
+            self.sendPresence(self.jid,
+                              bjid,
+                              'unavailable',
+                              status='Internal error. Please, try again later.')
             return
         self.usrLock.release()
         #logging.warning('released')
@@ -1091,7 +1176,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             return
         if (self.isActive or bjid==self.admin):
             self.addResource(src,prs)
-
+    
     def updateFeed(self,jid,feed):
         #FIXME bjid?
         ret=""
@@ -1110,7 +1195,14 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             self.sendPresence(self.jid,jid,status=ret)
         ret=""
         try:
-            if (feed["messages"]["count"]) and feed["messages"]["items"]:
+            apiSucceed=False
+            apiSucceed=user.sendUnreadMessages()
+        except libvkontakte.ApiPermissionMissing: pass
+        except Exception, e:
+            logging.error(str(e))
+        try:
+            if (not apiSucceed) and (feed["messages"]["count"]) and feed["messages"]["items"]:
+                logging.warn('legacy message parser')                
                 idlist=[int (i) for i in feed ["messages"]["items"].keys()]
                 inmsgs=user.vclient.getInboxMessages(num=100)
                 #for i in inmsgs['messages']: print i
@@ -1142,6 +1234,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             logging.exception('')
             #print_exc()
             pass
+        except libvkontakte.UserapiSidError:
+            logging.warning("userapi sid error")
         except:
             logging.warning("bad feed\n"+repr(feed)+"\nexception: "+format_exc())
         oldfeed = self.users[jid].feed
@@ -1163,13 +1257,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                                 gr+="\n  "+gen.unescape(feed[j]["items"][i])+" [ "+gen.feedInfo[j]["url"]%i + " ]"
                             except TypeError:
                                 logging.exception('')
-                                #print_exc()
-                                #print repr(feed)
-                                #print 'j:',j,'i:',i
-                                #try:
-                                    #print 'feed[j]\n',repr(feed[j])
-                                #except:
-                                    #pass
+
                         gc+=1
                     if gc:
                         if gen.feedInfo[j]["url"]:
@@ -1229,6 +1317,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 print_exc()
     def stopService(self, suspend=0,msg=None):
         #FIXME call this from different thread??
+        self.saveParameters()
+        #self.saveDynamicState()
         print "stopping transport..."
         if (not suspend):
             print "stopping poolMgr..."
@@ -1290,6 +1380,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         return None
 
     def sendMessage(self,src,dest,body,title=None,sepThread=False,mtime=None):
+        if type(src)==int:
+            src="%s@%s"%(src, self.jid)
         msg=createElement("message",{'to':dest,'from':src,'type':'chat','id':"msg%s"%(int(time.time())%10000)})
         if type(mtime)==int:
             SubElement(msg,"delay",{"xmlns":"urn:xmpp:delay","stamp":datetime.fromtimestamp(mtime).isoformat()})
@@ -1371,7 +1463,27 @@ class pyvk_t(pyvkt.comstream.xmlstream):
             pass
             #print '    %s (%s)'%(i.name,i.daemon)
         return True
-    def saveState(self):
+    def saveParameters(self):
+        dat={}
+        dat['unreadWatchUsers']=self.unreadWatchUsers
+        
+        fn='%s/%s'%(conf.get ('storage','datadir'),'parameters.json')
+        j=demjson.JSON(compactly=False)
+        with open(fn,'w') as cfile:
+            cfile.write(j.encode(dat).encode('utf-8'))
+            
+    def readParameters(self):
+        fn='%s/%s'%(conf.get ('storage','datadir'),'parameters.json')
+        with open(fn,'r') as cfile:
+            f=cfile.read()
+        j=demjson.JSON(compactly=False)
+        data=j.decode(f.decode('utf-8'))
+        try:
+            self.unreadWatchUsers=data['unreadWatchUsers']
+        except KeyError:
+            pass
+        
+    def saveDynamicState(self):
         fn='%s/%s'%(conf.get ('storage','datadir'),'state.json')
         olist=self.users.keys()
         ret={'version':'0.1'}
@@ -1379,7 +1491,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         j=demjson.JSON(compactly=False)
         with open(fn,'w') as cfile:
             cfile.write(j.encode(ret).encode('utf-8'))
-    def restoreState(self):
+    def restoreDynamicState(self):
         fn='%s/%s'%(conf.get ('storage','datadir'),'state.json')
         with open(fn,'r') as cfile:
             f=cfile.read()
