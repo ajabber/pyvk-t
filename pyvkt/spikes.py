@@ -26,6 +26,10 @@ import threading,time,logging
 from traceback import format_exc,extract_stack,format_list
 from libvkontakte import authFormError,HTTPError,UserapiSidError, tooFastError, PrivacyError, captchaError,UserapiJsonError,UserapiCaptchaError
 import pyvkt.general as gen
+import asyncore
+import socket
+import re
+import demjson
 import weakref,gc
 import cProfile as prof
 try:
@@ -424,6 +428,54 @@ class UserThreadPool(object):
         logging.warning('userloop stopped')
     def addQueue(self,q):
         self._queues.append(weakref.ref(q))
+class LongpollClient(asyncore.dispatcher):
+    urlRe='http://([^/]*)(/.*)'
+
+    def __init__(self, u):
+        asyncore.dispatcher.__init__(self)
+        url=u.vclient.getLongpollUrl(u.ts)
+        host, path= re.match(self.urlRe, url).group(1,0)
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect( (host, 80) )
+        self.buffer = 'GET %s HTTP/1.0\r\n\r\n' % path
+        self.inBuf=''
+        self._user=u
+
+    def handle_connect(self):
+        pass
+
+    def handle_close(self):
+        pos=self.inBuf.find('\r\n\r\n')
+        data=self.inBuf[pos+4:]
+        self._user.pool.call(self._user.handleUpdate, 
+                             data=demjson.decode(data))
+        self.close()
+
+    def handle_read(self):
+        self.inBuf+=self.recv(8192)
+
+    def writable(self):
+        return (len(self.buffer) > 0)
+
+    def handle_write(self):
+        sent = self.send(self.buffer)
+        self.buffer = self.buffer[sent:]
+
+class AsyncoreLooper(object):
+    def __init__(self, trans):
+        self._thread = threading.Thread(target=self.loop,name="AsyncoreLooper")
+        self._thread.daemon = True
+        self.trans = trans
+        self._thread.start()
+    def loop(self):
+        while True:
+            try:
+                logging.warning('entering asyncore loop')
+                asyncore.loop(10)
+            except:
+                logging.exception("")
+            logging.warning('asyncore loop exitted')
+            time.sleep(1)
         
 class counter:
     data={}

@@ -33,7 +33,7 @@ import logging
 import time
 import os
 import demjson
-from pyvkt.spikes import pollManager,pseudoXml,UserThreadPool
+from pyvkt.spikes import pollManager,pseudoXml,UserThreadPool, AsyncoreLooper
 from pyvkt.comstream import addChild,createElement
 #import lxml.etree
 from lxml import etree
@@ -95,6 +95,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 self.revision="alpha"
         self.commands=pyvkt.commands.cmdManager(self)
         self.pollMgr=pollManager(self)
+        self.acLooper=AsyncoreLooper(self)
         self.usrPool=UserThreadPool(self)
         for i in range(5):
             self.usrPool.addThread()

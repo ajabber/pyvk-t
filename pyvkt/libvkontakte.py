@@ -344,6 +344,15 @@ class client(object):
             logging.exception("JSON decode error")
             #print_exc()
         return {}
+    
+    def getLongpollUrl(self, ts=None):
+        res=self.apiRequest("messages.getLongPollServer")
+        urlTempl='http://{0}?act=a_check&key={1}&ts={2}&wait=250'
+        if not ts:
+            ts=res['ts']
+        return urlTempl.format(res['server'], res['key'], ts)
+        
+    
     def apiRequest(self, method, raw=False, **kwargs):
         req_vars = kwargs
         req_vars['method'] = method
