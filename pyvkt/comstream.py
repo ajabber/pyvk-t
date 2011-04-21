@@ -5,7 +5,7 @@ import socket,errno,hashlib
 from lxml import etree
 import threading,time
 from threading import Thread
-from Queue import Queue,Empty
+from Queue import Queue,Empty, Full
 from traceback import format_exc,extract_stack,format_list
 import logging,time
 import pyvkt.config as conf
@@ -339,7 +339,7 @@ class xmlstream(object):
         st=extract_stack(limit=2)
         try:
             self.sendQueue.put_nowait((packet,st))
-        except queue.Full:
+        except Full:
             logging.error('recvQueue full')
             t=packet.tag
             s=packet.get('from')
@@ -458,7 +458,7 @@ class xmlstream(object):
                 else:
                     #logging.warning('invoking handler (tag: %s)'%repr(st.tag))
                     if ('stream' in st.tag):
-                        logging.warning('stream stanza: %s'%repr(tostring(st)))
+                        logging.warning('stream stanza: %s'%repr(etree.tostring(st)))
                     if (st.get("to").find(self.jid)!=-1):
                         try:
                             self.handlePacket(st,dbg=False)

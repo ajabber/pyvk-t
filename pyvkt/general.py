@@ -21,14 +21,6 @@
  ***************************************************************************/
  """
 import re, htmlentitydefs,ConfigParser,traceback
-class config:
-    fields={'genegal':{1:1}}
-    def __init__(cfile='pyvk-t_new.conf'):
-        print "reading config..."
-        config = ConfigParser.ConfigParser()
-        #for i in 
-    def __getitem__(self,key):
-        pass
         
 class NoVclientError (Exception):
     def __init__(self,jid):

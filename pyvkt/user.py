@@ -21,7 +21,7 @@
  ***************************************************************************/
  """
 import pyvkt.libvkontakte as libvkontakte
-from spikes import reqQueue
+from spikes import reqQueue, LongpollClient
 import general as gen
 import config
 import sys,os,cPickle
@@ -98,6 +98,8 @@ class user (object):
         self.apiAuthData=None
         self.vclient=None
         self.mongoID=None
+        self.ts=None
+        self.lpCli=None  # longpoll client
         if (not noLoop):
             self.startPool()
             #self.pool.start()
@@ -432,6 +434,7 @@ class user (object):
             return
         self.state = 2
         self.trans.updateStatus(self.bjid,self.VkStatus)
+        self.requestLognpoll()
         self.refreshData()
         
     def login(self):
@@ -588,6 +591,60 @@ class user (object):
             mids.append(str(i['mid']))
         self.vclient.apiRequest('messages.markAsRead', mids=','.join(mids))
         return True
+    def requestLognpoll(self):
+        time.sleep(1)
+        if self.state!=2:
+            logging.warn("state!=2, aborting longpoll")
+        logging.warn("longpoll: requesting...")
+        if self.lpCli!=None:
+            return
+        self.lpCli=LongpollClient(self)
+        
+        
+    def handleUpdate(self, data):
+        try:
+            if data['failed']:
+                print data
+                self.requestLognpoll()
+                return
+            
+        except KeyError: pass
+        print data
+        for i in data['updates']:
+            evCode=i[0]
+            if evCode in (8,9):
+                u,f=i[1:3]
+                logging.warn('presence event {0} from {1}: {2}'.format(evCode, u, f))
+            elif evCode in [0,1,2,3,4]:
+                mid, f=i[1:3]
+                if evCode == 4:
+                    uid, t, subj, body=i[3:]
+                    if f & 2:
+                        logging.warn('outgoing message. dropping.')
+                        continue
+                    self.trans.sendMessage(src='%s@%s'%(uid,self.trans.jid),
+                                           dest=self.bjid,
+                                           body=u'[poll] '+body,
+                                           title=subj, 
+                                           mtime=t)
+                    self.vclient.apiRequest('messages.markAsRead', mids=mid)
+                elif evCode==3: # flag drop
+                    if f & 1:
+                        body='unknown'
+                        try:
+                            uid, body = self.unreadMsgWatchlist[mid]
+                            del self.unreadMsgWatchlist[mid]
+                        except KeyError: pass
+                        txt=u'[notify] Сообщение %s (%s) прочитано.'%(mid, body)
+                        self.trans.sendMessage(src=uid, dest=self.bjid, body=txt, 
+                                               title='[pyvk-t notify]')
+                #print "msg %s (%s) read"%(mid, self.msgWatchlist[mid])
+                    
+                
+        self.ts=data['ts']
+        self.lpCli=None
+        self.requestLognpoll()
+            
     
     def checkUnreadMsgs(self):
         mlist=self.vclient.apiRequest('messages.get', 
@@ -634,6 +691,12 @@ class user (object):
         #print self.roster
         #print "r"
         try:
+            if (time.time() - self.loginTime) > 36000:
+                logging.warn("zombie guard")
+                self.logout()
+                fr=self.roster.keys()[0]
+                self.trans.sendPresence(src=fr,dest=self.bjid,t='probe')
+                return
             self.vclient
             tfeed=self.vclient.getFeed()
             #tfeed is epty only on some error. Just ignore it
@@ -860,11 +923,29 @@ class user (object):
             raise gen.InternalError(t='err:brokendata', s=u'База данных была повреждена. Вам необходимо перерегистрироваться.')
         self.applyData(data)
     
+    def apply(self, fields, data):
+        for i in fields:
+            attr=fields[i]
+            important=False
+            if type(attr)==tuple:
+                attr, important = attr
+            if type(attr)==dict:
+                self.apply(attr, data[i])
+            self.__getattr__(attr)
+            self.__setattr__(attr, data[i])
+            
     def applyData(self, data):
-        try:
-            self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
-        except TypeError:
-            self.cookies=data['cookies']
+
+        fields={'auth':{'email': ('email', True), 
+                        'password': ('password', True), 
+                        'api_secret': 'api_secret', 
+                        'captcha_sid': 'captcha_sid'},
+                'unread_watchlist': 'unreadMsgWatchlist',
+                '_id': 'mongoID',
+                'config': 'config',
+                'uapi_states': 'uapiStates'
+                }
+        self.cookies=[(i['domain'], i['name'], i['value']) for i in data['cookies'] ]
         #TODO blocked
         try:
             self.email=data['auth']['email']
