@@ -1035,6 +1035,7 @@ class pyvk_t(pyvkt.comstream.xmlstream):
                 SubElement(photo,"TYPE").text="image/jpeg"
                 SubElement(photo,"BINVAL").text=p.replace("\n","")
         self.send(ans)
+        time.sleep(1)
         return
     def requestMessage(self,jid,msgid):
         #print "msg request"

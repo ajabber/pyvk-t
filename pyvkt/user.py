@@ -994,7 +994,7 @@ class user (object):
     def __getattr__(self,name):
         if (name=='vclient'):
             raise gen.NoVclientError(self.bjid)
-        raise AttributeError("user [%s] instance has no attribute '%s'"%(self.bjid,name))
+        raise AttributeError("user [%s] instance has no attribute '%s'. state = %s"%(self.bjid, name, self.state))
     def sendFriendList(self,fl):
 
         #bjid=gen.bareJid(jid)
