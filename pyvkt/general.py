@@ -20,7 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-import re, htmlentitydefs,ConfigParser,traceback
+import re, htmlentitydefs,ConfigParser,traceback, logging
         
 class NoVclientError (Exception):
     def __init__(self,jid):
@@ -54,6 +54,16 @@ def jidToId(jid):
         return v_id
     except:
         return -1
+def sandbox(retval):
+    def wrapper(foo):
+        def new(self, *args, **kwargs):
+            try:
+                return foo(self, *args, **kwargs)
+            except:
+                logging.exception("Exception in sandboxed function. Returning "+str(retval))
+                return retval
+        return new
+    return wrapper
 
 def stack():
     tb=traceback.extract_stack(limit=5)[:-2]
