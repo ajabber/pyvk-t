@@ -99,6 +99,10 @@ class authError(Exception):
     def __str__(self):
         return 'unexpected auth form'
 class UserapiSidError(Exception):
+    def __init__(self, act):
+        self.act=act
+    def __str__(self):
+        return "UserapiSidError [act={0}]".format(self.act)
     pass
 class PrivacyError(Exception):
     def __str__(self):
@@ -529,10 +533,10 @@ class client(object):
     def getOnlineList(self, v_id=None):
         try:
             return self.getFriends_api(v_id, online=True)
+        except ApiPermissionMissing:
+            raise
         except ApiAuthError:
             logging.warning("api auth error[gOL]")
-        except ApiPermissionMissing:
-            pass
         except:
             logging.exception('')
         try:
@@ -1504,13 +1508,7 @@ class client(object):
             page=self.getHttpPage(url,dat)
         except HTTPError, e:
             raise HTTPError (e.err,'userapi: %s'%str(kw))
-        #print page
-        #if (page=='{"ok": -2}'):
-            #cs=self.genCaptchaSid()
-            #self.captchaRequestData=nkw
-            #self.captchaRequestData['fcsid']=cs
-            #logging.warning('got captcha')
-            #raise UserapiCaptchaError(nkw,cs)
+
         try:
             page=page.decode('utf-8')
         except:
@@ -1523,7 +1521,7 @@ class client(object):
             if (kw.get('act')!='add_message'):
                 # error silently handled by sendMessage()
                 logging.error("empty response (act=%s)."%kw.get('act'))
-            raise UserapiJsonError
+            raise UserapiJsonError()
         try:
             page=page.replace('<br>', '\\n')
             page=page.replace('&quot;', '\\"')
@@ -1542,7 +1540,7 @@ class client(object):
                     ret= demjson.decode(page,strict=False)
                 except Exception,e:
                     logging.error("userapi failed. act='%s'\t'%s'\n%s"%(kw.get('act'),repr(page),str(e)))
-                    raise UserapiJsonError
+                    raise UserapiJsonError()
         try:
             if (ret['ok']==-2):
                 #raise captchaError
@@ -1552,7 +1550,7 @@ class client(object):
                 logging.warning('got captcha')
                 raise UserapiCaptchaError(nkw,cs)
             elif (ret['ok']==-1):
-                raise UserapiSidError()
+                raise UserapiSidError(kw.get('act'))
                 #logging.error('userapiRequest: GREPME userapi session error (%s)'%self.bjid)
         except (KeyError,TypeError):
             pass

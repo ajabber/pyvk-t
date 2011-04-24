@@ -45,6 +45,9 @@ MSG_APILOGINERROR=u'''Ошибка при авторизации в api прил
 Возможна некорректная работа транспорта.
 Теоретически, может помочь повторная авторизация приложения: %s'''
 MSG_APPAUTHREQUEST=u'''Для корректной работы транспорта необходимо добавить приложение: '''
+PRS_APIPERMS=u'''Ошибка: недостаточно прав для выполнения запроса.\n
+Для корректной работы транспорта необходимо разрешить все запрошенные операции.
+%(link)s'''
 class user (object):
     feed={}
     cookies=[]
@@ -326,7 +329,7 @@ class user (object):
         
     def checkApi(self, recursive=True):
         try:
-            self.vclient.apiCheck()
+            self.vclient.apiCheck()     
         except libvkontakte.ApiAuthError:
             self.vclient.apiLogin()
             if (recursive):
@@ -337,15 +340,7 @@ class user (object):
                 self.trans.sendMessage(src=self.trans.jid,
                                        dest=self.bjid,
                                        body=MSG_APILOGINERROR%self.vclient.apiLoginUrl())                
-                
-        except libvkontakte.AppPermsError, ex:
-            if (recursive):
-                self.checkApi(recursive=False)
-                return
-            else:
-                logging.warn("api perms error: sending request")
-                self.requestApplicationAuth(ex.url)
-            
+
         except libvkontakte.AppAuthError, ex:
             logging.warn('sending app auth request')
             self.requestApplicationAuth(ex.url)
@@ -615,6 +610,10 @@ class user (object):
             if evCode in (8,9):
                 u,f=i[1:3]
                 logging.warn('presence event {0} from {1}: {2}'.format(evCode, u, f))
+                if evCode == 9:
+                    status='timeout' if i[3] else 'logged out'
+                    self.contactsOffline([(u,status)])
+                    self.onlineList.pop(u, None)
             elif evCode in [0,1,2,3,4]:
                 mid, f=i[1:3]
                 if evCode == 4:
@@ -718,7 +717,7 @@ class user (object):
                 for i in slist:
                     self.setStatus("%s@%s"%(i,self.trans.jid),slist[i])
                 if self.getConfig("keep_online"):
-                    self.vclient.getHttpPage("http://m.vkontakte.ru/id1")
+                    self.vclient.getHttpPage("http://vkontakte.ru/id1")
             #FIXME online status
             if (self.refreshCount%3)==0 and self.getConfig("wall_notify"):
                 try:
@@ -734,8 +733,11 @@ class user (object):
         except libvkontakte.HTTPError:
             self.refreshDone=True
             raise
-        except libvkontakte.UserapiSidError:
-            logging.warning ('sid error!')
+        except libvkontakte.ApiPermissionMissing, e:
+            self.trans.sendPresence(self.trans.jid, self.bjid, 
+                                    status=PRS_APIPERMS % {'link': self.vclient.apiLoginUrl()})
+        except libvkontakte.UserapiSidError, e:
+            logging.warning (str(e))
             raise
         except:
             self.refreshDone=True
@@ -793,10 +795,15 @@ class user (object):
         """ 
         send 'offline' presence
         set 'force' paramenter to send presence even if disabled in user config
+        contacts - list of uids or tuples (uid, status)  
         """
         for i in contacts:
+            if type(i)==tuple:
+                uid, reason = i
+            else:
+                uid, reason = i, None
             if (force or self.getConfig("show_onlines")) and (not self.trans.roster_management or self.subscribed("%s@%s"%(i,self.trans.jid))):
-                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable")
+                self.trans.sendPresence("%s@%s"%(i,self.trans.jid),self.bjid,t="unavailable", status=reason)
     def reprData(self):
         if not (self.instanceReady):
             logging.warning('tried to save() before read().')

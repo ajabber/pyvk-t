@@ -437,7 +437,7 @@ class LongpollClient(asyncore.dispatcher):
         host, path= re.match(self.urlRe, url).group(1,0)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connect( (host, 80) )
-        self.buffer = 'GET %s HTTP/1.0\r\n\r\n' % path
+        self._outBuffer = 'GET %s HTTP/1.0\r\n\r\n' % path
         self.inBuf=''
         self._user=u
 
@@ -445,21 +445,25 @@ class LongpollClient(asyncore.dispatcher):
         pass
 
     def handle_close(self):
-        pos=self.inBuf.find('\r\n\r\n')
-        data=self.inBuf[pos+4:]
-        self._user.pool.call(self._user.handleUpdate, 
+        try:
+            pos=self.inBuf.find('\r\n\r\n')
+            data=self.inBuf[pos+4:]
+            self._user.pool.call(self._user.handleUpdate, 
                              data=demjson.decode(data))
+        except:
+            logging.exception("")
+            
         self.close()
 
     def handle_read(self):
         self.inBuf+=self.recv(8192)
 
     def writable(self):
-        return (len(self.buffer) > 0)
+        return (len(self._outBuffer) > 0)
 
     def handle_write(self):
-        sent = self.send(self.buffer)
-        self.buffer = self.buffer[sent:]
+        sent = self.send(self._outBuffer)
+        self._outBuffer = self._outBuffer[sent:]
 
 class AsyncoreLooper(object):
     def __init__(self, trans):
