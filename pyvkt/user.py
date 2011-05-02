@@ -65,6 +65,7 @@ class user (object):
         #print "user constructor: %s"%bjid
         self.loginTime=int(time.time())
         self.trans=trans
+        assert(isinstance(self.trans, com))
         self.captcha_sid=None
         self.bjid=bjid      #bare jid of a contact
         self.resources={}   #available resources with their status
@@ -602,16 +603,14 @@ class user (object):
                 print data
                 self.requestLognpoll()
                 return
-            
         except KeyError: pass
-        print data
         for i in data['updates']:
             evCode=i[0]
             if evCode in (8,9):
                 u,f=i[1:3]
                 logging.warn('presence event {0} from {1}: {2}'.format(evCode, u, f))
                 if evCode == 9:
-                    status='timeout' if i[3] else 'logged out'
+                    status='timeout' if f else 'logged out'
                     self.contactsOffline([(u,status)])
                     self.onlineList.pop(u, None)
             elif evCode in [0,1,2,3,4]:
@@ -621,13 +620,14 @@ class user (object):
                     if f & 2:
                         logging.warn('outgoing message. dropping.')
                         continue
-                    self.trans.sendMessage(src='%s@%s'%(uid,self.trans.jid),
+                    self.trans.sendMessage(uid,
                                            dest=self.bjid,
                                            body=u'[poll] '+body,
                                            title=subj, 
                                            mtime=t)
                     self.vclient.apiRequest('messages.markAsRead', mids=mid)
                 elif evCode==3: # flag drop
+                    uid=i[3]
                     if f & 1:
                         body='unknown'
                         try:
@@ -635,12 +635,15 @@ class user (object):
                             del self.unreadMsgWatchlist[mid]
                         except KeyError: pass
                         txt=u'[notify] Сообщение %s (%s) прочитано.'%(mid, body)
-                        self.trans.sendMessage(src=uid, dest=self.bjid, body=txt, 
+                        self.trans.sendMessage(src=uid,
+                                               dest=self.bjid, body=txt, 
                                                title='[pyvk-t notify]')
                 #print "msg %s (%s) read"%(mid, self.msgWatchlist[mid])
                     
-                
-        self.ts=data['ts']
+        try:        
+            self.ts=data['ts']
+        except KeyError:
+            logging.warn('can\'t determine new timestamp')
         self.lpCli=None
         self.requestLognpoll()
             
@@ -734,8 +737,7 @@ class user (object):
             self.refreshDone=True
             raise
         except libvkontakte.ApiPermissionMissing, e:
-            self.trans.sendPresence(self.trans.jid, self.bjid, 
-                                    status=PRS_APIPERMS % {'link': self.vclient.apiLoginUrl()})
+            self.sendAppPermissionsWarning()
         except libvkontakte.UserapiSidError, e:
             logging.warning (str(e))
             raise
@@ -744,6 +746,9 @@ class user (object):
             logging.exception('refresh freeze?')
             raise
         self.refreshDone=True
+    def sendAppPermissionsWarning(self):
+        self.trans.sendPresence(self.trans.jid, self.bjid, 
+                                status=PRS_APIPERMS % {'link': self.vclient.apiLoginUrl()})
         
     def contactsOnline(self,contacts):
         """ send 'online' presence"""

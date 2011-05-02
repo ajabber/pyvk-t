@@ -1199,6 +1199,8 @@ class pyvk_t(pyvkt.comstream.xmlstream):
         try:
             apiSucceed=False
             apiSucceed=user.sendUnreadMessages()
+        except libvkontakte.ApiPermissionMissing:
+            user.sendAppPermissionsWarning()
         except Exception, e:
             logging.error(str(e))
         try:

@@ -125,6 +125,7 @@ class ApiAuthError(ApiError):
     pass
 
 class AppPermsError(ApiAuthError):
+
     pass
 
 class ApiPermissionMissing(ApiError):

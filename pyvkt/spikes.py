@@ -448,8 +448,13 @@ class LongpollClient(asyncore.dispatcher):
         try:
             pos=self.inBuf.find('\r\n\r\n')
             data=self.inBuf[pos+4:]
+            try:
+                data=demjson.decode(data)
+            except demjson.JSONDecodeError:
+                logging.warn("bad JSON string: "+repr(data))
+                data={'updates':[]}
             self._user.pool.call(self._user.handleUpdate, 
-                             data=demjson.decode(data))
+                                 data=data)
         except:
             logging.exception("")
             
