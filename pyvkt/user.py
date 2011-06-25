@@ -62,10 +62,14 @@ class user (object):
     def __init__(self,trans,jid,noLoop=False,captcha_key=None):
         bjid=gen.bareJid(jid)
         self.captcha_key=captcha_key
+        print self.captcha_key
+        if self.captcha_key and 'phone' in captcha_key:
+            #FIXME!!!!
+            self.phone=captcha_key[6:]
+            self.captcha_key=None
         #print "user constructor: %s"%bjid
         self.loginTime=int(time.time())
         self.trans=trans
-        assert(isinstance(self.trans, com))
         self.captcha_sid=None
         self.bjid=bjid      #bare jid of a contact
         self.resources={}   #available resources with their status
@@ -510,6 +514,12 @@ class user (object):
         #self.lock=0
         self.state=4
         try:
+            self.lpCli.close()
+        except AttributeError:
+            pass
+        except:
+            logging.exception('')
+        try:
             self.trans.httpIn += self.vclient.bytesIn
         except Exception,e:
             pass
@@ -629,6 +639,9 @@ class user (object):
                 elif evCode==3: # flag drop
                     uid=i[3]
                     if f & 1:
+                        if not f & 2:
+                            logging.warn('incoming message read. dropping.')
+                            continue                        
                         body='unknown'
                         try:
                             uid, body = self.unreadMsgWatchlist[mid]
@@ -646,7 +659,11 @@ class user (object):
             logging.warn('can\'t determine new timestamp')
         self.lpCli=None
         self.requestLognpoll()
-            
+        
+    def sendPhoneDigitsRequest(self):
+        logging.warn("requesting phone number")
+        msg=u'''Сайт запросил проверку корректности входа. Вам необходимо указать последние 4 цифры номера телефона, привязанного к странице, в настройках (ключ last_phone_digits)'''
+        #self.trans.sendMessage(src=self.trans.jid, dest=self.bjid, body=msg)            
     
     def checkUnreadMsgs(self):
         mlist=self.vclient.apiRequest('messages.get', 
@@ -986,6 +1003,11 @@ class user (object):
             self.roster[j]=i
             #print i
         self.uapiStates=data['uapi_states']
+        try:
+            self.config['last_phone_digits']=self.phone
+            self.trans.sendMessage(src=self.trans.jid, dest=self.bjid, body='phone digits set to %s'%self.phone)
+        except AttributeError:
+            pass
         self.instanceReady=True
     def sendProbe(self):
         for i in self.roster:
@@ -1003,10 +1025,12 @@ class user (object):
         except AttributeError:
             logging.warn("user without config state=%s"%(self.state))
             return gen.userConfigFields[fieldName]["default"]
+    
     def __getattr__(self,name):
         if (name=='vclient'):
             raise gen.NoVclientError(self.bjid)
         raise AttributeError("user [%s] instance has no attribute '%s'. state = %s"%(self.bjid, name, self.state))
+    
     def sendFriendList(self,fl):
 
         #bjid=gen.bareJid(jid)

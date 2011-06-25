@@ -226,21 +226,22 @@ class reqQueue(object):
         #print "queue (%s) stopped"%self.user.bjid
         self.last='stopped'
         return 0
+    
 class pollManager(object):
-    def __init__(self,trans):
-        self._thread=threading.Thread(target=self.loop,name="Poll Manager")
-        self._thread.daemon=True
-        self.watchdog=int(time.time())
-        self.alive=1
-        self.trans=trans
-        self.groupsNum=3
-        self.updateInterval=10.0
-        self.minUpdateInterval=10./self.groupsNum
-        self.maxUpdateInterval=60./self.groupsNum
-        self.dynamicInterval=True
-        self.dynIntervalSteps=3
-        self.dynIntervalMin=0.03
-        self.dynIntervalMax=0.2
+    def __init__(self, trans):
+        self._thread = threading.Thread(target=self.loop,name="Poll Manager")
+        self._thread.daemon = True
+        self.watchdog = int(time.time())
+        self.alive = 1
+        self.trans = trans
+        self.groupsNum = 3
+        self.updateInterval    = 15.0 /self.groupsNum
+        self.minUpdateInterval = 10. / self.groupsNum
+        self.maxUpdateInterval = 60. / self.groupsNum
+        self.dynamicInterval   = True
+        self.dynIntervalSteps  = 3
+        self.dynIntervalMin    = 0.03
+        self.dynIntervalMax    = 0.1
     
     def start(self):
         self._thread.start()
@@ -433,13 +434,25 @@ class LongpollClient(asyncore.dispatcher):
 
     def __init__(self, u):
         asyncore.dispatcher.__init__(self)
-        url=u.vclient.getLongpollUrl(u.ts)
-        host, path= re.match(self.urlRe, url).group(1,0)
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connect( (host, 80) )
-        self._outBuffer = 'GET %s HTTP/1.0\r\n\r\n' % path
-        self.inBuf=''
-        self._user=u
+        try:
+            url=u.vclient.getLongpollUrl(u.ts)
+            host, path= re.match(self.urlRe, url).group(1,0)
+            self._outBuffer = 'GET %s HTTP/1.0\r\n\r\n' % path
+            self.inBuf=''
+            self._user=u
+
+            self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.connect( (host, 80) )
+        except Exception, e:
+            logging.exception("GREPME longpoll")
+            try:
+                self.close()
+            except AttributeError:
+                logging.warn('socket wasn\'t opened')
+                pass
+            except:
+                logging.exception('')
+            raise e
 
     def handle_connect(self):
         pass

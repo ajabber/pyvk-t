@@ -125,7 +125,9 @@ class ApiAuthError(ApiError):
     pass
 
 class AppPermsError(ApiAuthError):
+    pass
 
+class ApiSecurityCheck(ApiError):
     pass
 
 class ApiPermissionMissing(ApiError):
@@ -157,7 +159,7 @@ class RedirectHandler(urllib2.HTTPRedirectHandler):
 class client(object):
     __slots__=['tonline', 'captchaRequestData', 'bjid', 'user', 'dumpPath',
                'cachePath', 'c','sid','v_id', 'api', 'api_sid', 'api_secret', 
-               'api_active']
+               'api_active', 'securityCheckUrl', 'redirectLocation']
     #onlineList={}
     #just counter for loops. use some big number in the beginning
     iterationsNumber = 999999
@@ -171,6 +173,8 @@ class client(object):
         self.api_secret=''
         self.api_sid=''
         self.api_active=False
+        self.securityCheckUrl = None
+        self.redirectLocation = None
         if (user):
             self.user=weakref.ref(user)
         else:
@@ -183,6 +187,7 @@ class client(object):
         self.c.setopt(pycurl.FOLLOWLOCATION, 0)
         self.c.setopt(pycurl.COOKIELIST,str('ALL'))
         self.c.setopt(pycurl.COOKIELIST,str('Set-Cookie: test=0; domain=eqx.su'))
+        
         #c.setopt(pycurl.MAXREDIRS, 5)
         #FIXME delete 
         
@@ -271,11 +276,12 @@ class client(object):
                 ret.append((vl[0][1:],vl[5],vl[6]))
         return ret
         
-    def getHttpPage(self,url,params=None, referer=None,files=None, hdrFunction=None):
+    def getHttpPage(self,url,params=None, referer=None,files=None, hdrFunction=None, retry=3):
         c=self.c
         #print '\n\n-----------------------\n\n'
         #print url
         #print params
+
         c.setopt(pycurl.URL,str(url))
         
         c.setopt(pycurl.POST,0)
@@ -309,14 +315,38 @@ class client(object):
             c.setopt(pycurl.HEADERFUNCTION, hdrFunction)
         else:
             def hdrHandler(buf):
-                if 'Location' in buf:
-                    loc_url=':'.join(buf.split(':')[1:])
-                    logging.warn("got Location header '%s' [%s] "%
-                                 (loc_url.strip(), url))
+                try:
+                    if 'Location' in buf:
+                        loc_url=':'.join(buf.split(':')[1:])[1:]
+                        logging.warn("got Location header '%s' [%s] "%
+                                     (loc_url.strip(), url))
+                        if not 'http' in loc_url:
+                            urlRe='http://([^/]*)(/.*)'
+                            host, path= re.match(urlRe, url).group(1,0)
+                            loc_url='http://%s%s'%(host, loc_url)
+                        self.redirectLocation = loc_url
+                        self.securityCheckUrl = None
+                        if 'security' in loc_url: 
+                            logging.warning('security location')
+                            self.bypassSecuritycheck(url, loc_url)
+                        raise HTTPError("Redirect", url)
+                except:
+                    logging.exception('')
+                    raise
             c.setopt(pycurl.HEADERFUNCTION, hdrHandler)            
         try:
             c.perform()
         except pycurl.error,e:
+            if e[0]==23:
+                logging.warn('redirect?')
+                if not self.securityCheckUrl:
+                    logging.warn(self.redirectLocation)
+                    s=self.getHttpPage(self.redirectLocation)
+                    self.dumpString(s, 'redirect')
+                    return s
+                else:
+                    
+                    return self.bypassSecuritycheck()
             raise HTTPError(str(e),url)
         ret=b.getvalue()
         global http_requests,http_traffic
@@ -325,7 +355,39 @@ class client(object):
         #print ret.decode('cp1251')
         #print '----'
         return ret
-
+    
+    def bypassSecuritycheck(self, url=None, location=None):
+        if not url:
+            logging.warning("sending phone number")
+            if self.securityCheckUrl:
+                try:
+                    s=self.getHttpPage(self.securityCheckUrl)
+                    self.dumpString(s,
+                                     'securcheck')
+                    return s
+                finally:
+                    self.securityCheckUrl = None
+            else:
+                logging.error('no url')
+            
+            return
+        code=self.user().getConfig('last_phone_digits')
+        code='7801'
+        if not code:
+            self.user().sendPhoneDigitsRequest()
+            raise ApiSecurityCheck()
+            
+        if not 'http://' in location:
+            urlRe='http://([^/]*)(/.*)'
+            host, path= re.match(urlRe, url).group(1,0)
+            resUrl='http://%s%s'%(host, location)
+        else:
+            resUrl=location
+        resUrl=resUrl.replace('?', '?code=%s&'%code)
+        logging.warning('trying to enter code: %s'%resUrl)
+        self.securityCheckUrl = resUrl
+        # cant getHTTPPage() here because of curl
+        
     def checkPage(self,page):
         if (page.find(u'<div class="simpleHeader">Слишком быстро...</div>'.encode("cp1251"))!=-1):
             logging.warning ("%s: too fast"%self.bjid)
@@ -358,7 +420,7 @@ class client(object):
         return urlTempl.format(res['server'], res['key'], ts)
         
     
-    def apiRequest(self, method, raw=False, **kwargs):
+    def apiRequest(self, method, raw=False, recursive=True, **kwargs):
         req_vars = kwargs
         req_vars['method'] = method
         #print req_vars
@@ -393,13 +455,26 @@ class client(object):
         if 'error' in res:
             err = res['error']
             errCode = err['error_code']
-            if errCode==4:
-                logging.warn("api error: auth error, method: %s"%method)                
+            try:
+                del err['request_params']
+            except: pass
+            if errCode in (3,4):
+                logging.warn("api error: auth error, code = %s, method: %s"%(errCode, method))
+                if recursive:
+                    self.apiLogin()
+                    kwargs['method'] = method
+                    kwargs['raw'] = raw
+                    kwargs['recursive'] = False
+                    ret = self.apiRequest(**kwargs)
+                    logging.warning("re-auth succeed!")
+                    return ret                
                 raise ApiAuthError()
             elif errCode == 7:
                 logging.warn("api error: missing permission, method: %s"%method)
                 raise ApiPermissionMissing()
-            logging.warn("api method failed: %s (%s)"%(method, str(kwargs)))
+            logging.warn("api method failed: %s (%s).\nfull response: %s"%(method, 
+                                                                          str(kwargs), 
+                                                                          demjson.encode(err)))
             raise Exception("api error: "+res['error']['error_msg'])
         if not raw:
             return res['response']
@@ -430,9 +505,17 @@ class client(object):
             if not data:
                 logging.error("location parse error: "+url)
                 if 'security' in url:
-                    fullUrl='http://vkontakte.ru'+url
-                    logging.warn("trying to open "+fullUrl)
-                    self.dumpString(self.getHttpPage(fullUrl),fn="security")
+                    try:
+                        self.bypassSecuritycheck('http://vkontakte.ru/login.php', url)
+                        raise HTTPError("Security check", url)
+                    except:
+                        logging.exception('')
+                        raise
+                    
+                    
+                    #fullUrl='http://vkontakte.ru'+url
+                    #logging.warn("trying to open "+fullUrl)
+                    #self.dumpString(self.getHttpPage(fullUrl),fn="security")
                 return
             data = (eval(data.group("data"), {}, {}))
             self.api_secret = data['secret']
@@ -563,7 +646,7 @@ class client(object):
             fil.write(data)
         logging.warning("%s: page saved to %s"%(comm,fname))
 
-    def getHistory(self,v_id,length=15):
+    def getHistory_(self,v_id,length=15):
         try:
             return self.getHistory2(v_id,length)
         except:
@@ -586,7 +669,20 @@ class client(object):
             ret.append((t,m.replace('<br />','\n')))
         #ret=ret.replace('<br />','\n')
         return ret
-    
+    def getHistory(self, v_id, length=15):
+        d = self.apiRequest("messages.getHistory", uid=v_id, count=length)[1:]
+        d.reverse()
+        pprint(d)
+        ret = []
+        for i in d:
+            if i["from_id"]==v_id:
+                t=u'in'
+            else:
+                t=u'out'
+            m = i['body']
+            print t, m
+            ret.append((t, m,))
+        return ret
     def getHistory2(self,v_id,length=15):
         dat=self.userapiRequest(act='message',id=v_id, to=length)
         ret=[]
@@ -1304,18 +1400,18 @@ class client(object):
                             ret[v_id]=gen.unescape(fe.data.encode("utf-8"))
         #print "end"
         return ret
+
     def getStatusList(self):
-        sl=self.userapiRequest(act='updates_activity',to='50')
-        sl=sl['d']
-        if (not sl):
-            return {}
-        sl.reverse()
-        ret={}
-        for i in sl:
-            ret[i[1]]=i[5]
-            #print ,i[4],i[5]
-        return ret
-        #print type(sl)
+        d = self.apiRequest("newsfeed.get", filters="post,note")['items']
+        assert isinstance(d, list)
+        d.reverse()
+        r = {}
+        for i in d:
+            v_id = int(i['source_id'])
+            if v_id > 0:
+                r[v_id] = i['text'] 
+        pprint(r)
+
     def getWallMessages(self,v_id=0):
         #deprecated
         page = self.getHttpPage("http://vkontakte.ru/wall.php?id=%s"%v_id)
