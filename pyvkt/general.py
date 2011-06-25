@@ -20,7 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
  """
-import re, htmlentitydefs,ConfigParser,traceback, logging
+import re, htmlentitydefs,ConfigParser,traceback, logging, pymongo
         
 class NoVclientError (Exception):
     def __init__(self,jid):
@@ -65,6 +65,7 @@ def sandbox(retval):
         return new
     return wrapper
 
+
 def stack():
     tb=traceback.extract_stack(limit=5)[:-2]
     return ['%10s:%s %10s -> %s'%i for i in tb]
@@ -108,6 +109,8 @@ userConfigFields={
     ,"feed_notify":      {"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах сообщением"}
     ,"wall_notify":      {"type":"boolean", "default":False, "desc":u"Уведомлять о новых сообщениях на стене"}
     ,"start_feed_notify":{"type":"boolean", "default":False, "desc":u"Уведомлять о новых встречах и группах при входе"}
+    ,'last_phone_digits':     {'type': 'text-single', 'default': '',
+                          'desc': u'Последне 4 цифры телефона, привязанного к странице (необходимо при ошибках авторизации'}
     #,"save_cookies":{"type":"boolean", "default":True, "desc":u"Сохранять cookies на сервере. Поможет уберечься от капчи"}
     ,"signature":{"type":"text-single", "default":"", "desc":u"Подпись в сообщении"}
 #TODO    ,"default_title":{"type":unicode, "default":"sent by xmpp transport", "desc":"Тема сообщения по умолчанию"}
